@@ -519,7 +519,8 @@ void RenderMenu(Config* config, float menuResScale)
 
     // DLSS Neural Rendering -----------------------------
     ImGui::Spacing();
-    if (auto ch = ScopedCollapsingHeader("DLSS Neural Rendering"); ch.IsHeaderOpen())
+    if (auto ch = ScopedCollapsingHeader("DLSS Neural Rendering", ImGuiTreeNodeFlags_DefaultOpen);
+        ch.IsHeaderOpen())
     {
         ScopedIndent indent {};
         ImGui::Spacing();
