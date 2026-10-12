@@ -260,7 +260,7 @@ if (-not $lmxxfHistoryDefaults) { throw 'Native history default/comments missing
 $ini = $ini -replace '(?m)^Dx12Upscaler=.*$', 'Dx12Upscaler=ffx'
 $ini = $ini -replace '(?m)^LogToFile=.*$', 'LogToFile=true'
 $ini = $ini -replace '(?m)^LogLevel=.*$', 'LogLevel=2'
-$ini = [regex]::Replace($ini, '(?ms)(\[FrameGen\].*?^Enabled=)[^\r\n]*', '$1false')
+$ini = [regex]::Replace($ini, '(?ms)(\[FrameGen\].*?^Enabled=)[^\r\n]*', '$1true')
 $ini = [regex]::Replace($ini, '(?ms)^\[DlssNr\].*?(?=^\[|\z)', @"
 [DlssNr]
 ; OptScaler(NR) $Version - Three-backend AMD Neural Rendering (DLSS 5 on AMD), before or after SR.
