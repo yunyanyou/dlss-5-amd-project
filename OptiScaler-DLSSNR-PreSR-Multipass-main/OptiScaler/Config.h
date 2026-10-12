@@ -267,7 +267,7 @@ class Config
     // DLSS Neural Rendering: a detail-synthesis pass over the upscaler's output. Off by default -- it is
     // an undocumented feature driven directly through its snippet, not something NVIDIA exposes.
     CustomOptional<bool> DlssNrEnabled { false };
-    CustomOptional<int> DlssNrXeFGInterpolationCount { 0 };
+    CustomOptional<int> DlssNrXeFGInterpolationCount { 2 };
     // Run the NR pass on the upscaler's colour input, at render resolution, immediately before SR.
     // Off selects experimental SR -> NR. Mochizuki keeps render-resolution motion and the runtime
     // scales it. Daniel and lmxxf resample those guides onto the output grid in the host.
@@ -977,7 +977,7 @@ class Config
     // Menu
     CustomOptional<float, NoDefault> MenuScale;
     CustomOptional<std::string> MenuLanguage { "en" }; // UI only: en / zh-CN
-    CustomOptional<bool> MenuBlur { false };
+    CustomOptional<bool> MenuBlur { true };
     CustomOptional<float> MenuBlurStrength { 1.0f };
     CustomOptional<float, NoDefault> MenuWindowWidth;
     CustomOptional<float, NoDefault> MenuWindowHeight;
@@ -1007,13 +1007,13 @@ class Config
     CustomOptional<int> FGShortcutKey { UnboundKey };
     CustomOptional<bool> LightTheme { false };
     CustomOptional<bool> OverlaysUseTheme { false };
-    CustomOptional<float> MenuAccentColorR { 0.00f };
-    CustomOptional<float> MenuAccentColorG { 0.40f };
-    CustomOptional<float> MenuAccentColorB { 0.77f };
+    CustomOptional<float> MenuAccentColorR { 1.00f };
+    CustomOptional<float> MenuAccentColorG { 0.00f };
+    CustomOptional<float> MenuAccentColorB { 0.00f };
     CustomOptional<float> MenuBGColorR { 0.0f };
     CustomOptional<float> MenuBGColorG { 0.0f };
     CustomOptional<float> MenuBGColorB { 0.0f };
-    CustomOptional<float> MenuBGColorA { 0.99f };
+    CustomOptional<float> MenuBGColorA { 0.0f };
 
     // Hooks
     CustomOptional<bool> HookOriginalNvngxOnly { false };
@@ -1168,9 +1168,9 @@ class Config
     CustomOptional<int> LateAsiPluginsDelay { 30 };
 
     // Frame Generation
-    CustomOptional<FGInput> FGInput { FGInput::NoFG };
+    CustomOptional<FGInput> FGInput { FGInput::DLSSG };
     CustomOptional<bool> ExternalFrameGeneration { false };
-    CustomOptional<FGOutput> FGOutput { FGOutput::NoFG };
+    CustomOptional<FGOutput> FGOutput { FGOutput::XeFG };
     CustomOptional<FGNvngxReplacement> FGNvngxReplacement { FGNvngxReplacement::None };
     CustomOptional<bool> FGDrawUIOverFG { false };
     CustomOptional<bool> FGUIPremultipliedAlpha { true };
@@ -1259,7 +1259,7 @@ class Config
     static constexpr int32_t XeFGMaxInterpolations = 7;
 
     CustomOptional<bool> FGXeFGIgnoreInitChecks { false };
-    CustomOptional<int> FGXeFGInterpolationCount { 1 };
+    CustomOptional<int> FGXeFGInterpolationCount { 3 };
     // Unlocks multi frame generation on non-Intel GPUs. Intel gates it on the provider build, not on
     // the hardware, so libxess_fg.dll and libxell.dll are patched in memory once loaded; the files on
     // disk are not changed. A build that is not recognised is left as it is.
