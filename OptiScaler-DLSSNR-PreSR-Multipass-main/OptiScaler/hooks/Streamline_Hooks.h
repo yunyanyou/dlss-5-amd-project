@@ -171,6 +171,19 @@ class StreamlineHooks
     static bool isPclHooked();
     static bool isReflexHooked();
 
+    // The DLSS-G multiplier the game asked for through slDLSSGSetOptions, expressed as an interpolation
+    // count (multiplier - 1), which is the unit XeFG uses. Returns 0 when the game has not asked for
+    // frame generation at all. The mode has to be inspected as well as the count: a default constructed
+    // DLSSGOptions already carries numFramesToGenerate == 1, so the count alone cannot tell "the game
+    // wants 2x" apart from "the game never said anything".
+    static int GameRequestedInterpolationCount();
+
+    // Records what the game asked for. Games that resolve DLSSG through slGetFeatureFunction are handed
+    // the dummy implementations in Streamline_Hooks.cpp instead of the real hooks below, so for those the
+    // dummy is the only place their request is ever seen and it has to be recorded there - otherwise
+    // GameRequestedInterpolationCount() has nothing to answer with and always reports "no request".
+    static void RecordGameDlssgOptions(const sl::ViewportHandle& viewport, const sl::DLSSGOptions& options);
+
   private:
     inline static sl::RenderAPI renderApi = sl::RenderAPI::eCount;
     inline static std::mutex setConstantsMutex {};
@@ -260,6 +273,11 @@ class StreamlineHooks
     inline static thread_local void* pluginCaller = nullptr;
     inline static thread_local size_t currentPlugin = kPluginSlots;
     inline static std::atomic<size_t> activeDlssg{kPluginSlots};
+
+    // The game's latest slDLSSGSetOptions, as it arrived - everything OptiScaler overrides goes into
+    // a copy, so this stays the game's own request.
+    inline static sl::ViewportHandle lastDlssgViewport {};
+    inline static sl::DLSSGOptions lastDlssgOptions {};
     static PluginCalls& Calls() { return pluginCalls[currentPlugin]; }
     static void hookPlugin(unsigned kind, HMODULE module);
     template <size_t I, auto Hook> struct PluginCallback;

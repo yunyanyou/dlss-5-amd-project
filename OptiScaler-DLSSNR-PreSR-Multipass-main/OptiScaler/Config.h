@@ -1118,8 +1118,30 @@ class Config
     CustomOptional<bool> FSRFGEnableWatermark { false };
 
     // XeFG
+    //
+    // The ceiling for the whole XeFG path, in interpolations: 7 is an 8X
+    // multiplier. This is the limit itself, not a sanity bound with the real one
+    // living somewhere else - FGXeFGMaxInterpolatedFrames defaults to it, the
+    // unlock patches report it to the provider as maxSupportedInterpolations,
+    // and XeFG_Dx12 declares it as the swapchain's maxInterpolatedFrames at init,
+    // so one number decides what the provider accepts, what the menu offers, and
+    // what the ini may ask for. (ported from MatheusFerreiraS/neural-amd-opti)
+    static constexpr int32_t XeFGMaxInterpolations = 7;
+
     CustomOptional<bool> FGXeFGIgnoreInitChecks { false };
     CustomOptional<int> FGXeFGInterpolationCount { 1 };
+    // Unlocks multi frame generation on non-Intel GPUs. Intel gates it on the provider build, not on
+    // the hardware, so libxess_fg.dll and libxell.dll are patched in memory once loaded; the files on
+    // disk are not changed. A build that is not recognised is left as it is.
+    CustomOptional<bool> FGXeFGUnlockEnabled { true };
+    // What the unlock patch reports to the provider as its maximum, and what the
+    // multiplier menu lets you pick. The number written into the U3/U5 patches is
+    // read back as xefg_swapchain_properties_t::maxSupportedInterpolations, which
+    // is also what feeds the menu's MFG combo, so raising this necessarily raises
+    // the menu ceiling. A value it rejects is clamped in XeFGUnlock to the ceiling.
+    CustomOptional<int> FGXeFGMaxInterpolatedFrames { XeFGMaxInterpolations };
+    // Spaces out each generated frame above 2X instead of presenting the burst at once. Needs a restart.
+    CustomOptional<bool> FGXeFGExtraPacing { true };
     CustomOptional<bool> FGXeFGUIComposition { false };
     CustomOptional<bool> FGXeFGDepthInverted { true };
     CustomOptional<bool> FGXeFGJitteredMV { false };
