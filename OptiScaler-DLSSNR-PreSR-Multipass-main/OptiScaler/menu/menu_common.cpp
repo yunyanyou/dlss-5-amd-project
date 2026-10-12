@@ -7486,8 +7486,6 @@ void MenuCommon::RenderMainMenuTable(RenderMenuContext& ctx)
 
 void MenuCommon::RenderMainMenuTabs(RenderMenuContext& ctx)
 {
-    MenuUi::SeparatorText(kTabName[selectedTab]);
-
     switch (selectedTab)
     {
     case 0: // Neural rendering
