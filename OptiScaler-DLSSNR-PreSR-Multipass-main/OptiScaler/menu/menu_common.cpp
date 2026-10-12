@@ -7429,65 +7429,115 @@ void MenuCommon::RenderKeybindSettings(RenderMenuContext& ctx)
     }
 }
 
+// Legacy (0.5.x / neural style) main-menu layout kept on purpose.
+// Fixed six-entry sidebar (NR / UP / FG / IMG / UI / ADV) with the page beside it,
+// instead of the newer navigation/card presentation.
+static constexpr const char* kTabShort[] = { "NR", "UP", "FG", "IMG", "UI", "ADV" };
+static constexpr const char* kTabName[] = { "Neural", "Upscaling", "Frame Gen", "Image", "Interface", "Advanced" };
+static int selectedTab = 0;
+
+static float MainMenuSideBarWidth()
+{
+    const auto& style = ImGui::GetStyle();
+    float widest = 0.0f;
+    for (const char* label : kTabShort)
+    {
+        const float w = MenuUi::CalcTextSize(label).x;
+        if (w > widest) widest = w;
+    }
+    return widest + style.FramePadding.x * 4.0f + style.WindowPadding.x * 2.0f;
+}
+
+void MenuCommon::RenderMainMenuSideBar(RenderMenuContext& ctx)
+{
+    const auto& style = ImGui::GetStyle();
+    const float height = ImGui::GetFrameHeight() * 1.6f;
+    for (int i = 0; i < IM_ARRAYSIZE(kTabShort); ++i)
+    {
+        const bool selected = i == selectedTab;
+        ImGui::PushStyleColor(ImGuiCol_Button, style.Colors[selected ? ImGuiCol_TabSelected : ImGuiCol_Tab]);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, style.Colors[ImGuiCol_TabHovered]);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, style.Colors[ImGuiCol_TabSelected]);
+        if (MenuUi::Button(kTabShort[i], ImVec2(-1.0f, height)))
+            selectedTab = i;
+        ImGui::PopStyleColor(3);
+        if (ImGui::IsItemHovered())
+            MenuUi::SetTooltip("%s", kTabName[i]);
+    }
+}
+
 void MenuCommon::RenderMainMenuTable(RenderMenuContext& ctx)
 {
     // Compatibility and frame-generation controls also consume this state.
     // Refresh every menu frame, regardless of which page was visited first.
     GetCurrentBackendInfo(ctx.state.api, currentBackend, &currentBackendName);
-    static MenuNavigation::Page page = MenuNavigation::Page::NR;
-    auto card = [&](auto render) { MenuCard frame; render(ctx); };
-    MenuNavigation::Render(page, ctx.menuResScale, [&](MenuNavigation::Page selected) {
-        switch (selected)
-        {
-        case MenuNavigation::Page::NR:
-            { MenuCard frame; DlssNr::RenderMenu(ctx.config, ctx.menuResScale); }
-            break;
-        case MenuNavigation::Page::Upscaling:
-            card(RenderActiveUpscalerSettings);
-            card(RenderActiveImageSettings);
-            break;
-        case MenuNavigation::Page::FrameGen:
-            card(RenderFrameGenerationSelection);
-            card(RenderFrameGenerationRuntimeSettings);
-            card(RenderFsrCommonSettings);
-            break;
-        case MenuNavigation::Page::Latency:
-            card(RenderFramerateSettings);
+
+    if (ImGui::BeginChild("##menu_tabs", ImVec2(MainMenuSideBarWidth(), 0), ImGuiChildFlags_Borders,
+                          ImGuiWindowFlags_NoScrollbar))
+        RenderMainMenuSideBar(ctx);
+    ImGui::EndChild();
+
+    ImGui::SameLine();
+
+    if (ImGui::BeginChild("##menu_page", ImVec2(0, 0), false))
+        RenderMainMenuTabs(ctx);
+    ImGui::EndChild();
+}
+
+void MenuCommon::RenderMainMenuTabs(RenderMenuContext& ctx)
+{
+    MenuUi::SeparatorText(kTabName[selectedTab]);
+
+    switch (selectedTab)
+    {
+    case 0: // Neural rendering
+        DlssNr::RenderMenu(ctx.config, ctx.menuResScale);
+        break;
+
+    case 1: // Upscaling
+        RenderActiveUpscalerSettings(ctx);
+        break;
+
+    case 2: // Frame generation, latency and pacing
+        RenderFrameGenerationSelection(ctx);
+        RenderFrameGenerationRuntimeSettings(ctx);
+        RenderFsrCommonSettings(ctx);
+        RenderFramerateSettings(ctx);
+        RenderVsyncSettings(ctx);
 #ifdef LOW_LATENCY_INPUTS
-            card(RenderLowLatencySettings);
+        RenderLowLatencySettings(ctx);
 #else
-            card(RenderFakenvapiSettings);
+        RenderFakenvapiSettings(ctx);
 #endif
-            card(RenderVsyncSettings);
-            break;
-        case MenuNavigation::Page::Textures:
-            card(RenderApiAndTextureSettings);
-            card(RenderMagnifierSettings);
-            break;
-        case MenuNavigation::Page::Compatibility:
-            card(RenderInitializationSettings);
-            card(RenderAdvancedSettings);
-            card(RenderQuirksSettings);
-            break;
-        case MenuNavigation::Page::Appearance:
-            card(RenderThemeSettings);
-            card(RenderFpsOverlaySettings);
-            card(RenderKeybindSettings);
-            break;
-        case MenuNavigation::Page::Status:
-            MenuUi::TextWrapped("GPU: %s", ctx.primaryGpu->name.c_str());
-            MenuUi::Text("API: %s", std::string(magic_enum::enum_name(ctx.state.api)).c_str());
-            if (ctx.currentFeature && ctx.currentFeature->IsInited())
-                MenuUi::Text("Upscaler: %s", ctx.currentFeature->Name().c_str());
-            card(RenderUpscalerStateMessage);
-            card(RenderUpscalerInputsSettings);
-            card(RenderLoggingSettings);
-            if (ctx.state.nvngxIniDetected)
-                MenuUi::TextWrapped("nvngx.ini detected: use OptiScaler.ini and remove the old config.");
-            break;
-        default: break;
-        }
-    });
+        break;
+
+    case 3: // Image and textures
+        RenderActiveImageSettings(ctx);
+        RenderApiAndTextureSettings(ctx);
+        RenderMagnifierSettings(ctx);
+        break;
+
+    case 4: // Interface
+        RenderThemeSettings(ctx);
+        RenderFpsOverlaySettings(ctx);
+        RenderKeybindSettings(ctx);
+        break;
+
+    default: // Advanced, with the detected-environment summary
+        MenuUi::TextWrapped("GPU: %s", ctx.primaryGpu->name.c_str());
+        MenuUi::Text("API: %s", std::string(magic_enum::enum_name(ctx.state.api)).c_str());
+        if (ctx.currentFeature && ctx.currentFeature->IsInited())
+            MenuUi::Text("Upscaler: %s", ctx.currentFeature->Name().c_str());
+        RenderUpscalerStateMessage(ctx);
+        RenderUpscalerInputsSettings(ctx);
+        RenderInitializationSettings(ctx);
+        RenderAdvancedSettings(ctx);
+        RenderQuirksSettings(ctx);
+        RenderLoggingSettings(ctx);
+        if (ctx.state.nvngxIniDetected)
+            MenuUi::TextWrapped("nvngx.ini detected: use OptiScaler.ini and remove the old config.");
+        break;
+    }
 }
 
 void MenuCommon::RenderMainMenuGraphs(RenderMenuContext& ctx)

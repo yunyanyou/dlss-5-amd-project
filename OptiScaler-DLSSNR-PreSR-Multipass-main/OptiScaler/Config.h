@@ -980,7 +980,7 @@ class Config
     // Menu
     CustomOptional<float, NoDefault> MenuScale;
     CustomOptional<std::string> MenuLanguage { "en" }; // UI only: en / zh-CN
-    CustomOptional<bool> MenuBlur { true };
+    CustomOptional<bool> MenuBlur { false };
     CustomOptional<float> MenuBlurStrength { 1.0f };
     CustomOptional<float, NoDefault> MenuWindowWidth;
     CustomOptional<float, NoDefault> MenuWindowHeight;
