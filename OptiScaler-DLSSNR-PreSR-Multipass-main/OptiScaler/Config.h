@@ -979,7 +979,7 @@ class Config
 
     // Menu
     CustomOptional<float, NoDefault> MenuScale;
-    CustomOptional<std::string> MenuLanguage { "en" }; // UI only: en / zh-CN
+    CustomOptional<std::string> MenuLanguage { "zh-CN" }; // UI only: en / zh-CN
     CustomOptional<bool> MenuBlur { true };
     CustomOptional<float> MenuBlurStrength { 1.0f };
     CustomOptional<float, NoDefault> MenuWindowWidth;
@@ -1193,7 +1193,7 @@ class Config
     CustomOptional<FrameTimeSource> FTInput { FrameTimeSource::Input };
 
     // OptiFG
-    CustomOptional<bool> FGEnabled { false };
+    CustomOptional<bool> FGEnabled { true };
     CustomOptional<bool> FGUseMutexForSwapchain { true };
     CustomOptional<bool> FGMakeMVCopy { true };
     CustomOptional<bool> FGMakeDepthCopy { true };
