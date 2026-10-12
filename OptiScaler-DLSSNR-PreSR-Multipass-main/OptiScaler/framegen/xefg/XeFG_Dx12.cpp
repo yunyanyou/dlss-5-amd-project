@@ -6,12 +6,26 @@
 #include <resource_tracking/ResTrack_dx12.h>
 
 #include <nvapi/fakenvapi.h>
+#include <hooks/Streamline_Hooks.h>
 
 #include <magic_enum.hpp>
 
 #include <DirectXMath.h>
 
 using namespace DirectX;
+
+// Interpolation count requested by the game's own frame generation setting, in XeFG's unit
+// (interpolation count == multiplier - 1, the same convention as DLSSG.MultiFrameCount and
+// sl::DLSSGOptions::numFramesToGenerate). Returns 0 when the game has not requested FG at all.
+static int GameRequestedInterpolationCount()
+{
+    // Games that create DLSS-G through raw NGX report the count directly
+    if (const int ngxCount = State::Instance().dlssgDetectedInterpolationCount; ngxCount > 0)
+        return ngxCount;
+
+    // Games that go through Streamline report it via slDLSSGSetOptions instead
+    return StreamlineHooks::GameRequestedInterpolationCount();
+}
 
 void XeFG_Dx12::xefgLogCallback(const char* message, xefg_swapchain_logging_level_t level, void* userData)
 {
@@ -837,8 +851,14 @@ bool XeFG_Dx12::Dispatch()
 
     XeFGProxy::EnableDebugFeature()(_swapChainContext, XEFG_SWAPCHAIN_DEBUG_FEATURE_TAG_INTERPOLATED_FRAMES,
                                     Config::Instance()->FGXeFGDebugView.value_or_default(), nullptr);
-    XeFGProxy::EnableDebugFeature()(_swapChainContext, XEFG_SWAPCHAIN_DEBUG_FEATURE_SHOW_ONLY_INTERPOLATION,
-                                    state.fgOnlyGenerated, nullptr);
+
+    static bool lastOnlyFG = false;
+    if (lastOnlyFG != state.fgOnlyGenerated)
+    {
+        lastOnlyFG = state.fgOnlyGenerated;
+        XeFGProxy::EnableDebugFeature()(_swapChainContext, XEFG_SWAPCHAIN_DEBUG_FEATURE_SHOW_ONLY_INTERPOLATION,
+                                        lastOnlyFG, nullptr);
+    }
 
     xefg_swapchain_frame_constant_data_t constData = {};
 
@@ -911,6 +931,10 @@ bool XeFG_Dx12::Dispatch()
         constData.frameRenderTime = 0.0f;
         break;
     }
+
+    // Report what the provider actually got, next to the period it came out of.
+    // The two numbers together are what says whether the loop above is real.
+    XeFGPacing::NoteFedFrameTime(constData.frameRenderTime);
 
     LOG_DEBUG("Reset: {}, Opti FT: {}, Source FT: {}, Set FT: {}, Opti Id: {}, Reflex Id: {}", _reset[fIndex],
               constData.frameRenderTime, _ftDelta[fIndex], constData.frameRenderTime, _frameCount,
@@ -1011,7 +1035,16 @@ void XeFG_Dx12::UpdateInterpolationCount()
         return;
     const auto config = Config::Instance();
     FrameGeneration::InterpolationRequest request;
+    // No value set means "auto": follow the multiplier of the game's own DLSSG setting, and keep
+    // using the configured default as long as no DLSSG request has been seen yet
     request.baseline = config->FGXeFGInterpolationCount.value_or_default();
+
+    if (!config->FGXeFGInterpolationCount.has_value())
+    {
+        if (const int gameCount = GameRequestedInterpolationCount(); gameCount > 0)
+            request.baseline = gameCount;
+    }
+
     request.nrOverride = config->DlssNrXeFGInterpolationCount.value_or_default();
     request.maximum = _maxInterpolationCount;
     request.liveSupported = XeFGProxy::SetNumInterpolatedFrames() != nullptr;
