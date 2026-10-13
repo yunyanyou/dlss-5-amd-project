@@ -554,7 +554,10 @@ ID3D12Resource *LmxxfBackend::FinishRecord(ID3D12GraphicsCommandList *recordCmd,
         return nullptr;
     }
     ReTrace(reTraceId, "inputs.end/split.begin", jobHandle, 0);
-    if (inlineResources) { inlineResources->RecordCapture(recordCmd); inlineResources->RecordWait(recordCmd); }
+    if (inlineResources) {
+        inlineResources->RecordCapture(recordCmd);
+        inlineResources->RecordWait(recordCmd, InlineRecording::kLmxxfWaitSlices, InlineRecording::kLmxxfWaitIterations);
+    }
     const HRESULT splitHr = inlineResources ? S_OK : LmxxfCut::TrySplitAtEvaluate(recordCmd);
     ReTrace(reTraceId, "split.end", recordCmd, splitHr);
     if (splitHr != S_OK)
@@ -672,6 +675,11 @@ ID3D12Resource* LmxxfBackend::RecordLayers(ID3D12GraphicsCommandList* cmd, const
     ReTrace(reTraceId, "session.begin", session, 0);
     if (!EnsureSession())
         return nullptr;
+    sessionOwner->inlineLimit = std::clamp(Config::Instance()->LmxxfInlineSlots.value_or_default(), 1, 5);
+    sessionOwner->ReclaimInlineLocked();
+    if (!inlineMode && !sessionOwner->inlineInFlight.empty()) {
+        SetStatus("lmxxf: finishing inline frames before split"); return nullptr;
+    }
     if (sessionOwner->InlineBusy()) { sessionOwner->InlineBypassed(); SetStatus("lmxxf: inline ahead cap reached; original frame"); return nullptr; }
     ReTrace(reTraceId, "session.end", session, 0);
     UpdateTiming();
@@ -686,6 +694,7 @@ ID3D12Resource* LmxxfBackend::RecordLayers(ID3D12GraphicsCommandList* cmd, const
     g_lastColorH.store(fi.color_height, std::memory_order_relaxed);
     fi.color = frame.colour;
     fi.color_state = static_cast<uint32_t>(frame.colourState);
+    fi.inline_slots = inlineMode ? static_cast<uint32_t>(sessionOwner->inlineLimit) : 0;
     fi.flags = LMXXF_NR_FRAME_FLAG_STRENGTH | LMXXF_NR_FRAME_FLAG_DEBUG_VIEW;
     if(first)fi.flags |= LMXXF_NR_FRAME_FLAG_FIRST_PASS;
     fi.transfer_strength = CodecStrength(Config::Instance()->DlssNrTransferStrength.value_or_default());

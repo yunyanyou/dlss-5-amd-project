@@ -245,7 +245,7 @@ static void Run(Gpu& gpu, bool timeout, bool enhanced = false, bool fullBudget =
     ID3D12Resource* sources[] {original.Get()}; D3D12_RESOURCE_STATES states[] {D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE};
     Check(proxy->BeginInlineState(1, sources, states), "inline scope");
     Require(states[0] == (enhanced ? D3D12_RESOURCE_STATE_COMMON : D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE), "enhanced source normalized");
-    resources->RecordCapture(proxy.Get()); resources->RecordWait(proxy.Get(), timeout && !fullBudget ? 0 : 64, 32768);
+    resources->RecordCapture(proxy.Get()); resources->RecordWait(proxy.Get(), timeout && !fullBudget ? 0 : In::kLmxxfWaitSlices, In::kLmxxfWaitIterations);
     In::Barrier(proxy.Get(), network.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_SOURCE);
     In::Barrier(proxy.Get(), decoded.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
     proxy->CopyResource(decoded.Get(), network.Get());
@@ -280,12 +280,22 @@ static void Run(Gpu& gpu, bool timeout, bool enhanced = false, bool fullBudget =
         Require(resources->Complete() && captured, "both queues complete");
         std::printf("frozen success=%u last slice iterations=%u\n", resources->Succeeded(), resources->LastSpinCount());
         Require(resources->Succeeded() != timeout, "frozen success decision");
-        if (fullBudget) Require(resources->LastSpinCount() == 32768, "bounded wait actually exhausted its work budget");
+        if (fullBudget) Require(resources->LastSpinCount() == In::kLmxxfWaitIterations, "bounded wait actually exhausted its work budget");
         gpu.Pixels(resources->OutputTexture(), timeout ? redHalf : blueHalf, timeout ? red : blue);
         gpu.Pixels(resources->FirstTexture(), timeout ? redHalf : blueHalf, timeout ? red : blue);
     }
     std::printf("inline %s PASS: open query, unchanged native list, current pixels, replay%s\n",
                 timeout ? "timeout" : "success", timeout ? ", late completion retention and original-frame selection" : "");
+    // Bypass must overwrite the prior neural decision, including first-pass output,
+    // without spending the polling budget or starting a network worker.
+    resources->BeforeExecute(gpu.queue.Get(), true);
+    In::Execute(gpu.queue.Get(), raw.Get()); const auto bypassTail = gpu.Signal();
+    resources->CertifyWithoutNetwork(gpu.fence.Get(), bypassTail, S_OK, true); gpu.Wait(bypassTail);
+    Require(resources->Complete() && !resources->Succeeded(), "bypass completion and frozen original decision");
+    if (!timeout || fullBudget) Require(resources->LastSpinCount() == 1, "bypass skips polling budget");
+    gpu.Pixels(resources->OutputTexture(), redHalf, red);
+    gpu.Pixels(resources->FirstTexture(), redHalf, red);
+    std::puts("inline bypass output and first-pass original pixels PASS");
     if (enhanced) {
         // NR returned to the game's enhanced SRV layout. A game transition using
         // that exact LayoutBefore must remain valid and preserve the selected pixels.

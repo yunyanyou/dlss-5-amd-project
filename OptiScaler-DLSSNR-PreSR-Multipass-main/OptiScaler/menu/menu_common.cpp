@@ -1580,11 +1580,11 @@ void MenuCommon::RenderSplashWindow(RenderMenuContext& ctx)
 
                 MenuUi::Text("OptiScaler - %s for menu",
                             Keybind::KeyNameFromVirtualKeyCode(config->ShortcutKey.value_or_default()).c_str());
-                MenuUi::TextColored(toneMapColor(ImVec4(1.0f, 1.0f, 1.0f, 0.7f)), splashMessage.c_str());
                 // Free-distribution notice (see SplashNotice.h): author asks it be kept; do not
                 // remove it for paid resale. 作者要求保留的免费声明，请勿为收费转售而删除。
                 ImGui::TextUnformatted(SplashNotice::Chinese);
                 ImGui::TextUnformatted(SplashNotice::English);
+                MenuUi::TextColored(toneMapColor(ImVec4(1.0f, 1.0f, 1.0f, 0.7f)), splashMessage.c_str());
 
                 splashSize = ImGui::GetWindowSize();
 
@@ -7678,7 +7678,14 @@ void MenuCommon::RenderMainMenuBottomBar(RenderMenuContext& ctx)
     if (MenuUi::Button("...")) ImGui::OpenPopup("Window actions");
     if (ImGui::BeginPopup("Window actions"))
     {
-        if (MenuUi::Button("Reset window layout"))
+        // An auto-sized popup has ~0 width on its first frame; MenuUi::Button would then wrap the
+        // label one character per line and the popup stays that narrow. Size each to its label.
+        const auto popupButton = [](const char* label) {
+            const float width = ImGui::CalcTextSize(MenuLocale::Label(label).c_str(), nullptr, true).x +
+                                2 * ImGui::GetStyle().FramePadding.x;
+            return MenuUi::Button(label, ImVec2(width, 0));
+        };
+        if (popupButton("Reset window layout"))
         {
             config->MenuWindowWidth.reset();
             config->MenuWindowHeight.reset();
@@ -7686,7 +7693,7 @@ void MenuCommon::RenderMainMenuBottomBar(RenderMenuContext& ctx)
             resetMenuWindow = true;
         }
 
-        if (MenuUi::Button("Wiki"))
+        if (popupButton("Wiki"))
             ImGui::GetPlatformIO().Platform_OpenInShellFn(ImGui::GetCurrentContext(), "https://github.com/optiscaler/OptiScaler/wiki");
 
         ImGui::EndPopup();

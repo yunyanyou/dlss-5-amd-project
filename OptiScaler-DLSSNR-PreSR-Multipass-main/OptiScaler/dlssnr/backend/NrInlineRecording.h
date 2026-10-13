@@ -15,6 +15,13 @@
 namespace DlssNr::Backend::InlineRecording
 {
 template<class T> using Ptr = Microsoft::WRL::ComPtr<T>;
+// Mochizuki's graphics/compute segments regress with longer wait dispatches.
+inline constexpr UINT kWaitSlices = 64;
+inline constexpr UINT kWaitIterations = 32768;
+// lmxxf benefits from fewer dispatch/barrier pairs with the same total work.
+// Neither schedule is a portable wall-clock timeout or concurrent-progress guarantee.
+inline constexpr UINT kLmxxfWaitSlices = 32;
+inline constexpr UINT kLmxxfWaitIterations = 65536;
 class StateScope {
     Ptr<Submission::IRecordingResources> state;
     std::string reason = "recording_proxy_unavailable";
@@ -224,6 +231,8 @@ public:
         capture = Buffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, true);
         sample = Buffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, true);
         decision = Buffer(D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, true);
+        control->SetName(L"NR inline atomic control"); capture->SetName(L"NR inline atomic capture");
+        sample->SetName(L"NR inline sample"); decision->SetName(L"NR inline decision");
         readback = Buffer(D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_STATE_COPY_DEST, false);
         decisionReadback = Buffer(D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_STATE_COPY_DEST, false);
         if (cached && cached->device.Get() == dev && cached->sideQueue) {
@@ -242,7 +251,8 @@ RWByteAddressBuffer target : register(u1);
 cbuffer Args : register(b0) { uint operation; uint iterations; }
 [numthreads(1,1,1)] void main() {
  uint value = 0;
- if (operation == 0 || operation == 6) { flag.Store(0, 0); }
+ // Control: 0 pending, 1 network ready, 2 bypass. Capture always starts at 0.
+ if (operation == 0 || operation == 6) { flag.Store(0, operation == 0 ? iterations : 0); }
  else if (operation == 1 || operation == 2) { flag.InterlockedExchange(0, 1, value); DeviceMemoryBarrier(); }
  else if (operation == 3) { flag.InterlockedCompareExchange(0, 0, 0, value); target.Store(0, value); }
  else if (operation == 4) {
@@ -253,7 +263,7 @@ cbuffer Args : register(b0) { uint operation; uint iterations; }
    flag.InterlockedCompareExchange(0, 0, 0, value); if (value != 0) break;
   }
   target.Store(8, spun);
- } else { flag.InterlockedCompareExchange(0, 0, 0, value); target.Store2(0, uint2(value, 0)); }
+ } else { flag.InterlockedCompareExchange(0, 0, 0, value); target.Store2(0, uint2(value == 1 ? 1 : 0, 0)); }
 })");
         D3D12_DESCRIPTOR_RANGE ranges[2] {};
         ranges[0] = {D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0, 0, 0};
@@ -288,7 +298,7 @@ cbuffer Size : register(b0) { uint width; uint height; }
     ID3D12Resource* OutputTexture() const { return output.texture.Get(); }
     ID3D12Resource* FirstTexture() const { return first.texture.Get(); }
     void RecordCapture(ID3D12GraphicsCommandList* list) { Op(list, 1, decision.Get()); UavBarrier(list, capture.Get()); }
-    void RecordWait(ID3D12GraphicsCommandList* list, UINT slices = 64, UINT iterations = 32768) {
+    void RecordWait(ID3D12GraphicsCommandList* list, UINT slices = kWaitSlices, UINT iterations = kWaitIterations) {
         // Keep the predicate immutable after this point: late completion cannot select unrecorded output.
         for (UINT i = 0; i < slices; ++i) {
             Op(list, 4, decision.Get(), iterations);
@@ -332,14 +342,14 @@ cbuffer Size : register(b0) { uint width; uint height; }
         const auto count = static_cast<const UINT*>(p)[2];
         D3D12_RANGE none {0,0}; decisionReadback->Unmap(0, &none); return count;
     }
-    void BeforeExecute(ID3D12CommandQueue* game) {
+    void BeforeExecute(ID3D12CommandQueue* game, bool bypass = false) {
         if (!Complete()) throw std::runtime_error("inline recording still executing");
         captureEvents.clear();
         started = true; uncertain = noNetwork = false; sideUncertain = true;
         finalValue = gameValue = 0; gameFence.Reset();
         scheduled.store(false, std::memory_order_release);
         Check(sampleAlloc->Reset(), "inline reset allocator"); Check(sampleList->Reset(sampleAlloc.Get(), nullptr), "inline reset list");
-        Op(sampleList.Get(), 0, sample.Get()); UavBarrier(sampleList.Get(), control.Get());
+        Op(sampleList.Get(), 0, sample.Get(), bypass ? 2 : 0); UavBarrier(sampleList.Get(), control.Get());
         Op(sampleList.Get(), 6, sample.Get()); UavBarrier(sampleList.Get(), capture.Get());
         Check(sampleList->Close(), "inline reset close"); Execute(side.Get(), sampleList.Get());
         const auto reset = ++serial; Check(side->Signal(sideFence.Get(), reset), "inline reset signal");
@@ -351,11 +361,11 @@ cbuffer Size : register(b0) { uint width; uint height; }
         if (FAILED(hr) || !fence || !value || value == UINT64_MAX) { uncertain = true; return; }
         gameFence = fence; gameValue = value;
     }
-    void CertifyWithoutNetwork(ID3D12Fence* fence, UINT64 value, HRESULT hr) {
-        // Only for an aborted producer or an unarmed partial recording: no worker
+    void CertifyWithoutNetwork(ID3D12Fence* fence, UINT64 value, HRESULT hr, bool producerSubmitted = false) {
+        // Only for a bypass, aborted producer or unarmed partial recording: no worker
         // was started. Retire the side clear and, if submitted, the game commands.
         noNetwork = true; finalValue = serial;
-        if (fence) GameSubmitted(fence, value, hr);
+        if (producerSubmitted) GameSubmitted(fence, value, hr);
         else { gameFence = sideFence; gameValue = serial; }
         scheduled.store(true, std::memory_order_release);
     }

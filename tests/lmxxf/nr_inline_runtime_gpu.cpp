@@ -30,6 +30,8 @@ int main(int argc, char** argv) {
     for (int i = 3; i < argc; ++i) threePasses |= std::strcmp(argv[i], "--three-passes") == 0;
     for (int i = 3; i < argc; ++i) unorm8 |= std::strcmp(argv[i], "--unorm8") == 0;
     Require(!aco || mochi, "ACO fixture requires Mochizuki");
+    const UINT waitSlices = mochi ? In::kWaitSlices : In::kLmxxfWaitSlices;
+    const UINT waitIterations = mochi ? In::kWaitIterations : In::kLmxxfWaitIterations;
     // The inline output is RGBA16F; an R8G8B8A8_UNORM frame is compared through its 8-bit values.
     auto Hash = [&](ID3D12Device* d, ID3D12CommandQueue* q, ID3D12Resource* t) {
         return unorm8 ? HashTextureUnorm8(d, q, t) : HashTexture(d, q, t);
@@ -67,7 +69,7 @@ int main(int argc, char** argv) {
         ok(defaults(&controls), "ACO defaults"); controls.aco_mode = 1; ok(set(context, &controls), "ACO request before device");
     }
     ok(api.PrepareSession(context), "PrepareSession");
-    auto owner = Own::SessionOwner::Create(api, context); Require(bool(owner), "module/session owner");
+    auto owner = Own::SessionOwner::Create(api, context, Own::SessionOwner::kInlineAhead); Require(bool(owner), "module/session owner");
     if (!mochi) { LmxxfNrTimings timing {sizeof timing}; ok(api.GetTimings(context, &timing), "enable physical HIP event timing"); }
     const UINT width = large ? 2560 : (mochi ? 256 : 1280), height = large ? 1440 : (mochi ? 256 : 720);
     D3D12_RESOURCE_DESC desc {}; desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
@@ -96,7 +98,7 @@ int main(int argc, char** argv) {
         Check(l->Close(), "motion close"); In::Execute(game.Get(), l.Get()); WaitQueue(device.Get(), game.Get());
     }
     auto mzPrepare = reinterpret_cast<PFN_MochizukiNrPrepareFrame>(GetProcAddress(dll, "MochizukiNrPrepareFrame"));
-    auto prepare = [&](ID3D12GraphicsCommandList* list, UINT64 tag = 1, ID3D12Resource* source = nullptr) {
+    auto prepare = [&](ID3D12GraphicsCommandList* list, UINT64 tag = 1, ID3D12Resource* source = nullptr, bool inlineFrame = true) {
         if (!source) source = colour.Get();
         LmxxfNrJob job {}; job.struct_size = sizeof job;
         const auto deadline = GetTickCount64() + 180000;
@@ -120,6 +122,7 @@ int main(int argc, char** argv) {
                 f.color = source; f.color_width = width; f.color_height = height;
                 f.color_state = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
                 f.flags = LMXXF_NR_FRAME_FLAG_STRENGTH;
+                f.inline_slots = inlineFrame ? static_cast<unsigned>(owner->inlineLimit) : 0;
                 f.transfer_strength = f.color_strength = f.model_scale = f.paper_white = f.pre_exposure = f.exposure_scale = 1;
                 rc = api.PrepareFrame(context, &f, &job);
             }
@@ -141,7 +144,7 @@ int main(int argc, char** argv) {
     Check(device->CreateCommandAllocator(q.Type, IID_PPV_ARGS(&ca)), "consumer allocator");
     Check(device->CreateCommandList(0, q.Type, pa.Get(), nullptr, IID_PPV_ARGS(&producer)), "producer");
     Check(device->CreateCommandList(0, q.Type, ca.Get(), nullptr, IID_PPV_ARGS(&consumer)), "consumer");
-    auto baseline = prepare(producer.Get());
+    auto baseline = prepare(producer.Get(), 1, nullptr, false);
     ok(api.RecordInputs(context, baseline.handle, producer.Get()), "baseline inputs"); Check(producer->Close(), "producer close");
     ok(api.RecordOutputs(context, baseline.handle, consumer.Get()), "baseline outputs"); Check(consumer->Close(), "consumer close");
     ok(api.BeginRecordingExecution(context, baseline.handle, game.Get()), "baseline begin");
@@ -164,7 +167,7 @@ int main(int argc, char** argv) {
     Check(device->CreateQueryHeap(&query, IID_PPV_ARGS(&queries)), "query heap");
     proxy->BeginQuery(queries.Get(), D3D12_QUERY_TYPE_PIPELINE_STATISTICS, 0);
     auto job = prepare(proxy.Get(), 2);
-    auto resources = std::make_shared<In::Resources>(device.Get(), colour.Get(), static_cast<ID3D12Resource*>(job.private_output), nullptr, width, height);
+    auto resources = std::make_shared<In::Resources>(device.Get(), colour.Get(), static_cast<ID3D12Resource*>(job.private_output), nullptr, width, height, std::shared_ptr<In::Pipelines>{});
     owner->inlinePipelines = resources->PipelineCache();
     std::shared_ptr<Own::Lease> lease;
     {
@@ -173,7 +176,7 @@ int main(int argc, char** argv) {
         Check(proxy->BeginInlineState(1, sources, states), "state scope");
         lease = Own::Attach(owner, job.handle, proxy.Get(), resources); Require(bool(lease), "inline ownership");
         ok(api.RecordInputs(context, job.handle, proxy.Get()), "inline inputs");
-        resources->RecordCapture(proxy.Get()); resources->RecordWait(proxy.Get(), timeoutMode ? 0 : 64);
+        resources->RecordCapture(proxy.Get()); resources->RecordWait(proxy.Get(), timeoutMode ? 0 : waitSlices, waitIterations);
         ok(api.RecordOutputs(context, job.handle, proxy.Get()), "inline outputs");
         resources->RecordSelect(proxy.Get(), states[0]); proxy->EndInlineState(); lease->ready = true;
         Require(proxy->IsSplitIneligible(), "query remains open after inline NR");
@@ -206,6 +209,54 @@ int main(int argc, char** argv) {
         const auto selected = timeoutMode ? originalHash : expected;
         Require(Hash(device.Get(), queue, resources->OutputTexture()) == selected, "inline output equals selected current-frame source");
         std::printf("%s actual inline replay=%u timeout=%u hash=%016llx PASS\n", mochi ? "Vulkan" : "HIP", replay, timeoutMode, selected);
+    }
+    // Saturated admission on a completed retained recording must preserve the
+    // real mixed game batch, select original, then recover when a slot is free.
+    {
+        std::vector<std::shared_ptr<In::Resources>> reservations;
+        const auto savedLimit = owner->inlineLimit;
+        {
+            std::lock_guard lock(Sub::RecordingMutex());
+            owner->ReclaimInlineLocked();
+            for (size_t n = 0; n < savedLimit; ++n) {
+                auto held = std::make_shared<In::Resources>(device.Get(), colour.Get(),
+                    static_cast<ID3D12Resource*>(job.private_output), nullptr, width, height, owner->inlinePipelines);
+                Require(owner->AdmitInline(held), "reserve capacity for replay bypass"); reservations.push_back(held);
+            }
+            owner->inlineLimit = 1; // Shrinking must preserve old reservations too.
+        }
+        Ptr<ID3D12CommandAllocator> ordinaryAllocator; Ptr<ID3D12GraphicsCommandList> ordinary;
+        Check(device->CreateCommandAllocator(q.Type, IID_PPV_ARGS(&ordinaryAllocator)), "bypass ordinary allocator");
+        Check(device->CreateCommandList(0, q.Type, ordinaryAllocator.Get(), nullptr, IID_PPV_ARGS(&ordinary)), "bypass ordinary list");
+        Check(ordinary->Close(), "bypass ordinary close");
+        ID3D12CommandList* batch[] {ordinary.Get(), proxy.Get()};
+        const auto calls = batchCalls, lists = batchLists;
+        const auto admitted = owner->inlineAdmitted, bypassed = owner->inlineBypassed;
+        Sub::Hooks::ExecuteExpanded(game.Get(), 2, batch, nullptr, nullptr, TraceBatch);
+        WaitQueue(device.Get(), game.Get());
+        Require(batchCalls == calls + 1 && batchLists == lists + 2, "saturated replay preserves mixed native batch");
+        Require(resources->Complete() && !resources->Succeeded() && !lease->begun && !owner->failed,
+                "capacity bypass completes without runtime failure");
+        Require(owner->inlineAdmitted == admitted && owner->inlineBypassed == bypassed + 1 &&
+                owner->inlineInFlight.size() == savedLimit && owner->inlineEnqueueOrder.empty(), "bypass does not admit network work");
+        Require(Hash(device.Get(), game.Get(), resources->OutputTexture()) == originalHash, "capacity bypass selects original pixels");
+        if (!timeoutMode) Require(resources->LastSpinCount() == 1, "capacity bypass skips long wait");
+        {
+            std::lock_guard lock(Sub::RecordingMutex());
+            for (auto& held : reservations) owner->ForgetUnstarted(held);
+            owner->inlineLimit = savedLimit;
+        }
+        Check(proxy->ExecuteOn(other.Get()), "recover replay after freeing slots"); WaitQueue(device.Get(), other.Get());
+        const auto until = GetTickCount64() + 10000;
+        for (;;) {
+            { std::lock_guard lock(Sub::RecordingMutex()); if (resources->Complete() && !lease->begun) break; }
+            Require(GetTickCount64() < until, "recovered worker completion"); Sleep(1);
+        }
+        Require(!owner->failed && resources->Succeeded() != timeoutMode && owner->inlineAdmitted == admitted + 1,
+                "replay recovers normal admission");
+        Require(Hash(device.Get(), other.Get(), resources->OutputTexture()) == (timeoutMode ? originalHash : expected),
+                "recovered replay equals split baseline");
+        std::puts("capacity bypass: mixed batch, original pixels, shrink, bounded slots, recovery vs split PASS");
     }
     // Successful Reset can invalidate a submitted recording before its capture
     // reaches the GPU. The worker must still enqueue the captured job, certify
@@ -254,7 +305,7 @@ int main(int argc, char** argv) {
             Check(list->BeginInlineState(1, sources, states), "continuous state");
             auto nextLease = Own::Attach(owner, next.handle, list.Get(), in); Require(bool(nextLease), "continuous lease");
             ok(api.RecordInputs(context, next.handle, list.Get()), "continuous inputs");
-            in->RecordCapture(list.Get()); in->RecordWait(list.Get(), timeoutMode ? 0 : 64);
+            in->RecordCapture(list.Get()); in->RecordWait(list.Get(), timeoutMode ? 0 : waitSlices, waitIterations);
             ok(api.RecordOutputs(context, next.handle, list.Get()), "continuous outputs");
             in->RecordSelect(list.Get(), states[0]); nextLease->ready = true;
             list->EndInlineState(); Check(list->Close(), "continuous close");
@@ -285,10 +336,11 @@ int main(int argc, char** argv) {
         std::printf("inline temporal history consumed=%u%% PASS\n", info.history_consumed_pct);
     }
     if (ahead && !temporalRequested) {
-        constexpr unsigned kPatterns = 4;
-        Ptr<ID3D12Resource> patterns[kPatterns];
-        uint64_t originalHashByPattern[kPatterns] {};
-        uint64_t neuralHashByPattern[kPatterns] {};
+        const unsigned kPatterns = mochi ? 4 : 5;
+        owner->inlineLimit = kPatterns;
+        Ptr<ID3D12Resource> patterns[5];
+        uint64_t originalHashByPattern[5] {};
+        uint64_t neuralHashByPattern[5] {};
         for (unsigned i = 0; i < kPatterns; ++i) {
             Check(device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &desc,
                 D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, nullptr, IID_PPV_ARGS(&patterns[i])), "ahead colour");
@@ -344,7 +396,7 @@ int main(int argc, char** argv) {
                     recorded = Own::Attach(owner, job.handle, list.Get(), resources);
                     Require(bool(recorded), "ahead baseline lease");
                     ok(api.RecordInputs(context, job.handle, list.Get()), "ahead baseline inputs");
-                    resources->RecordCapture(list.Get()); resources->RecordWait(list.Get(), 64);
+                    resources->RecordCapture(list.Get()); resources->RecordWait(list.Get(), waitSlices, waitIterations);
                     ok(api.RecordOutputs(context, job.handle, list.Get()), "ahead baseline outputs");
                     resources->RecordSelect(list.Get(), states[0]); recorded->ready = true;
                     list->EndInlineState(); Check(list->Close(), "ahead baseline close");
@@ -365,7 +417,7 @@ int main(int argc, char** argv) {
                 std::shared_ptr<In::Resources> resources;
                 std::shared_ptr<Own::Lease> lease;
             };
-            Frame frames[kPatterns] {};
+            Frame frames[5] {};
             for (unsigned i = 0; i < n; ++i) {
                 Check(device->CreateCommandAllocator(q.Type, IID_PPV_ARGS(&frames[i].alloc)), "ahead allocator");
                 Check(device->CreateCommandList(0, q.Type, frames[i].alloc.Get(), nullptr, IID_PPV_ARGS(&frames[i].raw)), "ahead native");
@@ -382,7 +434,7 @@ int main(int argc, char** argv) {
                     Require(bool(frames[i].lease), "ahead lease");
                     ok(api.RecordInputs(context, job.handle, frames[i].list.Get()), "ahead inputs");
                     frames[i].resources->RecordCapture(frames[i].list.Get());
-                    frames[i].resources->RecordWait(frames[i].list.Get(), timeoutMode ? 0 : 64);
+                    frames[i].resources->RecordWait(frames[i].list.Get(), timeoutMode ? 0 : waitSlices, waitIterations);
                     ok(api.RecordOutputs(context, job.handle, frames[i].list.Get()), "ahead outputs");
                     frames[i].resources->RecordSelect(frames[i].list.Get(), states[0]);
                     frames[i].lease->ready = true;
@@ -457,7 +509,7 @@ int main(int argc, char** argv) {
             }
             std::printf("inline ahead %u timeout=%u PASS\n", n, timeoutMode);
         };
-        burst(2); burst(3); burst(4);
+        burst(2); burst(3); burst(4); if (!mochi) burst(5);
         // Game order: submit frame 0, then record frame 1 while that execution is still open.
         {
             struct Frame {
@@ -483,7 +535,7 @@ int main(int argc, char** argv) {
                 Require(bool(frames[i].lease), "stagger lease");
                 ok(api.RecordInputs(context, job.handle, frames[i].list.Get()), "stagger inputs");
                 frames[i].resources->RecordCapture(frames[i].list.Get());
-                frames[i].resources->RecordWait(frames[i].list.Get(), timeoutMode ? 0 : 64);
+                frames[i].resources->RecordWait(frames[i].list.Get(), timeoutMode ? 0 : waitSlices, waitIterations);
                 ok(api.RecordOutputs(context, job.handle, frames[i].list.Get()), "stagger outputs");
                 frames[i].resources->RecordSelect(frames[i].list.Get(), states[0]);
                 frames[i].lease->ready = true;

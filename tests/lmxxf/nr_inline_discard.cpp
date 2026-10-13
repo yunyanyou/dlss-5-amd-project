@@ -8,6 +8,7 @@
 #include <thread>
 #include "OptiScaler-DLSSNR-PreSR-Multipass-main/OptiScaler/dlssnr/backend/LmxxfRecordingOwner.h"
 #include "OptiScaler-DLSSNR-PreSR-Multipass-main/OptiScaler/dlssnr/submission/SplitEligibility.h"
+#include "OptiScaler-DLSSNR-PreSR-Multipass-main/OptiScaler/dlssnr/submission/SubmissionHooks.h"
 
 template<class T> using Ptr=Microsoft::WRL::ComPtr<T>;
 namespace Own=DlssNr::Backend::LmxxfRecording;
@@ -21,12 +22,12 @@ static void ReportFailure(const Own::SessionOwner::Failure& failure) noexcept {
     ++failureReports;firstFailure=failure;
 }
 struct Runtime {
-    unsigned invalidated=0,collected=0,enqueueFailures=0,ended=0;
+    unsigned invalidated=0,collected=0,enqueueFailures=0,ended=0,begins=0,resets=0;
     static int32_t Invalidate(void* context,void*) {++static_cast<Runtime*>(context)->invalidated;return LMXXF_NR_OK;}
     static int32_t Collect(void* context,void*) {++static_cast<Runtime*>(context)->collected;return LMXXF_NR_OK;}
-    static int32_t Reset(void*) {return LMXXF_NR_OK;}
+    static int32_t Reset(void* context) {++static_cast<Runtime*>(context)->resets;return LMXXF_NR_OK;}
     static int32_t Destroy(void*) {return LMXXF_NR_OK;}
-    static int32_t Begin(void*,void*,void*) {return LMXXF_NR_OK;}
+    static int32_t Begin(void* context,void*,void*) {++static_cast<Runtime*>(context)->begins;return LMXXF_NR_OK;}
     static int32_t Enqueue(void* context,void*,void*) {++static_cast<Runtime*>(context)->enqueueFailures;return LMXXF_NR_FAILED;}
     static int32_t Error(char* out,uint32_t size) {
         if(size)std::snprintf(out,size,"injected network enqueue failure");return LMXXF_NR_OK;
@@ -157,10 +158,150 @@ int main() try {
     {std::lock_guard lock(Sub::RecordingMutex());owner->PopInlineEnqueue(reinterpret_cast<void*>(199));}
     waiter.join();Require(woke,"pop notifies queued worker");
     {std::lock_guard lock(Sub::RecordingMutex());owner->PopInlineEnqueue(turn->job);}
+    // Cancel a queued turn before its actual threadpool callback starts. There
+    // is deliberately no capture: polling before the turn would spend 10 s on
+    // the GPU and misreport this as a capture failure instead of order failure.
+    Runtime cancelledRuntime;
+    auto cancelledOwner=std::make_shared<Own::SessionOwner>();
+    cancelledOwner->api=owner->api;cancelledOwner->context=&cancelledRuntime;
+    auto cancelledResources=std::make_shared<In::Resources>(device.Get(),original.Get(),candidate.Get(),
+        nullptr,8,8,owner->inlinePipelines);
+    cancelledResources->BeforeExecute(game.Get());
+    auto cancelled=std::make_shared<Own::Lease>(cancelledOwner,reinterpret_cast<void*>(299),Sub::RecordingIdentity{});
+    cancelled->inlineResources=cancelledResources;cancelled->begun=cancelled->ready=true;
+    {
+        std::lock_guard lock(Sub::RecordingMutex());
+        cancelledOwner->NoteInlineEnqueue(cancelled->job);
+        cancelled->ProducerSubmitted({});
+        cancelledOwner->PopInlineEnqueue(cancelled->job);
+    }
+    const auto cancelUntil=GetTickCount64()+3000;
+    for(;;) {
+        bool done=false;
+        {std::lock_guard lock(Sub::RecordingMutex());done=cancelled->inlineEnqueueFinished;}
+        if(done)break;
+        Require(GetTickCount64()<cancelUntil,"cancelled turn skips capture polling");Sleep(1);
+    }
+    Require(cancelledRuntime.enqueueFailures==0 && cancelledOwner->failed &&
+        std::strcmp(cancelledOwner->failure.phase,"inline order")==0,"cancelled turn reports order, not capture");
+    cancelledResources->CertifyWithoutNetwork(nullptr,0,E_FAIL);
+    while(!cancelledResources->Complete()) {
+        Require(GetTickCount64()<cancelUntil,"cancelled callback side tail completes");Sleep(1);
+    }
+    std::puts("INLINE_CANCELLED_TURN_OK no capture polling or network enqueue");
+    // The shared-buffer backend admits one reservation, including before submit.
+    // Completed replays must reacquire a slot for NR, but a full cap must not
+    // drop their original game batch. Bypass retains both queue proofs.
+    Runtime admissionRuntime;
+    auto admission=std::make_shared<Own::SessionOwner>();
+    admission->api=owner->api;admission->context=&admissionRuntime;
+    auto makeResources=[&] { return std::make_shared<In::Resources>(device.Get(),original.Get(),candidate.Get(),
+        nullptr,8,8,owner->inlinePipelines); };
+    auto first=makeResources(), second=makeResources();
+    Require(admission->inlineLimit==1,"shared-buffer backend defaults to one slot");
+    Require(admission->AdmitInline(first)&&admission->InlineBusy(),"unsubmitted frame reserves shared buffers");
+    Require(!admission->AdmitInline(second),"second capture cannot overwrite reserved shared buffers");
+    admission->ForgetUnstarted(first);
+    Require(admission->AdmitInline(second),"discard releases single-frame capacity");
+    second->BeforeExecute(game.Get());
+    Ptr<ID3D12Fence> heldTail;Check(device->CreateFence(0,D3D12_FENCE_FLAG_NONE,IID_PPV_ARGS(&heldTail)),"admission game tail");
+    second->NetworkQueued(false);second->GameSubmitted(heldTail.Get(),1,S_OK);
+    Require(!admission->AdmitInline(first),"timeout side completion cannot release an unfinished game tail");
+    Check(heldTail->Signal(1),"admission game complete");
+    const auto admissionUntil=GetTickCount64()+5000;
+    while(!second->Complete()){Require(GetTickCount64()<admissionUntil,"admission side complete");Sleep(1);}
+    Require(admission->AdmitInline(first),"both completions release shared buffers");
+    auto replay=std::make_shared<Own::Lease>(admission,reinterpret_cast<void*>(300),Sub::RecordingIdentity{});
+    replay->inlineResources=second;
+    Sub::RecordingExecution replayExecution{};replayExecution.queue=game.Get();replayExecution.serial=1;
+    Ptr<ID3D12CommandAllocator> batchAlloc,ordinaryAlloc;
+    Ptr<ID3D12GraphicsCommandList> batchRaw,ordinaryRaw;
+    Ptr<Sub::CommandListProxy> batchProxy;
+    Check(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&batchAlloc)),"batch allocator");
+    Check(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&ordinaryAlloc)),"ordinary allocator");
+    Check(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,batchAlloc.Get(),nullptr,IID_PPV_ARGS(&batchRaw)),"batch native");
+    Check(device->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,ordinaryAlloc.Get(),nullptr,IID_PPV_ARGS(&ordinaryRaw)),"ordinary native");
+    Check(Sub::CommandListProxy::Create(device.Get(),batchAlloc.Get(),batchRaw.Get(),&batchProxy),"batch proxy");
+    replay->identity=batchProxy->Identity();replayExecution.identity=replay->identity;
+    replay->ready=true;
+    Check(batchProxy->ObserveRecording(replay),"observe completed recording");
+    second->RecordCapture(batchProxy.Get());second->RecordWait(batchProxy.Get());
+    second->RecordSelect(batchProxy.Get(),D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    Check(batchProxy->Close(),"batch close");Check(ordinaryRaw->Close(),"ordinary close");
+    Ptr<ID3D12Fence> gate;Check(device->CreateFence(0,D3D12_FENCE_FLAG_NONE,IID_PPV_ARGS(&gate)),"batch gate");
+    Check(game->Wait(gate.Get(),1),"hold game batch");
+    static unsigned rawCalls=0,rawLists=0;
+    ID3D12CommandList* lists[]{ordinaryRaw.Get(),batchProxy.Get()};
+    const auto failures=Sub::g_submissionFailures.load();
+    Sub::Hooks::ExecuteExpanded(game.Get(),2,lists,nullptr,nullptr,
+        [](ID3D12CommandQueue* queue,UINT count,ID3D12CommandList*const* native){
+            ++rawCalls;rawLists+=count;queue->ExecuteCommandLists(count,native);
+        });
+    Require(rawCalls==1&&rawLists==2&&Sub::g_submissionFailures.load()==failures,"full cap preserves entire original batch");
+    Require(!second->Complete()&&!replay->begun&&admission->inlineEnqueueOrder.empty(),"bypass retains game tail without worker");
+    Require(admissionRuntime.begins==0&&admissionRuntime.ended==0&&admissionRuntime.enqueueFailures==0,
+        "bypass never enters runtime recording execution");
+    Require(admission->inlineInFlight.size()==1&&admission->inlineInFlight.front()==first&&admission->inlineBypassed==1,
+        "bypass preserves existing reservation and cap");
+    Require(batchProxy->ExecuteOn(game.Get())==E_PENDING&&!second->Complete()&&!admission->failed,
+        "overlapping bypass replay cannot reset or retire the pending game execution");
+    Check(gate->Signal(1),"release game batch");
+    const auto bypassUntil=GetTickCount64()+5000;
+    while(!second->Complete()){Require(GetTickCount64()<bypassUntil,"bypass dual completion");Sleep(1);}
+    Require(!second->Succeeded()&&second->LastSpinCount()==1&&!admission->failed,"bypass exits wait immediately and selects original");
+    // A later rejected list can abort the batch after this bypass was prepared.
+    replayExecution.serial=100;
+    Check(replay->BeforeExecute(replayExecution),"prepare bypass without submit");
+    const auto resets=admissionRuntime.resets;
+    replayExecution.status=E_FAIL;replay->Executed(replayExecution);
+    while(!second->Complete()){Require(GetTickCount64()<bypassUntil,"unsubmitted bypass reset tail");Sleep(1);}
+    Require(admissionRuntime.resets==resets,"unsubmitted bypass does not reset history");
+    admission->ForgetUnstarted(first);
+    replayExecution.serial=101;
+    Check(replay->BeforeExecute(replayExecution),"replay after capacity released");
+    Require(admission->inlineInFlight.size()==1&&admission->InlineBusy(),"replay reserves capacity again");
+    replayExecution.status=E_FAIL;replay->Executed(replayExecution); // No producer: certify the reset only.
+    const auto replayUntil=GetTickCount64()+5000;
+    while(!second->Complete()){Require(GetTickCount64()<replayUntil,"aborted replay reset completes");Sleep(1);}
+    admission->ReclaimInlineLocked();Require(!admission->InlineBusy(),"aborted replay releases capacity");
+    Require(admissionRuntime.begins==1&&admissionRuntime.ended==1,"available capacity restores runtime execution");
+    // Reset while a bypass batch is pending cannot collect its private buffers.
+    Require(admission->AdmitInline(first),"reserve capacity before bypass Reset");
+    Check(game->Wait(gate.Get(),2),"hold bypass before Reset");
+    Check(batchProxy->ExecuteOn(game.Get()),"bypass before Reset");
+    {std::lock_guard lock(Sub::RecordingMutex());Own::Registry().push_back(replay);}
+    Ptr<ID3D12CommandAllocator> replacement;
+    Check(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&replacement)),"replacement allocator");
+    Check(batchProxy->Reset(replacement.Get(),nullptr),"Reset pending bypass");
+    {std::lock_guard lock(Sub::RecordingMutex());Own::CollectLocked();Require(replay->job&&!second->Complete(),"Reset pins bypass buffers until game tail");}
+    Check(gate->Signal(2),"release bypass Reset");
+    const auto resetUntil=GetTickCount64()+5000;
+    for(;;){
+        {std::lock_guard lock(Sub::RecordingMutex());Own::CollectLocked();if(!replay->job)break;}
+        Require(GetTickCount64()<resetUntil,"bypass Reset collection");Sleep(1);
+    }
+    Check(batchProxy->Close(),"replacement close");
+    admission->ForgetUnstarted(first);
+    std::puts("INLINE_REPLAY_BYPASS_OK original batch, bounded slots, no worker, recovery, Reset lifetime");
+    admission->inlineLimit=Own::SessionOwner::kInlineAhead;
+    std::vector<std::shared_ptr<In::Resources>> privateFrames;
+    for(unsigned n=0;n<4;++n) {
+        privateFrames.push_back(makeResources());
+        Require(admission->AdmitInline(privateFrames.back()),"private buffers retain four-frame admission");
+    }
+    Require(!admission->AdmitInline(first),"private buffer fifth reservation rejected");
+    admission->inlineLimit=1;
+    Require(admission->inlineInFlight.size()==4&&!admission->AdmitInline(first),"shrink preserves existing reservations and blocks new work");
+    admission->inlineLimit=5;
+    Require(admission->AdmitInline(first),"grow admits fifth frame immediately");
+    Require(!admission->AdmitInline(second),"five-slot cap");
+    admission->ForgetUnstarted(first);
+    for(auto& frame:privateFrames)admission->ForgetUnstarted(frame);
+    std::puts("INLINE_ADMISSION_OK shared single slot, dual completion, retained replay, private four slots");
     // Truly unknown game submission is retained, but cannot become actionable
     // merely by rearming a collection timer every 100 ms.
     auto unknown=std::make_shared<In::Resources>(device.Get(),original.Get(),candidate.Get(),nullptr,8,8,owner->inlinePipelines);
-    unknown->BeforeExecute(game.Get());unknown->NetworkQueued(false);unknown->GameSubmitted(delayedGame.Get(),1,E_FAIL);
+    unknown->BeforeExecute(game.Get(),true);unknown->CertifyWithoutNetwork(nullptr,0,E_FAIL,true);
     auto retained=std::make_shared<Own::Lease>(owner,reinterpret_cast<void*>(201),Sub::RecordingIdentity{});
     retained->inlineResources=unknown;retained->invalidated=true;
     {

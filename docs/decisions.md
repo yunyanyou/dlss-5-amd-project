@@ -1,3 +1,12 @@
+## 2026-10-13：lmxxf inline 使用私有捕获，槽位即时可选
+
+- `NrInline` 仍默认关闭；lmxxf 勾选后才显示 `LmxxfInlineSlots`，范围 1–5、默认 3。参考 Daniel 的即时槽位配置，但不复用其网络资源所有权假设。
+- 一份网络与共享计算区；每个录制独占输入快照和结果。全部共享 codec/history/HIP 工作在 COMPUTE side queue 上串行，游戏捕获可提前。缩容保留在途资源，切回 split 先排空，重放重新准入。
+- 整包 ABI 升至 6。固定上游 pin 和模块不变，新增 opt-in compute recording 补丁并严格重放验证。
+- 离线确认多槽相对单槽有收益，但 split 仍更快；4/5 槽留给用户实测选择，不承诺增加槽数没有成本。方法、数字及游戏验证边界见 [实测记录](lmxxf-inline-slots.md)。
+- 同日测量修订：夹具从整批排空改为连续补帧，并移除 paced 五槽的额外等待；撤回首轮“3 槽为不限帧最优点”的判断。实际 2560×1440 下 inline 不限帧 2 槽优先、目标 60Hz 时 3 槽成功处理率较高；游戏选型仍需同会话实测。
+- Mochizuki 的 ACO 独立开关不受任何 reset 按钮覆盖，包括已保存的下次启动选项。
+
 ## 2026-10-12：外部审查修复的完成证明与发布来源
 
 - 内联失败也必须追加成功的 side tail Signal，并同时等实际 game tail；runtime 的 HIP/Vulkan 回收证书独立保留。未知提交继续持有资源，不周期轮询无法产生的新证据。
@@ -794,3 +803,34 @@ GPU 等待仍是 64×32768 的工作预算，未扩大预算，也不承诺通�
 验证：真实 WARP/硬件丢弃与迟到结果冻结；原生/ACO 的重放、提前 Reset、2–4 ahead、
 2560×1440 时序和三层（实际369 dispatch）通过。提交第2/3阶段失败仍拒绝单凭D3D12
 尾部回收；官方173文件闭包和10项补丁回放一致。未做其他GPU/驱动与完整游戏验收。
+
+## 2026-10-11: Mochizuki adopts upstream first and minimizes local divergence
+
+Use the official Mochizuki core, driver fixes and build policies by default.
+Delete local patches superseded by upstream; move host-specific configuration,
+recording ownership and package policy into the product adapter. A previous local
+implementation or different API is not sufficient reason to retain a fork.
+Generic missing capabilities and demonstrated local improvements should become
+small, default-preserving upstream contributions, with reproducible evidence and
+preserved attribution. Necessary pending extensions remain explicit, replayable
+patches rather than unexplained vendor edits. Preserve required product behavior
+through equivalent APIs; reducing divergence does not authorize silent feature loss.
+Implementation and its internal validation run continuously, followed by one final
+review. Public PR submission and release remain separate from this planning decision.
+
+## 2026-10-13：减少 inline 等待分段，消除额外多槽调度损失
+
+lmxxf 宿主等待由 64×32768 调整为 32×65536；总循环工作预算仍为 2097152，
+但不代表相同的毫秒超时或通用 TDR 安全界限。Mochizuki 的 graphics/compute 分段
+路径在 32 段下实测回落，因此保留 64×32768，不能直接推广 lmxxf 的参数。
+本项仅取代上文 2026-10-12 的 lmxxf 参数；槽位上限、默认值、私有输入/结果、
+冻结选择与双尾回收契约保持不变。
+
+依据同进程正反序、等预算对照，减少等待 dispatch/UAV barrier 对可消除已定位的
+lmxxf 额外多槽吞吐回落；更少的 16/8 段没有进一步收益，因此采用 32 段。
+这是源代码层面的受控因果定位，尚未由 GPU trace 确定具体 WDDM/CU/cache 机制。
+控制资源池化和缩小录制锁范围不能消除该回落，不混入本次修复。
+
+验证、两种 Mochizuki 路径及剩余 split 差距见 [离线槽位对比](lmxxf-inline-slots.md)。
+共用路径须覆盖取消、重放、满槽旁路、超时冻结、失败回收与真实 GPU；不能以限制为
+2–3 槽代替调度修复。inline 继续默认关闭，游戏和其它驱动验收另行进行。
