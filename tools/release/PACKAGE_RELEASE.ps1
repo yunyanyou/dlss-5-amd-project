@@ -282,7 +282,7 @@ RunBeforeSR=true
 ; Optional XeFG override while NR is actually running. 0/auto = no override.
 ; Generated-frame count: 1 = 2X, 2 = 3X, 3 = 4X, etc. Requires live multiplier support.
 ; Never rewrites [XeFG] InterpolationCount. Capability limits affect only the applied value.
-XeFGInterpolationCount=auto
+XeFGInterpolationCount=2
 
 ; Selects the neural rendering backend
 ; lmxxf  - Open-source AMD HIP neural rendering pipeline (using native-game-tiled-assets)

@@ -267,7 +267,7 @@ class Config
     // DLSS Neural Rendering: a detail-synthesis pass over the upscaler's output. Off by default -- it is
     // an undocumented feature driven directly through its snippet, not something NVIDIA exposes.
     CustomOptional<bool> DlssNrEnabled { false };
-    CustomOptional<int> DlssNrXeFGInterpolationCount { 2 };
+    CustomOptional<int> DlssNrXeFGInterpolationCount { 0 };
     // Run the NR pass on the upscaler's colour input, at render resolution, immediately before SR.
     // Off selects experimental SR -> NR. Mochizuki keeps render-resolution motion and the runtime
     // scales it. Daniel and lmxxf resample those guides onto the output grid in the host.
@@ -1262,7 +1262,7 @@ class Config
     static constexpr int32_t XeFGMaxInterpolations = 7;
 
     CustomOptional<bool> FGXeFGIgnoreInitChecks { false };
-    CustomOptional<int> FGXeFGInterpolationCount { 3 };
+    CustomOptional<int> FGXeFGInterpolationCount { 1 };
     // Unlocks multi frame generation on non-Intel GPUs. Intel gates it on the provider build, not on
     // the hardware, so libxess_fg.dll and libxell.dll are patched in memory once loaded; the files on
     // disk are not changed. A build that is not recognised is left as it is.
