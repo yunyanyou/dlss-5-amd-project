@@ -305,7 +305,7 @@ NrConvenience=1
 ; Optional asynchronous NR/codec/effects measurement; default off.
 ; Ins: Measure NR performance. Page Up opens the FPS overlay; Page Down changes detail.
 ; Logging also needs measurement and file logging; at most one summary per five seconds.
-NrTimingEnabled=false
+NrTimingEnabled=true
 NrTimingLog=false
 ; Shared final-output blend for either AMD backend. 0..2, default 1.
 ; 0 shows the original but still runs NR; disable NR to save model computation.
@@ -343,9 +343,9 @@ NrResidualEdgeProtection=0.0
 ; Shared temporal residual filtering; requires motion/depth. Off by default.
 ; May soften moving detail or trail; adds GPU work and history memory.
 ; Alpha 0..0.95; threshold 0..16 (compressed-colour units of 1/255). Either zero bypasses it.
-NrStabilizerEnabled=false
+NrStabilizerEnabled=true
 NrStabilizerAlpha=0.8
-NrStabilizerThreshold=4.0
+NrStabilizerThreshold=2.0
 
 ; lmxxf network style: 0 / 1 / 2. Default 1; other upstream numeric changes can still change the image.
 ; Separate from Daniel Style and shared NrOverallIntensity. Live change rebuilds the network.
@@ -369,7 +369,7 @@ DLSS5_FAST_NUMERIC=true
 DLSS5_MULTI_PASS=1
 ; Only at 3 passes: true runs two real network passes then predicts the third locally (lossy, default true).
 ; false runs three real passes. No effect at 1/2 passes. Changing this rebuilds the network.
-DLSS5_MULTI_PASS_PREDICT=true
+DLSS5_MULTI_PASS_PREDICT=false
 ; At 2/3 passes, keep first-pass skin tones using a color heuristic (not segmentation). Default false.
 DLSS5_MULTI_PASS_SKIN_PROTECT=false
 ; Ins > Advanced Kernels: both skip lists are adjacent, with no extra subgroup.
@@ -485,7 +485,7 @@ AmdModelScale=1
 ; Encoding format mode for model inputs/outputs
 ; 0 = FP16 (standard), 1 = FP8 / compressed
 ; Integer value - Default is 0
-AmdEncoding=0
+AmdEncoding=2
 
 ; Schedule neural rendering execution on every frame
 ; When enabled, avoids skipping frames; multi-slot pipeline skips post-execute wait
@@ -528,7 +528,8 @@ LocalTone=1
 
 ; Weight for preserving fine local structure and edges
 ; float value - Default is 1
-LocalStructure=1
+LocalStructure=2.0
+Style=1
 
 ; Weight for preserving skin structure and texture
 ; -1 follows local structure (the model's own default), not a strength of zero
