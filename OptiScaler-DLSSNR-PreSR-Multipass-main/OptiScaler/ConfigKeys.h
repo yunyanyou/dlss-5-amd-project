@@ -40,10 +40,15 @@ inline constexpr const char *PaperWhite = "LmxxfPaperWhite";
 inline constexpr const char *AllowEnhancedBarriers = "LmxxfAllowEnhancedBarriers";
 inline constexpr const char *NrInline = "NrInline";
 inline constexpr const char *LmxxfInlineSlots = "LmxxfInlineSlots";
+inline constexpr const char *NrCaptureBackoff = "NrCaptureBackoff";
+inline constexpr const char *NrInlineReuse = "NrInlineReuse";
+inline constexpr const char *NrGpuHandoff = "NrGpuHandoff";
 inline constexpr const char *EarlyExeWrap = "LmxxfEarlyExeWrap";
+inline constexpr const char *EarlyAnyModuleWrap = "LmxxfEarlyAnyModuleWrap";
 inline constexpr const char *Diagnostic = "LmxxfDiagnostic";
 inline constexpr const char *NrTimingEnabled = "NrTimingEnabled";
 inline constexpr const char *NrTimingLog = "NrTimingLog";
+inline constexpr const char *NrFrameDiag = "NrFrameDiag";
 inline constexpr const char *NrPersonPartition = "NrPersonPartition";
 inline constexpr const char *NrPersonModel = "NrPersonModel";
 inline constexpr const char *NrFaceInputSize = "NrFaceInputSize";
@@ -77,6 +82,9 @@ inline constexpr const char *MochizukiUnlockPasses = "MochizukiUnlockPasses";
 inline constexpr const char *MochizukiLayerMode = "MochizukiLayerMode";
 inline constexpr const char *MochizukiPasses = "MochizukiPasses";
 inline constexpr const char *MochizukiTemporal = "MochizukiTemporal";
+inline constexpr const char *MochizukiProxyFallbackEnabled = "MochizukiProxyFallbackEnabled";
+inline constexpr const char *MochizukiUseGameExposure = "MochizukiUseGameExposure";
+inline constexpr const char *MochizukiAutoExposureMeter = "MochizukiAutoExposureMeter";
 inline constexpr const char *MochizukiHistoryStrength = "MochizukiHistoryStrength";
 inline constexpr const char *MochizukiPreprocess = "MochizukiPreprocess";
 inline constexpr const char *MochizukiPreprocessExposure = "MochizukiPreprocessExposure";
@@ -208,6 +216,7 @@ inline constexpr const char *const kKnown[] = {
     "NrConvenience",
     NrTimingEnabled,
     NrTimingLog,
+    NrFrameDiag,
     NrPersonPartition,
     NrPersonModel,
     NrFaceInputSize,
@@ -241,6 +250,9 @@ inline constexpr const char *const kKnown[] = {
     MochizukiLayerMode,
     MochizukiPasses,
     MochizukiTemporal,
+    MochizukiProxyFallbackEnabled,
+    MochizukiUseGameExposure,
+    MochizukiAutoExposureMeter,
     MochizukiHistoryStrength,
     MochizukiPreprocess,
     MochizukiPreprocessExposure,
@@ -298,7 +310,11 @@ inline constexpr const char *const kKnown[] = {
     AllowEnhancedBarriers,
     NrInline,
     LmxxfInlineSlots,
+    NrCaptureBackoff,
+    NrInlineReuse,
+    NrGpuHandoff,
     EarlyExeWrap,
+    EarlyAnyModuleWrap,
     Diagnostic,
     NetworkHeight,
     NetworkFreeRes,

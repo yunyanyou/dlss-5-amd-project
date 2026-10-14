@@ -38,6 +38,8 @@ class ConfigPriorityTests(unittest.TestCase):
         source += '\nstruct Config {\n' + '\n'.join(fields) + '''
 CustomOptional<bool> MochizukiUnlockPasses{false};
 CustomOptional<uint32_t> MochizukiLayerMode{0};
+CustomOptional<bool> MochizukiUseGameExposure{false};
+CustomOptional<bool> MochizukiAutoExposureMeter{false};
 };
 namespace PipelineUi { enum class Section {Input, Model, Output}; }
 namespace AmdBridge {void InvalidateHistory(){}}
@@ -183,10 +185,15 @@ int main() {
                 "AllowEnhancedBarriers",
                 "LmxxfInlineSlots",  # Host-owned inline admission limit.
                 "NrInline",  # Host-owned submission mode, no upstream environment alias.
+                "NrCaptureBackoff",  # Host-owned inline capture polling policy.
+                "NrInlineReuse",  # Host-owned inline recording reuse.
+                "NrGpuHandoff",  # Host-owned GPU-armed inline handoff.
                 "EarlyExeWrap",
+                "EarlyAnyModuleWrap",
                 "Diagnostic",
                 "NrTimingEnabled",  # Product telemetry, not an upstream kernel option.
                 "NrTimingLog",
+                "NrFrameDiag",
                 "LmxxfModelHistory",  # Host-owned FrameInfo flag, not an upstream environment key.
                 "NrStabilizerEnabled", "NrStabilizerAlpha", "NrStabilizerThreshold",
                 "NrOverallIntensity",  # Shared final-output blend, no runtime environment alias.

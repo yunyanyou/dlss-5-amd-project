@@ -1,6 +1,7 @@
 #include "pch.h"
 #include <with_dx12/dx11_with_dx12_sync.h>
 #include "wrapped_swapchain.h"
+#include "dlssnr/NrFrameDiagHost.h"
 #include <hooks/DxgiSwapchainSizing.h>
 
 #include <Util.h>
@@ -472,8 +473,10 @@ WrappedIDXGISwapChain4::WrappedIDXGISwapChain4(IDXGISwapChain* real, IUnknown* p
         // Sticky on: a failed first attempt must not clear a later enable.
         if (ready)
             DlssNr::Submission::Hooks::SetProxyWrap(true);
-        LOG_INFO("lmxxf ProxyWrap after swapchain {}: {} (early game lists wrapped: {})", _id, ready,
-                 DlssNr::Submission::Hooks::g_earlyWrappedLists.load(std::memory_order_relaxed));
+        LOG_INFO("lmxxf ProxyWrap after swapchain {}: {} (early game lists wrapped: {}; earlyExe={} earlyAny={})", _id, ready,
+                 DlssNr::Submission::Hooks::g_earlyWrappedLists.load(std::memory_order_relaxed),
+                 DlssNr::Submission::Hooks::g_earlyExeWrap.load(std::memory_order_relaxed),
+                 DlssNr::Submission::Hooks::g_earlyAnyModuleWrap.load(std::memory_order_relaxed));
     }
 }
 
@@ -670,6 +673,8 @@ HRESULT STDMETHODCALLTYPE WrappedIDXGISwapChain4::Present(UINT SyncInterval, UIN
 {
     if (_real == nullptr)
         return DXGI_ERROR_DEVICE_REMOVED;
+    if ((Flags & DXGI_PRESENT_TEST) == 0)
+        DlssNr::FrameDiag::NotePresent(_real);
 
 #ifdef USE_LOCAL_MUTEX
     OwnedLockGuard lock(_localMutex, 4);

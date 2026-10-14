@@ -4,6 +4,9 @@
 #include "../submission/SplitEligibility.h"
 #include "InstallStatus.h"
 #include "LmxxfRecordingOwner.h"
+#include "../NrFrameDiagHost.h"
+#include <resource.h>
+#include "ProxyDiagnostics.h"
 #include <cstring>
 #include <State.h>
 #include "../submission/SubmissionTls.h"
@@ -17,6 +20,14 @@
 
 namespace DlssNr::Backend
 {
+namespace
+{
+// Recording-proxy fallback thresholds, mirroring MochizukiBackend: if the game
+// hands us unwrapped command lists for a large share of frames, NR and the
+// original colour alternate and the result flickers. Hold NR off instead.
+constexpr uint32_t kProxyFallbackMinEvaluations = 120;
+constexpr uint32_t kProxyFallbackMissPercent = 20;
+}
 struct LmxxfBackend::Api
 {
     LmxxfNrApi table {};
@@ -242,6 +253,7 @@ LmxxfBackend::LmxxfBackend(ID3D12Device *dev, ID3D12CommandQueue *q, const std::
         device->AddRef();
     if (queue)
         queue->AddRef();
+    recordDevice = device;
     api = new Api();
     // Pending() is process-wide; count only recoveries that happen under this backend.
     seenRecoveries = LmxxfCut::Pending().recoveredEnqueues.load(std::memory_order_relaxed);
@@ -255,9 +267,12 @@ LmxxfBackend::LmxxfBackend(ID3D12Device *dev, ID3D12CommandQueue *q, const std::
         LOG_INFO("lmxxf FitLarge={} ({}; NativeFitLargeInput re-reads env each call)", fit, CfgKey::EnvAlias(CfgKey::FitLarge));
     }
     {
-        const bool allowEb = Config::Instance()->LmxxfAllowEnhancedBarriers.value_or_default();
+        const bool allowEb = Config::Instance()->AllowEnhancedBarriersEffective();
         SetAllowEnhancedBarriers(allowEb);
-        LOG_INFO("lmxxf enhanced barriers allowed={} (LmxxfAllowEnhancedBarriers)", allowEb);
+        LOG_INFO("lmxxf enhanced barriers allowed={} (LmxxfAllowEnhancedBarriers={}, forza={})", allowEb,
+                 Config::Instance()->LmxxfAllowEnhancedBarriers.has_value()
+                     ? (*Config::Instance()->LmxxfAllowEnhancedBarriers ? "true" : "false") : "auto",
+                 Config::ExeIsForza());
     }
     {
         wchar_t srgb[8] {};
@@ -523,11 +538,16 @@ ID3D12Resource *LmxxfBackend::FinishRecord(ID3D12GraphicsCommandList *recordCmd,
     if (inlineFrame) {
         try {
             const auto desc = inlineFrame->colour->GetDesc();
-            inlineResources = std::make_shared<InlineRecording::Resources>(device, inlineFrame->colour,
+            const bool reuse = Config::Instance()->NrInlineReuse.value_or_default();
+            if (!reuse) sessionOwner->inlinePool.clear();
+            inlineResources = InlineRecording::AcquireResources(reuse ? &sessionOwner->inlinePool : nullptr, device, inlineFrame->colour,
                 static_cast<ID3D12Resource*>(privateOutput), static_cast<ID3D12Resource*>(firstPass),
                 inlineFrame->width ? inlineFrame->width : UINT(desc.Width), inlineFrame->height ? inlineFrame->height : desc.Height,
                 sessionOwner->inlinePipelines);
             sessionOwner->inlinePipelines = inlineResources->PipelineCache();
+            inlineResources->captureBackoff = Config::Instance()->NrCaptureBackoff.value_or_default();
+            FrameDiag::Begin(inlineResources->diag, "lmxxf", 0, 0, 0, OPTI_VERSION);
+            inlineResources->diag.inlineReuse = inlineResources->reused;
         } catch (const std::exception& error) {
             logical->Release(); api->table.InvalidateRecording(session, jobHandle); api->table.CollectRecording(session, jobHandle);
             SetStatus((std::string("lmxxf: inline unavailable: ") + error.what()).c_str()); return nullptr;
@@ -540,6 +560,11 @@ ID3D12Resource *LmxxfBackend::FinishRecord(ID3D12GraphicsCommandList *recordCmd,
         SetStatus(eligible ? "lmxxf: recording ownership unavailable" :
                   (std::string("lmxxf: split blocked before record: ") + splitReason + " (NO NR)").c_str());
         return nullptr;
+    }
+    if (!inlineResources) {
+        const unsigned w = inlineFrame && inlineFrame->width ? inlineFrame->width : 0;
+        const unsigned h = inlineFrame && inlineFrame->height ? inlineFrame->height : 0;
+        FrameDiag::Begin(lease->diag, "lmxxf", 0, w, h, OPTI_VERSION, "split");
     }
     lease->traceId = reTraceId;
     lease->trace = &ReTrace;
@@ -607,8 +632,10 @@ ID3D12Resource* LmxxfBackend::RecordLayers(ID3D12GraphicsCommandList* cmd, const
     auto frame = incoming;
     if(first)*first=nullptr;
     std::lock_guard recordLock(LmxxfCut::LifecycleMutex());
-    ++frameId; // Include bypassed evaluations in temporal continuity.
     if (!PollRelease()) return nullptr;
+    // Latched proxy fallback: lists are unevenly wrapped, so NR would alternate with
+    // the original colour. Stay off rather than flicker.
+    if (proxyFallback) return nullptr;
     if (!cmd || !frame.colour)
     {
         SetStatus("lmxxf: Record missing cmd/colour");
@@ -620,17 +647,40 @@ ID3D12Resource* LmxxfBackend::RecordLayers(ID3D12GraphicsCommandList* cmd, const
         return RecordDiagnostic(cmd, frame, settings);
     // Never substitute Color from an earlier Evaluate to work around an unsubmitted producer.
     DlssNr::Submission::ILogicalCommandList *logical = nullptr;
+    // Count every offered list before the query, so coverage={ok}/{offered} is the real
+    // ratio and not an artefact of counting only the failures (which always reads 100%).
+    const uint32_t offered = ++proxyEvaluations;
     const HRESULT proxyHr = cmd->QueryInterface(__uuidof(DlssNr::Submission::ILogicalCommandList),
                                                 reinterpret_cast<void **>(&logical));
     if (FAILED(proxyHr) || !logical)
     {
         SetStatus("lmxxf: same-frame boundary unavailable (original Color; NO NR)");
-        static unsigned missingProxy = 0;
-        if (++missingProxy <= 5 || missingProxy % 1000 == 0)
-            LOG_WARN("lmxxf missing recording proxy: frame={} list={:p} type={} qi={:08X} sample={}",
-                     frameId, static_cast<void*>(cmd), unsigned(cmd->GetType()), unsigned(proxyHr), missingProxy);
+        const uint32_t missing = ++proxyMissing;
+        if (missing <= 5 || missing % 1000 == 0)
+        {
+            char origin[MAX_PATH * 2] {};
+            ProxyDiagnostics::DescribeList(cmd, origin, sizeof origin);
+            LOG_WARN("lmxxf missing recording proxy: frame={} list={:p} type={} qi={:08X} sample={} coverage={}/{} ({}% miss) lastProxy={:p} device={:p} {}",
+                     frameId, static_cast<void*>(cmd), unsigned(cmd->GetType()), unsigned(proxyHr), missing,
+                     offered - missing, offered, missing * 100 / (offered ? offered : 1),
+                     lastProxiedList, static_cast<void*>(recordDevice), origin);
+        }
+        if (!proxyFallback && Config::Instance()->MochizukiProxyFallbackEnabled.value_or_default() &&
+            offered >= kProxyFallbackMinEvaluations &&
+            missing * 100 >= offered * kProxyFallbackMissPercent)
+        {
+            proxyFallback = true;
+            SetStatus("lmxxf: recording proxy coverage too low; NR held off to stop flicker (restart to try again)");
+            LOG_WARN("lmxxf recording proxy coverage {}/{} ({}%) below {}%; holding NR off for the rest of the session to avoid flicker",
+                     missing, offered, missing * 100 / (offered ? offered : 1), kProxyFallbackMissPercent);
+        }
         return nullptr;
     }
+    lastProxiedList = cmd;
+    // Advance the frame id only for frames we can record: a rejected frame must not
+    // consume a number, or the next accepted frame looks like a temporal gap and the
+    // runtime resets its history for nothing.
+    ++frameId;
     const bool ineligible = logical->IsSplitIneligible();
     const auto recordingId = logical->Identity();
     if (ineligible) logical->TraceOpenQueries();
@@ -680,7 +730,11 @@ ID3D12Resource* LmxxfBackend::RecordLayers(ID3D12GraphicsCommandList* cmd, const
     if (!inlineMode && !sessionOwner->inlineInFlight.empty()) {
         SetStatus("lmxxf: finishing inline frames before split"); return nullptr;
     }
-    if (sessionOwner->InlineBusy()) { sessionOwner->InlineBypassed(); SetStatus("lmxxf: inline ahead cap reached; original frame"); return nullptr; }
+    if (sessionOwner->InlineBusy()) {
+        sessionOwner->InlineBypassed(); SetStatus("lmxxf: inline ahead cap reached; original frame");
+        FrameDiag::EmitBypass("lmxxf", 0, unsigned(sessionOwner->inlineInFlight.size()), 0, 0, OPTI_VERSION);
+        return nullptr;
+    }
     ReTrace(reTraceId, "session.end", session, 0);
     UpdateTiming();
 

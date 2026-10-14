@@ -3,6 +3,7 @@
 #include "../NrSessionActivity.h"
 #include "lmxxf_runtime/LmxxfNrApi.h"
 #include "NrInlineRecording.h"
+#include "../NrFrameDiag.h"
 #include <algorithm>
 #include <deque>
 #include <memory>
@@ -10,6 +11,8 @@
 #include <array>
 #include <cstdio>
 #include <condition_variable>
+#include <mutex>
+#include <wrl/client.h>
 #ifndef LOG_INFO
 #define LOG_INFO(...) ((void)0)
 #endif
@@ -27,6 +30,29 @@ struct SessionOwner
     };
     LmxxfNrApi api {};
     void* context = nullptr;
+    // NrFrameDiag: backend hook for the runtime's last core GPU ms (Mochizuki); null elsewhere.
+    float (*diagCoreGpuMs)(void* context) = nullptr;
+    // Split NrFrameDiag lines wait here until their game fence retired, so GPU stamps are readable.
+    struct PendingSplitDiag {
+        FrameDiag::Counters diag; std::shared_ptr<FrameDiag::GpuStamps> stamps;
+        Microsoft::WRL::ComPtr<ID3D12CommandQueue> queue; Microsoft::WRL::ComPtr<ID3D12Fence> fence; UINT64 value = 0;
+    };
+    std::mutex splitDiagMutex;
+    std::deque<PendingSplitDiag> splitDiagPending;
+    void FlushSplitDiag(bool all = false) noexcept {
+        try {
+            std::lock_guard lock(splitDiagMutex);
+            while (!splitDiagPending.empty()) {
+                auto& f = splitDiagPending.front();
+                const UINT64 done = f.fence ? f.fence->GetCompletedValue() : UINT64_MAX;
+                const bool ready = done != UINT64_MAX && done >= f.value;
+                if (!ready && !all && splitDiagPending.size() <= 8) break;
+                if (diagCoreGpuMs) f.diag.coreGpuMs = diagCoreGpuMs(context);
+                FrameDiag::AsyncEmit(f.diag, ready ? f.stamps : nullptr, f.queue.Get(), nullptr, nullptr);
+                splitDiagPending.pop_front();
+            }
+        } catch (...) {}
+    }
     HMODULE module = nullptr;
     std::atomic<bool> failed { false };
     NrSessionActivity activity;
@@ -39,6 +65,7 @@ struct SessionOwner
     std::deque<void*> inlineEnqueueOrder;
     std::condition_variable_any inlineTurnChanged;
     std::shared_ptr<InlineRecording::Pipelines> inlinePipelines;
+    std::vector<std::shared_ptr<InlineRecording::Resources>> inlinePool; // NrInlineReuse only
     uint64_t inlineApplied = 0, inlineTimeouts = 0, inlineAborted = 0, inlineBypassed = 0;
     uint64_t inlineAdmitted = 0, inlineTurnWaits = 0;
     std::atomic<uint64_t> liveRecordings {0};
@@ -60,6 +87,17 @@ struct SessionOwner
             } else {
                 ++inlineApplied;
                 if (!failed) activity.Succeeded(pending->activityToken);
+            }
+            if (pending->diag.active) {
+                pending->diag.qpcGameWaitExit = pending->diag.qpcOutputDone = FrameDiag::Qpc();
+                if (diagCoreGpuMs) pending->diag.coreGpuMs = diagCoreGpuMs(context);
+                pending->diag.activeSlots = unsigned(inlineInFlight.size());
+                pending->diag.spinCount = pending->WasAborted() ? 0 : pending->LastSpinCount();
+                pending->diag.historyReset = !pending->Succeeded() && !pending->WasAborted();
+                pending->diag.outcome = pending->Succeeded() ? "apply"
+                    : (pending->WasAborted() ? "abort" : "timeout");
+                pending->DiagEmitAsync();
+                pending->diag = {};
             }
             side = pending->SideQueue();
             spun = pending->WasAborted() ? 0 : pending->LastSpinCount();
@@ -182,6 +220,26 @@ struct Lease final : Submission::RecordingObserver, std::enable_shared_from_this
     { if (tracing && trace && traceId) trace(traceId, phase, object, result); }
     bool neural = false, enqueued = false;
     uint64_t activityToken = 0;
+    // Split-path diag lives on the lease; inline uses InlineRecording::Resources::diag.
+    FrameDiag::Counters diag;
+    std::shared_ptr<FrameDiag::GpuStamps> splitStamps; // NrFrameDiag split GPU stamps
+    ID3D12CommandQueue* splitDiagQueue = nullptr; ID3D12Fence* splitDiagFence = nullptr; UINT64 splitDiagValue = 0; // borrowed in FinishExecution
+    void EmitSplitDiag(const char* outcome) noexcept
+    {
+        if (inlineResources || !diag.active) return;
+        diag.qpcGameWaitExit = diag.qpcOutputDone = FrameDiag::Qpc();
+        diag.outcome = outcome ? outcome : "fail";
+        if (splitStamps && splitDiagFence && splitDiagQueue) {
+            try {
+                SessionOwner::PendingSplitDiag p; p.diag = diag; p.stamps = splitStamps;
+                p.queue = splitDiagQueue; p.fence = splitDiagFence; p.value = splitDiagValue;
+                { std::lock_guard lock(owner->splitDiagMutex); owner->splitDiagPending.push_back(std::move(p)); }
+                owner->FlushSplitDiag();
+            } catch (...) { FrameDiag::Emit(diag); }
+        } else FrameDiag::Emit(diag);
+        splitStamps.reset(); splitDiagFence = nullptr; splitDiagQueue = nullptr;
+        diag = {};
+    }
     Lease(std::shared_ptr<SessionOwner> session, void* token, Submission::RecordingIdentity id)
         : owner(std::move(session)), job(token), identity(id), activityToken(owner->activity.Token()) { ++owner->liveRecordings; }
     ~Lease() override { --owner->liveRecordings; }
@@ -225,11 +283,30 @@ struct Lease final : Submission::RecordingObserver, std::enable_shared_from_this
             if (inlineResources) {
                 owner->NoteInlineEnqueue(job);
                 ++owner->inlineAdmitted;
+                if (inlineResources->diag.active) {
+                    inlineResources->diag.submitSerial = e.serial;
+                    inlineResources->diag.qpcAdmit = FrameDiag::Qpc();
+                    inlineResources->diag.activeSlots = unsigned(owner->inlineInFlight.size());
+                    if (inlineResources->diag.qpcRecordBegin)
+                        inlineResources->diag.recordCpuUs = unsigned(
+                            FrameDiag::MsBetween(inlineResources->diag.qpcRecordBegin,
+                                                 inlineResources->diag.qpcAdmit) * 1000.0);
+                }
                 if (owner->inlineAdmitted <= 5 || owner->inlineAdmitted % 3600 == 0)
                     LOG_INFO("NR inline admit serial={} queue={} in_flight={} enqueue_depth={}",
                              static_cast<unsigned long long>(e.serial), static_cast<const void*>(e.queue),
                              owner->inlineInFlight.size(), owner->inlineEnqueueOrder.size());
+            } else if (diag.active) {
+                diag.submitSerial = e.serial;
+                diag.qpcAdmit = FrameDiag::Qpc();
+                diag.listId = identity.list;
+                diag.generation = identity.generation;
+                if (diag.qpcRecordBegin)
+                    diag.recordCpuUs = unsigned(
+                        FrameDiag::MsBetween(diag.qpcRecordBegin, diag.qpcAdmit) * 1000.0);
             }
+        } else if (!inlineResources && diag.active) {
+            EmitSplitDiag("fail");
         }
         if (!begun) owner->failed = true;
         return begun ? S_OK : E_FAIL;
@@ -259,10 +336,15 @@ struct Lease final : Submission::RecordingObserver, std::enable_shared_from_this
             // Capture polling submits work to the shared side queue. Only its
             // current enqueue owner may poll; ahead workers would otherwise
             // delay the frame that releases their game-queue consumer waits.
+            auto& diag = lease->inlineResources->diag;
             const auto turnStart = GetTickCount64();
+            if (diag.active) diag.qpcEnqueueWaitBegin = FrameDiag::Qpc();
             const bool ordered = lease->WaitInlineTurn();
             const auto waitedMs = static_cast<unsigned>(GetTickCount64() - turnStart);
-            const bool captured = ordered && lease->inlineResources->WaitCapture();
+            if (diag.active) { diag.qpcEnqueueWaitEnd = FrameDiag::Qpc(); diag.waitEnqueueOrderMs = waitedMs; }
+            // NrGpuHandoff: no CPU capture wait; the side queue watches and gates the network itself.
+            const bool captured = ordered && (lease->inlineResources->GpuArmed()
+                ? lease->inlineResources->ArmCapture() : lease->inlineResources->WaitCapture());
             std::lock_guard lock(Submission::RecordingMutex());
             if (captured && ordered) {
                 if (waitedMs >= 2) {
@@ -270,6 +352,7 @@ struct Lease final : Submission::RecordingObserver, std::enable_shared_from_this
                     if (lease->owner->inlineTurnWaits <= 5 || lease->owner->inlineTurnWaits % 1200 == 0)
                         LOG_INFO("NR inline enqueue waited {} ms for the previous frame", waitedMs);
                 }
+                if (diag.active) diag.qpcVkEnqueue = FrameDiag::Qpc();
                 Submission::RecordingExecution side {}; side.queue = lease->inlineResources->SideQueue();
                 lease->Between(side);
             } else if (!ordered) {
@@ -332,7 +415,12 @@ struct Lease final : Submission::RecordingObserver, std::enable_shared_from_this
         diagnostic.betweenHits.fetch_add(1, std::memory_order_relaxed);
         diagnostic.enqueueCalls.fetch_add(1, std::memory_order_relaxed);
         Trace("hip.begin", e.queue);
+        if (!inlineResources && diag.active) {
+            if (!diag.qpcEnqueueWaitBegin) diag.qpcEnqueueWaitBegin = FrameDiag::Qpc();
+            diag.qpcVkEnqueue = FrameDiag::Qpc();
+        }
         const int32_t rc = owner->api.EnqueueHip(owner->context, job, e.queue);
+        if (!inlineResources && diag.active) diag.qpcSideReady = FrameDiag::Qpc();
         Trace("hip.end", e.queue, rc);
         std::array<char, 256> error {};
         owner->api.GetLastError(error.data(), static_cast<uint32_t>(error.size()));
@@ -395,13 +483,22 @@ struct Lease final : Submission::RecordingObserver, std::enable_shared_from_this
         else if (FAILED(e.status))
             owner->RecordFailure("ExecuteCommandLists", e.status, e.queue, "producer/consumer submission or tail signal failed");
         Trace("retire.end", e.queue, rc);
+        splitDiagQueue = e.queue; splitDiagFence = e.fence; splitDiagValue = e.fenceValue;
         tracing = false;
         begun = false;
         if (!inlineResources && neural && ready && enqueued && e.producerSubmitted && e.continuationSubmitted &&
             SUCCEEDED(e.status) && rc == LMXXF_NR_OK && !owner->failed.load(std::memory_order_acquire))
+        {
             owner->activity.Succeeded(activityToken);
+            EmitSplitDiag("apply");
+        }
         else if (!inlineResources && neural)
+        {
             owner->activity.Reset();
+            EmitSplitDiag((FAILED(e.status) || rc != LMXXF_NR_OK) ? "fail" : "reject");
+        }
+        else
+            EmitSplitDiag((FAILED(e.status) || rc != LMXXF_NR_OK) ? "fail" : "apply");
     }
     void Invalidated(Submission::RecordingIdentity id) noexcept override
     {
@@ -441,6 +538,7 @@ inline bool CollectLocked()
         const int32_t rc = lease->owner->api.CollectRecording(lease->owner->context, lease->job);
         if (rc == LMXXF_NR_OK || rc == LMXXF_NR_DEVICE_LOST)
         {
+            lease->EmitSplitDiag("abort");
             lease->owner->ForgetUnstarted(lease->inlineResources);
             lease->job = nullptr;
             it = leases.erase(it);

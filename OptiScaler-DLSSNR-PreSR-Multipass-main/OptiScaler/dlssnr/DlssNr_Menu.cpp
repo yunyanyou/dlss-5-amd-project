@@ -56,8 +56,12 @@ static void ResetSharedNrDefaults(Config* config)
     ResetSharedEffectsDefaults(config);
     config->NrTimingEnabled = std::optional<bool>{};
     config->NrTimingLog = std::optional<bool>{};
+    config->NrFrameDiag = std::optional<bool>{};
     config->NrInline.reset();
     config->LmxxfInlineSlots.reset();
+    config->NrCaptureBackoff.reset();
+    config->NrInlineReuse.reset();
+    config->NrGpuHandoff.reset();
 }
 
 // The "(?)" marker every control carries, matching the rest of the menu.
@@ -197,6 +201,12 @@ static void ResetMochizuki(Config* config, int selectedGroup = -1,
 #undef MZ_F
 #undef MZ_U
 #undef MZ_B
+    if ((selectedGroup < 0 || selectedGroup == 4) &&
+        (!page || *page == PipelineUi::Section::Input))
+    {
+        config->MochizukiUseGameExposure = std::optional<bool> {};
+        config->MochizukiAutoExposureMeter = std::optional<bool> {};
+    }
     if ((selectedGroup < 0 || selectedGroup == 1) &&
         (!page || *page == PipelineUi::Section::Model))
     {
@@ -376,6 +386,19 @@ static void RenderSharedOutputEffects(Config* config)
 
 }
 
+// LmxxfAllowEnhancedBarriers: auto (on for Forza) / force on / force off. Takes effect live.
+static void RenderAllowEnhancedBarriers(Config* config)
+{
+    const char* names[] = {Config::ExeIsForza() ? "auto (current: on)" : "auto (current: off)", "force on", "force off"};
+    int index = config->LmxxfAllowEnhancedBarriers.has_value() ? (*config->LmxxfAllowEnhancedBarriers ? 1 : 2) : 0;
+    if (MenuUi::Combo("Allow enhanced barriers", &index, names, IM_ARRAYSIZE(names)))
+    {
+        if (index == 0) config->LmxxfAllowEnhancedBarriers.reset();
+        else config->LmxxfAllowEnhancedBarriers = (index == 1);
+        SetAllowEnhancedBarriers(config->AllowEnhancedBarriersEffective());
+    }
+}
+
 static void RenderEarlyCommandListWrap(Config* config)
 {
     static const char* names[] = {"auto (Unreal/Forza/Aniimo)", "force on", "force off"};
@@ -391,6 +414,23 @@ static void RenderEarlyCommandListWrap(Config* config)
                "\nForce off: disable both early paths; normal post-swapchain wrapping stays enabled."
                "\nOther games are unvalidated; forcing early wrap can cause startup problems."
                "\nSave and restart to apply. INI: LmxxfEarlyExeWrap.");
+    // Independent sub-item: any-module early wrap (LmxxfEarlyAnyModuleWrap).
+    std::string exeLower = State::Instance().gameExe;
+    for (char& c : exeLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    const bool autoAny = exeLower.find("forza") != std::string::npos;
+    const char* anyNames[] = {autoAny ? "auto (current: on)" : "auto (current: off)", "force on", "force off"};
+    int anyIndex = config->LmxxfEarlyAnyModuleWrap.has_value() ? (*config->LmxxfEarlyAnyModuleWrap ? 1 : 2) : 0;
+    ImGui::Indent();
+    if (MenuUi::Combo("Early wrap all modules (Streamline/overlays)", &anyIndex, anyNames, IM_ARRAYSIZE(anyNames)))
+    {
+        if (anyIndex == 0) config->LmxxfEarlyAnyModuleWrap.reset();
+        else config->LmxxfEarlyAnyModuleWrap = (anyIndex == 1);
+    }
+    HelpMarker("Also wrap command lists created by any module (Streamline, dxgi proxies, overlays)."
+               "\nOnly effective before the swapchain is created. Auto: on for Forza only."
+               "\nMay crash other games; try only if the log shows many 'missing recording proxy'."
+               "\nSave and restart to apply. INI: LmxxfEarlyAnyModuleWrap.");
+    ImGui::Unindent();
 }
 
 static void RenderMochizukiMenu(Config* config, PipelineUi::Section page, const std::string& status)
@@ -443,6 +483,18 @@ static void RenderMochizukiMenu(Config* config, PipelineUi::Section page, const 
 #undef MZ_F
 #undef MZ_U
 #undef MZ_B
+            if (g == 4 && page == PipelineUi::Section::Input)
+            {
+                const char* onOff[] = {"Off", "On"};
+                int useGame = config->MochizukiUseGameExposure.value_or_default() ? 1 : 0;
+                if (MenuUi::Combo("Use game exposure", &useGame, onOff, IM_ARRAYSIZE(onOff)))
+                    config->MochizukiUseGameExposure = useGame == 1;
+                HelpMarker("Default off. Linear/HDR input only.\nOn: the white point follows the game's exposure (DLSS exposure texture x scale / pre-exposure, or 1/pre-exposure).\nCan change the look of games that already look right; White point stays the trim.\nINI: MochizukiUseGameExposure.");
+                int meter = config->MochizukiAutoExposureMeter.value_or_default() ? 1 : 0;
+                if (MenuUi::Combo("Auto exposure meter", &meter, onOff, IM_ARRAYSIZE(onOff)))
+                    config->MochizukiAutoExposureMeter = meter == 1;
+                HelpMarker("Default off. Linear/HDR input only.\nOn: when the game gives no exposure, meter the frame and level it (one tiny GPU pass, one frame late).\nTry it when skin turns red at overall intensity above 1 (e.g. Monster Hunter Wilds). Game exposure wins.\nINI: MochizukiAutoExposureMeter.");
+            }
             if (g == 4 && page == PipelineUi::Section::Model)
             {
                 const int cap = config->MochizukiUnlockPasses.value_or_default() ? static_cast<int>(Config::kMochizukiLayerPasses) : 3;
@@ -490,9 +542,13 @@ static void RenderMochizukiMenu(Config* config, PipelineUi::Section page, const 
         MenuUi::TextWrapped("Completed-sample means. Network includes fused temporal shaders; Other covers core input, history copies and composition. Bridge copies, shared effects and whole-frame latency are excluded.");
         bool logging = config->NrTimingLog.value_or_default();
         if (MenuUi::Checkbox("Write timing summary to log", &logging)) config->NrTimingLog = logging;
+        bool frameDiag = config->NrFrameDiag.value_or_default();
+        if (MenuUi::Checkbox("Per-frame NR diag (PresentMon)", &frameDiag)) config->NrFrameDiag = frameDiag;
+        HelpMarker("Default off. Writes NrFrameDiag.log next to the DLL (split and inline) for PresentMon join. No sync GPU waits.");
         MenuUi::TextWrapped("%s", AmdBridge::EffectsStatus().c_str());
         if (MenuUi::Button("Reset diagnostics")) {
             config->NrTimingLog = std::optional<bool>{};
+            config->NrFrameDiag = std::optional<bool>{};
         }
         ImGui::TreePop();
     }
@@ -696,7 +752,28 @@ void RenderMenu(Config* config, float menuResScale)
                 bool inlineMode = config->NrInline.value_or_default();
                 if (MenuUi::Checkbox("Experimental inline execution", &inlineMode)) config->NrInline = inlineMode;
                 HelpMarker("Keeps the game command list intact. Bounded wait selects the original frame on timeout."
-                           "\nShared by lmxxf and Mochizuki. INI: NrInline. Off uses command-list splitting.");
+                           "\nShared by lmxxf and Mochizuki. INI: NrInline. Off uses command-list splitting."
+                           "\nInline does NOT remove the recording proxy or the enhanced-barrier requirement,"
+                           "\nand it does not fix a game that hands us unwrapped command lists (NR would still"
+                           "\nalternate with the original frame). It only skips the split-ineligible rejection.");
+                if (inlineMode) {
+                    int backoff = std::clamp(config->NrCaptureBackoff.value_or_default(), 0, 2);
+                    const char* backoffChoices[] = {"Exponential 50-5000 us (default)", "Fixed 100 us", "Event (side-queue watch)"};
+                    if (MenuUi::Combo("Capture poll backoff##nr", &backoff, backoffChoices, IM_ARRAYSIZE(backoffChoices)))
+                        config->NrCaptureBackoff = backoff;
+                    HelpMarker("How often the inline worker re-checks that the game captured NR inputs."
+                               "\nFixed 100 us finds ready inputs sooner at a small CPU/poll cost. Applies to the next frame."
+                               "\nEvent: side queue watches the capture flag and a fence event wakes the worker."
+                               "\nINI: NrCaptureBackoff (0 exponential, 1 fixed 100 us, 2 event).");
+                    bool reuse = config->NrInlineReuse.value_or_default();
+                    if (MenuUi::Checkbox("Reuse inline recordings", &reuse)) config->NrInlineReuse = reuse;
+                    HelpMarker("Default off. Reuses finished per-frame inline objects with identical inputs instead of"
+                               "\ncreating them every frame, so NR can start sooner. Applies to the next frame. INI: NrInlineReuse.");
+                    bool gpuHandoff = config->NrGpuHandoff.value_or_default();
+                    if (MenuUi::Checkbox("GPU-armed handoff", &gpuHandoff)) config->NrGpuHandoff = gpuHandoff;
+                    HelpMarker("Default off. Mochizuki inline: the GPU side queue watches for this frame's capture and starts NR"
+                               "\nwithout a CPU round trip. Missed capture shows the original frame. Applies to the next frame. INI: NrGpuHandoff.");
+                }
                 if (isLmxxf && inlineMode) {
                     int slots = std::clamp(config->LmxxfInlineSlots.value_or_default(), 1, 5) - 1;
                     const char* choices[] = {"1", "2", "3", "4", "5"};
@@ -706,11 +783,13 @@ void RenderMenu(Config* config, float menuResScale)
                                "\nEach frame keeps private inputs and results; the model is shared."
                                "\nLowering the limit lets existing work finish before buffers are released.");
                 }
-                bool enhanced = config->LmxxfAllowEnhancedBarriers.value_or_default();
-                if (MenuUi::Checkbox("Allow enhanced barriers", &enhanced)) {
-                    config->LmxxfAllowEnhancedBarriers = enhanced; SetAllowEnhancedBarriers(enhanced);
-                }
-                HelpMarker("Experimental. Inline execution restores known whole-resource layouts; partial or pending layouts are rejected.");
+                RenderAllowEnhancedBarriers(config);
+                HelpMarker("Experimental. Inline execution restores known whole-resource layouts; partial or pending layouts are rejected."
+                           "\nInline still needs this on: the input layout is read (and reset to COMMON) even"
+                           "\nwhen the network runs inline, so turning it off rejects list input that uses"
+                           "\nenhanced barriers. See \"NR inline\" for details."
+                           "\nAuto: on for Forza (exe name contains \"forza\"), off otherwise. Applies immediately."
+                           "\nINI: LmxxfAllowEnhancedBarriers.");
             }
             if (page == PipelineUi::Section::Output) RenderSharedOutputEffects(config);
             if (kind == Backend::Kind::Mochizuki) {
@@ -775,8 +854,12 @@ void RenderMenu(Config* config, float menuResScale)
                     resetOption(config->LmxxfAllowEnhancedBarriers);
                     resetOption(config->NrInline);
                     resetOption(config->LmxxfInlineSlots);
-                    SetAllowEnhancedBarriers(config->LmxxfAllowEnhancedBarriers.value_or_default());
+                    resetOption(config->NrCaptureBackoff);
+                    resetOption(config->NrInlineReuse);
+                    resetOption(config->NrGpuHandoff);
+                    SetAllowEnhancedBarriers(config->AllowEnhancedBarriersEffective());
                     resetOption(config->LmxxfEarlyExeWrap);
+                    resetOption(config->LmxxfEarlyAnyModuleWrap);
                 }
                 else {
                     resetOption(config->AmdEveryFrame);
@@ -1405,14 +1488,14 @@ void RenderMenu(Config* config, float menuResScale)
                                            "Save Settings and restart to apply the changes");
                     }
                     {
-                        bool eb = config->LmxxfAllowEnhancedBarriers.value_or_default();
-                        if (MenuUi::Checkbox("Allow enhanced barriers", &eb))
-                        {
-                            config->LmxxfAllowEnhancedBarriers = eb;
-                            SetAllowEnhancedBarriers(eb);
-                        }
+                        RenderAllowEnhancedBarriers(config);
                         HelpMarker("Leave off unless a game needs NR on lists that use"
-                                   "\nenhanced barriers (may corrupt state / TDR). Restart.");
+                                   "\nenhanced barriers (may corrupt state / TDR). Restart."
+                                   "\nInline does not replace this: NR still reads and resets the"
+                                   "\ninput layout on an inline list, so an enhanced-barrier game"
+                                   "\nneeds this on with Inline as well."
+                                   "\nAuto: on for Forza (exe name contains \"forza\"), off otherwise. Applies immediately."
+                                   "\nINI: LmxxfAllowEnhancedBarriers.");
                     }
                     RenderEarlyCommandListWrap(config);
                 }
@@ -1647,6 +1730,9 @@ void RenderMenu(Config* config, float menuResScale)
                     const bool timingEnabled = config->NrTimingEnabled.value_or_default();
                     bool timingLog = config->NrTimingLog.value_or_default();
                     if (MenuUi::Checkbox("Write timing summary to log", &timingLog)) config->NrTimingLog = timingLog;
+                    bool frameDiag = config->NrFrameDiag.value_or_default();
+                    if (MenuUi::Checkbox("Per-frame NR diag (PresentMon)", &frameDiag)) config->NrFrameDiag = frameDiag;
+                    HelpMarker("Default off. Writes NrFrameDiag.log next to the DLL (split and inline) for PresentMon join.");
                     HelpMarker("Requires measurement and file logging. At most one summary every five seconds.");
                     if (timingEnabled) {
                         const auto snapshot = DlssNr::AmdBridge::Timing();
@@ -1697,6 +1783,7 @@ void RenderMenu(Config* config, float menuResScale)
                 {
                     resetOption(config->NrTimingEnabled);
                     resetOption(config->NrTimingLog);
+                    resetOption(config->NrFrameDiag);
                     resetOption(config->DlssNrDebugView);
                 }
                 ImGui::TreePop();

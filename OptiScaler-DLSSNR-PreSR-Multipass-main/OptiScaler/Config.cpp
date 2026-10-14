@@ -346,10 +346,18 @@ bool Config::Reload(std::filesystem::path iniPath)
             LmxxfAutoExposure.set_from_config(readBool("DlssNr", "LmxxfAutoExposure"));
             LmxxfAutoExposureScale.set_from_config(readFloat("DlssNr", "LmxxfAutoExposureScale"));
             LmxxfAllowEnhancedBarriers.set_from_config(readBool("DlssNr", "LmxxfAllowEnhancedBarriers"));
-            SetAllowEnhancedBarriers(LmxxfAllowEnhancedBarriers.value_or_default());
+            SetAllowEnhancedBarriers(AllowEnhancedBarriersEffective());
+            LOG_INFO("NR enhanced barriers allowed={} (LmxxfAllowEnhancedBarriers={}, forza={})",
+                     AllowEnhancedBarriersEffective(),
+                     LmxxfAllowEnhancedBarriers.has_value() ? (*LmxxfAllowEnhancedBarriers ? "true" : "false") : "auto",
+                     ExeIsForza());
             NrInline.set_from_config(readBool(CfgKey::kSection, CfgKey::NrInline));
             LmxxfInlineSlots.set_from_config(readInt(CfgKey::kSection, CfgKey::LmxxfInlineSlots));
+            NrCaptureBackoff.set_from_config(readInt(CfgKey::kSection, CfgKey::NrCaptureBackoff));
+            NrInlineReuse.set_from_config(readBool(CfgKey::kSection, CfgKey::NrInlineReuse));
+            NrGpuHandoff.set_from_config(readBool(CfgKey::kSection, CfgKey::NrGpuHandoff));
             LmxxfEarlyExeWrap.set_from_config(readBool("DlssNr", "LmxxfEarlyExeWrap"));
+            LmxxfEarlyAnyModuleWrap.set_from_config(readBool("DlssNr", "LmxxfEarlyAnyModuleWrap"));
             DlssNrMaxRatio.set_from_config(readFloat("DlssNr", "MaxRatio"));
             DlssNrTransfer.set_from_config(readUInt("DlssNr", "Transfer"));
 
@@ -417,6 +425,7 @@ bool Config::Reload(std::filesystem::path iniPath)
             NrConvenience.set_from_config(readInt("DlssNr", "NrConvenience"));
             NrTimingEnabled.set_from_config(readBool(CfgKey::kSection, CfgKey::NrTimingEnabled));
             NrTimingLog.set_from_config(readBool(CfgKey::kSection, CfgKey::NrTimingLog));
+            NrFrameDiag.set_from_config(readBool(CfgKey::kSection, CfgKey::NrFrameDiag));
             NrPersonPartition.set_from_config(readBool(CfgKey::kSection, CfgKey::NrPersonPartition));
             NrPersonModel.set_from_config(readInt(CfgKey::kSection, CfgKey::NrPersonModel));
             NrFaceInputSize.set_from_config(readInt(CfgKey::kSection, CfgKey::NrFaceInputSize));
@@ -467,6 +476,9 @@ bool Config::Reload(std::filesystem::path iniPath)
                 MochizukiPasses.set_from_config(passes);
             }
             MochizukiTemporal.set_from_config(readBool(CfgKey::kSection, CfgKey::MochizukiTemporal));
+            MochizukiProxyFallbackEnabled.set_from_config(readBool(CfgKey::kSection, CfgKey::MochizukiProxyFallbackEnabled));
+            MochizukiUseGameExposure.set_from_config(readBool(CfgKey::kSection, CfgKey::MochizukiUseGameExposure));
+            MochizukiAutoExposureMeter.set_from_config(readBool(CfgKey::kSection, CfgKey::MochizukiAutoExposureMeter));
             LmxxfModelHistory.set_from_config(readBool(CfgKey::kSection, CfgKey::LmxxfModelHistory));
             MochizukiHistoryStrength.set_from_config(readFloat(CfgKey::kSection, CfgKey::MochizukiHistoryStrength));
             MochizukiPreprocess.set_from_config(readBool(CfgKey::kSection, CfgKey::MochizukiPreprocess));
@@ -1313,6 +1325,28 @@ std::string GetFloatValue(std::optional<float> value)
     return std::to_string(value.value());
 }
 
+bool Config::ExeIsForza()
+{
+    static const bool forza = [] {
+        wchar_t path[MAX_PATH] {};
+        const DWORD n = GetModuleFileNameW(nullptr, path, MAX_PATH);
+        std::wstring name(path, n);
+        if (const auto slash = name.find_last_of(L"\\/"); slash != std::wstring::npos)
+            name.erase(0, slash + 1);
+        for (wchar_t& c : name)
+            c = static_cast<wchar_t>(::towlower(c));
+        return name.find(L"forza") != std::wstring::npos;
+    }();
+    return forza;
+}
+
+bool Config::AllowEnhancedBarriersEffective()
+{
+    if (LmxxfAllowEnhancedBarriers.has_value())
+        return *LmxxfAllowEnhancedBarriers;
+    return ExeIsForza();
+}
+
 bool Config::SaveIni()
 {
     // Upscalers
@@ -1695,6 +1729,7 @@ bool Config::SaveIni()
     ini.SetValue("DlssNr", "NrConvenience", GetIntValue(Instance()->NrConvenience.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::NrTimingEnabled, GetBoolValue(Instance()->NrTimingEnabled.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::NrTimingLog, GetBoolValue(Instance()->NrTimingLog.value_for_config()).c_str());
+    ini.SetValue(CfgKey::kSection, CfgKey::NrFrameDiag, GetBoolValue(Instance()->NrFrameDiag.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::NrPersonPartition, GetBoolValue(Instance()->NrPersonPartition.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::NrPersonModel, GetIntValue(Instance()->NrPersonModel.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::NrFaceInputSize, GetIntValue(Instance()->NrFaceInputSize.value_for_config()).c_str());
@@ -1736,6 +1771,9 @@ bool Config::SaveIni()
     ini.SetValue(CfgKey::kSection, CfgKey::MochizukiLayerMode, GetIntValue(Instance()->MochizukiLayerMode.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::MochizukiPasses, GetIntValue(Instance()->MochizukiPasses.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::MochizukiTemporal, GetBoolValue(Instance()->MochizukiTemporal.value_for_config()).c_str());
+    ini.SetValue(CfgKey::kSection, CfgKey::MochizukiProxyFallbackEnabled, GetBoolValue(Instance()->MochizukiProxyFallbackEnabled.value_for_config()).c_str());
+    ini.SetValue(CfgKey::kSection, CfgKey::MochizukiUseGameExposure, GetBoolValue(Instance()->MochizukiUseGameExposure.value_for_config()).c_str());
+    ini.SetValue(CfgKey::kSection, CfgKey::MochizukiAutoExposureMeter, GetBoolValue(Instance()->MochizukiAutoExposureMeter.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::LmxxfModelHistory, GetBoolValue(Instance()->LmxxfModelHistory.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::MochizukiHistoryStrength, GetFloatValue(Instance()->MochizukiHistoryStrength.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::MochizukiPreprocess, GetBoolValue(Instance()->MochizukiPreprocess.value_for_config()).c_str());
@@ -1804,13 +1842,20 @@ bool Config::SaveIni()
                  GetBoolValue(Instance()->LmxxfAutoExposure.value_for_config()).c_str());
     ini.SetValue("DlssNr", "LmxxfAutoExposureScale",
                  GetFloatValue(Instance()->LmxxfAutoExposureScale.value_for_config()).c_str());
-    ini.SetValue("DlssNr", "LmxxfAllowEnhancedBarriers",
-                 GetBoolValue(Instance()->LmxxfAllowEnhancedBarriers.value_for_config()).c_str());
+    if (auto eb = Instance()->LmxxfAllowEnhancedBarriers.value_for_config(); eb.has_value())
+        ini.SetValue("DlssNr", "LmxxfAllowEnhancedBarriers", GetBoolValue(eb).c_str());
+    else
+        ini.Delete("DlssNr", "LmxxfAllowEnhancedBarriers");
     ini.SetValue(CfgKey::kSection, CfgKey::LmxxfInlineSlots, GetIntValue(Instance()->LmxxfInlineSlots.value_for_config()).c_str());
+    ini.SetValue(CfgKey::kSection, CfgKey::NrCaptureBackoff, GetIntValue(Instance()->NrCaptureBackoff.value_for_config()).c_str());
+    ini.SetValue(CfgKey::kSection, CfgKey::NrInlineReuse, GetBoolValue(Instance()->NrInlineReuse.value_for_config()).c_str());
+    ini.SetValue(CfgKey::kSection, CfgKey::NrGpuHandoff, GetBoolValue(Instance()->NrGpuHandoff.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::NrInline,
                  GetBoolValue(Instance()->NrInline.value_for_config()).c_str());
     if (auto earlyWrap = Instance()->LmxxfEarlyExeWrap.value_for_config(); earlyWrap.has_value())
         ini.SetValue("DlssNr", "LmxxfEarlyExeWrap", GetBoolValue(earlyWrap).c_str());
+    if (auto anyWrap = Instance()->LmxxfEarlyAnyModuleWrap.value_for_config(); anyWrap.has_value())
+        ini.SetValue("DlssNr", "LmxxfEarlyAnyModuleWrap", GetBoolValue(anyWrap).c_str());
     ini.SetValue("DlssNr", "AmdGraphicsUnsafe", GetIntValue(Instance()->AmdGraphicsUnsafe.value_for_config()).c_str());
     ini.SetValue("AmdRtgi", "Enabled", GetBoolValue(Instance()->AmdRtgiEnabled.value_for_config()).c_str());
     ini.SetValue("AmdRtgi", "Quality", GetIntValue(Instance()->AmdRtgiQuality.value_for_config()).c_str());

@@ -3028,9 +3028,17 @@ static void HookToDevice(ID3D12Device* InDevice)
                         allowEarly = *forced;
                     const bool allowUnityPlayer = DlssNr::Submission::Hooks::WantsEarlyUnityPlayerWrap(
                         exeLower, GetModuleHandleW(L"UnityPlayer.dll") != nullptr, forced);
+                    // Forza creates boot DIRECT lists in sl.interposer.dll / the dxgi
+                    // proxy, which the exe whitelist never matches; widen early wrap to
+                    // all modules for it. Only LmxxfEarlyAnyModuleWrap overrides this;
+                    // LmxxfEarlyExeWrap keeps its exe-only meaning.
+                    const auto forcedAny = Config::Instance()->LmxxfEarlyAnyModuleWrap;
+                    bool allowAnyModule = isForza;
+                    if (forcedAny.has_value())
+                        allowAnyModule = *forcedAny;
                     LOG_INFO("lmxxf early exe wrap allow={} (unreal={} forza={} override={})", allowEarly, isUnreal,
                              isForza, forced.has_value() ? (*forced ? "true" : "false") : "auto");
-                    if (allowEarly || allowUnityPlayer)
+                    if (allowEarly || allowUnityPlayer || allowAnyModule)
                     {
                         D3D12_COMMAND_QUEUE_DESC queueDesc {};
                         queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
@@ -3041,14 +3049,19 @@ static void HookToDevice(ID3D12Device* InDevice)
                         if (earlyQueue)
                             earlyQueue->Release();
                         DlssNr::Submission::Hooks::SetEarlyExeWrap(allowEarly && ready);
+                        DlssNr::Submission::Hooks::SetEarlyAnyModuleWrap(allowAnyModule && ready);
                         DlssNr::Submission::Hooks::SetEarlyUnityPlayerWrap(allowUnityPlayer && ready);
                         LOG_INFO("lmxxf early executable proxy: {} (submission hook ready={})", allowEarly && ready, ready);
+                        LOG_INFO("lmxxf early any-module proxy: {} (forza={} override={})",
+                                 allowAnyModule && ready, isForza,
+                                 forcedAny.has_value() ? (*forcedAny ? "true" : "false") : "auto");
                         LOG_INFO("NR early UnityPlayer proxy: {} (game={}, submission hook ready={})",
                                  allowUnityPlayer && ready, st.gameExe, ready);
                     }
                     else
                     {
                         DlssNr::Submission::Hooks::SetEarlyExeWrap(false);
+                        DlssNr::Submission::Hooks::SetEarlyAnyModuleWrap(false);
                         DlssNr::Submission::Hooks::SetEarlyUnityPlayerWrap(false);
                     }
                 }

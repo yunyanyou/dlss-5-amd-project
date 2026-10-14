@@ -1,15 +1,34 @@
 #include "pch.h"
 #include "MochizukiBackend.h"
 #include "LmxxfRecordingOwner.h"
+#include "../NrFrameDiagHost.h"
+#include <resource.h>
+#include "ProxyDiagnostics.h"
 #include "mochizuki_runtime/MochizukiNrApi.h"
 #include "../amd/GraphicsInvocation.h"
 #include <State.h>
 #include <wrl/client.h>
+#include <cmath>
+
+// NrFrameDiag: last Vulkan core GPU ms from the runtime (cheap stats copy; no GPU access).
+static PFN_MochizukiNrGetInfo gDiagGetInfo = nullptr;
+static float DiagCoreGpuMs(void* context)
+{
+    if (!gDiagGetInfo || !context) return 0;
+    MochizukiNrInfo info {sizeof info};
+    return gDiagGetInfo(context, &info) == LMXXF_NR_OK ? info.gpu_ms_last : 0.f;
+}
 
 namespace DlssNr::Backend
 {
 namespace
 {
+// Recording-proxy fallback thresholds (see MochizukiProxyFallbackEnabled).
+// ~120 evaluations is about two seconds at 60 fps, long enough that a slow start
+// cannot trip it; a 20% miss rate is already visible as flicker.
+constexpr uint32_t kProxyFallbackMinEvaluations = 120;
+constexpr uint32_t kProxyFallbackMissPercent = 20;
+
 void SubmissionFailure(const LmxxfRecording::SessionOwner::Failure& failure) noexcept
 {
     try {
@@ -36,11 +55,24 @@ struct MochizukiBackend::Impl
     PFN_MochizukiNrGetInfo getInfo = nullptr;
     PFN_MochizukiNrGetBuildProgress getBuildProgress = nullptr;
     void (*setLogging)(uint32_t) = nullptr;
+    // Optional exposure exports (absent in an older runtime: the lane keeps its manual white point).
+    PFN_MochizukiNrSetExposure setExposure = nullptr;
+    PFN_MochizukiNrSetAutoExposure setAutoExposure = nullptr;
+    PFN_MochizukiNrSetExposureTexture setExposureTexture = nullptr;
     std::shared_ptr<LmxxfRecording::SessionOwner> owner;
     uint64_t frameId = 0, retryAt = 0, infoAt = 0, logAt = 0;
     bool failed = false;
     unsigned errors = 0;
     unsigned tracedRecordings = 0;
+    // Recording-proxy coverage. A large share of the game's command lists is never
+    // wrapped by SubmissionHooks, so those frames go through as the original colour
+    // while the wrapped ones run NR. Alternating between the two is the Forza
+    // flicker. Track the ratio and, once it is proven too high, hold NR off for the
+    // rest of the session rather than alternate (see MochizukiProxyFallbackEnabled).
+    uint32_t proxyEvaluations = 0;   // lists offered this session
+    uint32_t proxyMissing = 0;       // of those, without a recording proxy
+    bool proxyFallback = false;      // latched: too many misses, NR held off
+    const void* lastProxiedList = nullptr; // last list that did carry a proxy
     mutable std::mutex mutex;
     std::string status = "mochizuki: idle";
     NrTimingSnapshot timing {};
@@ -74,6 +106,9 @@ struct MochizukiBackend::Impl
             getInfo = reinterpret_cast<PFN_MochizukiNrGetInfo>(GetProcAddress(module, "MochizukiNrGetInfo"));
             getBuildProgress = reinterpret_cast<PFN_MochizukiNrGetBuildProgress>(GetProcAddress(module, "MochizukiNrGetBuildProgress"));
             setLogging = reinterpret_cast<void (*)(uint32_t)>(GetProcAddress(module, "MochizukiNrSetLogging"));
+            setExposure = reinterpret_cast<PFN_MochizukiNrSetExposure>(GetProcAddress(module, "MochizukiNrSetExposure"));
+            setAutoExposure = reinterpret_cast<PFN_MochizukiNrSetAutoExposure>(GetProcAddress(module, "MochizukiNrSetAutoExposure"));
+            setExposureTexture = reinterpret_cast<PFN_MochizukiNrSetExposureTexture>(GetProcAddress(module, "MochizukiNrSetExposureTexture"));
             api.struct_size = sizeof api;
             if (!getApi || !prepare || !setControls || !getInfo || !getBuildProgress || !setLogging ||
                 getApi(LMXXF_NR_ABI_VERSION, &api) != LMXXF_NR_OK || !api.Create || !api.Destroy ||
@@ -107,6 +142,8 @@ struct MochizukiBackend::Impl
             return false;
         }
         owner = LmxxfRecording::SessionOwner::Create(api, session, LmxxfRecording::SessionOwner::kInlineAhead);
+        gDiagGetInfo = getInfo;
+        if (owner) owner->diagCoreGpuMs = &DiagCoreGpuMs;
         if (!owner) { api.Destroy(session); Status("mochizuki: session ownership allocation failed"); return false; }
         owner->onFailure = SubmissionFailure;
         // ACO is chosen when the Vulkan device is created. Push the current ini before PrepareSession.
@@ -198,23 +235,49 @@ ID3D12Resource* MochizukiBackend::RecordLayers(ID3D12GraphicsCommandList* cmd, c
     // Callback failures and background progress must remain visible even when
     // this frame is rejected before PrepareFrame/Record.
     p->Info();
-    // Include frames rejected before PrepareFrame (for example an active render
-    // pass), so the next accepted frame cannot consume history across that gap.
-    const auto frameId = ++p->frameId;
+    // Latched proxy fallback: the miss rate proved the lists are unevenly wrapped, so
+    // NR would alternate with the original colour. Stay off rather than flicker.
+    if (p->proxyFallback) return nullptr;
     if (!cmd || !input.colour) return nullptr;
     Microsoft::WRL::ComPtr<Submission::ILogicalCommandList> logical;
     Microsoft::WRL::ComPtr<Submission::IRecordingResources> resources;
+    // Count every offered list, so coverage={success}/{offered} is the real ratio and
+    // not an artefact of counting only the failures (which always reads as 100%).
+    const uint32_t offered = ++p->proxyEvaluations;
     const HRESULT proxyHr = cmd->QueryInterface(IID_PPV_ARGS(&logical));
     const HRESULT resourcesHr = cmd->QueryInterface(IID_PPV_ARGS(&resources));
     if (FAILED(proxyHr) || FAILED(resourcesHr))
     {
+        const uint32_t missing = ++p->proxyMissing;
         p->Status("mochizuki: recording proxy unavailable; original frame");
-        static unsigned missingProxy = 0;
-        if (++missingProxy <= 5 || missingProxy % 1000 == 0)
-            LOG_WARN("mochizuki missing recording proxy: frame={} list={:p} type={} logicalQi={:08X} resourcesQi={:08X} sample={}",
-                     frameId, static_cast<void*>(cmd), unsigned(cmd->GetType()), unsigned(proxyHr), unsigned(resourcesHr), missingProxy);
+        if (missing <= 5 || missing % 1000 == 0)
+        {
+            char origin[MAX_PATH * 2] {};
+            ProxyDiagnostics::DescribeList(cmd, origin, sizeof origin);
+            LOG_WARN("mochizuki missing recording proxy: frame={} list={:p} type={} logicalQi={:08X} resourcesQi={:08X} sample={} coverage={}/{} ({}% miss) lastProxy={:p} device={:p} {}",
+                     p->frameId, static_cast<void*>(cmd), unsigned(cmd->GetType()), unsigned(proxyHr), unsigned(resourcesHr),
+                     missing, offered - missing, offered, missing * 100 / (offered ? offered : 1),
+                     p->lastProxiedList, static_cast<void*>(p->device.Get()), origin);
+        }
+        // Half the lists unwrapped means NR and the original colour alternate frame by
+        // frame, which is exactly the flicker. Rather than keep flipping, stop NR for
+        // this session once the miss rate is clearly too high. Opt-in only.
+        if (!p->proxyFallback && Config::Instance()->MochizukiProxyFallbackEnabled.value_or_default() &&
+            offered >= kProxyFallbackMinEvaluations &&
+            missing * 100 >= offered * kProxyFallbackMissPercent)
+        {
+            p->proxyFallback = true;
+            p->Status("mochizuki: recording proxy coverage too low; NR held off to stop flicker (restart to try again)");
+            LOG_WARN("mochizuki recording proxy coverage {}/{} ({}%) below {}%; holding NR off for the rest of the session to avoid flicker",
+                     missing, offered, missing * 100 / (offered ? offered : 1), kProxyFallbackMissPercent);
+        }
         return nullptr;
     }
+    p->lastProxiedList = cmd;
+    // The frame id advances only for frames we can actually record: a rejected frame
+    // must not consume a number, or the next accepted frame looks like a gap and the
+    // runtime resets its temporal history for nothing.
+    const auto frameId = ++p->frameId;
     const bool inlineMode = Config::Instance()->NrInline.value_or_default();
     if (logical->IsSplitIneligible()) logical->TraceOpenQueries();
     InlineRecording::StateScope inlineState;
@@ -239,7 +302,13 @@ ID3D12Resource* MochizukiBackend::RecordLayers(ID3D12GraphicsCommandList* cmd, c
         return nullptr;
     }
     if (!p->Ensure()) return nullptr;
-    if (p->owner->InlineBusy()) { p->owner->InlineBypassed(); p->Status("mochizuki: inline ahead cap reached; original frame"); return nullptr; }
+    if (p->owner->InlineBusy()) {
+        p->owner->InlineBypassed();
+        p->Status("mochizuki: inline ahead cap reached; original frame");
+        FrameDiag::EmitBypass("mochizuki", frameId, unsigned(p->owner->inlineInFlight.size()),
+                              incoming.width, incoming.height, OPTI_VERSION);
+        return nullptr;
+    }
     auto* cfg = Config::Instance();
     p->setLogging(cfg->LogToFile.value_or_default());
     MochizukiNrFrameInfo frame {};
@@ -274,6 +343,26 @@ ID3D12Resource* MochizukiBackend::RecordLayers(ID3D12GraphicsCommandList* cmd, c
     frame.motion_scale_y = input.motionScaleY;
     frame.reset = input.reset;
     if (p->setControls(p->owner->context, &controls) != LMXXF_NR_OK) { p->Error("controls rejected"); return nullptr; }
+    // Exposure for the linear encode, same semantics as the lmxxf lane (native_codec_encode.hlsl EffectivePaperWhite):
+    // a usable game exposure texture gives exposure = texel * DLSS_Exposure_Scale / DLSS_Pre_Exposure (read back by
+    // the runtime one frame late); without one, a host pre-exposure != 1 gives exposure = 1 / pre-exposure. The
+    // runtime divides the white point by it. Both are opt-in (MochizukiUseGameExposure), as is the runtime's own meter
+    // for a frame with neither (MochizukiAutoExposureMeter); with both off the white point is the manual setting.
+    {
+        const bool useGame = cfg->MochizukiUseGameExposure.value_or_default();
+        void* texture = useGame ? static_cast<void*>(input.exposure) : nullptr;
+        const float pre = std::isfinite(input.preExposure) && input.preExposure > 0.f ? input.preExposure : 1.f;
+        const float scale = std::isfinite(input.exposureScale) && input.exposureScale > 0.f ? input.exposureScale : 1.f;
+        if (p->setExposureTexture)
+            p->setExposureTexture(p->owner->context, texture, uint32_t(input.exposureState), pre, scale);
+        else
+            texture = nullptr;
+        if (p->setExposure)
+            p->setExposure(p->owner->context,
+                           useGame && !texture && std::fabs(pre - 1.f) > 1e-3f ? 1.f / pre : 0.f);
+        if (p->setAutoExposure)
+            p->setAutoExposure(p->owner->context, cfg->MochizukiAutoExposureMeter.value_or_default() ? 1u : 0u);
+    }
     LmxxfNrJob job {sizeof job};
     if (p->prepare(p->owner->context, &frame, &job) != LMXXF_NR_OK)
     {
@@ -295,10 +384,19 @@ ID3D12Resource* MochizukiBackend::RecordLayers(ID3D12GraphicsCommandList* cmd, c
     std::shared_ptr<InlineRecording::Resources> inlineResources;
     if (inlineMode) {
         try {
-            inlineResources = std::make_shared<InlineRecording::Resources>(p->device.Get(), input.colour,
+            const bool reuse = Config::Instance()->NrInlineReuse.value_or_default();
+            if (!reuse) p->owner->inlinePool.clear();
+            inlineResources = InlineRecording::AcquireResources(reuse ? &p->owner->inlinePool : nullptr, p->device.Get(), input.colour,
                 static_cast<ID3D12Resource*>(job.private_output), static_cast<ID3D12Resource*>(job.first_pass_output),
                 frame.color_width, frame.color_height, p->owner->inlinePipelines);
             p->owner->inlinePipelines = inlineResources->PipelineCache();
+            inlineResources->captureBackoff = Config::Instance()->NrCaptureBackoff.value_or_default();
+            inlineResources->gpuArmed = Config::Instance()->NrGpuHandoff.value_or_default();
+            FrameDiag::Begin(inlineResources->diag, "mochizuki", frameId, frame.color_width, frame.color_height, OPTI_VERSION);
+            inlineResources->diag.inlineReuse = inlineResources->reused;
+            const auto id0 = logical->Identity();
+            inlineResources->diag.listId = id0.list;
+            inlineResources->diag.generation = id0.generation;
         } catch (const std::exception& error) {
             p->api.InvalidateRecording(p->owner->context, job.handle); p->api.CollectRecording(p->owner->context, job.handle);
             p->Status(std::string("mochizuki: inline unavailable: ") + error.what()); return nullptr;
@@ -306,6 +404,13 @@ ID3D12Resource* MochizukiBackend::RecordLayers(ID3D12GraphicsCommandList* cmd, c
     }
     auto lease = LmxxfRecording::Attach(p->owner, job.handle, logical.Get(), inlineResources);
     if (!lease) { p->Status("mochizuki: this recording already owns NR work"); return nullptr; }
+    if (!inlineMode) {
+        FrameDiag::Begin(lease->diag, "mochizuki", frameId, frame.color_width, frame.color_height,
+                         OPTI_VERSION, "split");
+        const auto id0 = logical->Identity();
+        lease->diag.listId = id0.list;
+        lease->diag.generation = id0.generation;
+    }
     lease->neural = true;
     if (p->tracedRecordings < 2)
     {
@@ -315,12 +420,31 @@ ID3D12Resource* MochizukiBackend::RecordLayers(ID3D12GraphicsCommandList* cmd, c
     }
     auto* invocation = AmdPreSr::GraphicsSnap::GraphicsInvocationFor(reinterpret_cast<uint64_t>(cmd));
     if (invocation) { invocation->commandsRecorded = true; invocation->outcome = "recording_attempted"; }
-    if (p->api.RecordInputs(p->owner->context, job.handle, cmd) != LMXXF_NR_OK)
+    // NrFrameDiag GPU stamps (default off): capture begin/end, resume, done on the game queue.
+    if (inlineResources) inlineResources->DiagStamp(cmd, FrameDiag::kGpuCapBegin);
+    else if (lease->diag.active) {
+        if (auto stamps = FrameDiag::GpuStamps::Acquire(p->device.Get(), FrameDiag::kGpuStampCount))
+        { lease->splitStamps = stamps; stamps->Stamp(cmd, FrameDiag::kGpuCapBegin); }
+    }
+    // With no game exposure texture the lane runs its own exposure meter: a compute dispatch with its own descriptor
+    // heap, root signature and root arguments. A split recording tracks those as the game's bindings and seeds the
+    // continuation with them, so keep them in a private scope for exactly this call. The scope is unconditional: it is
+    // two bookkeeping calls, and which side metered must not decide whether the bindings stay out of the game snapshot.
+    resources->BeginPrivateBindings();
+    const int32_t inputs = p->api.RecordInputs(p->owner->context, job.handle, cmd);
+    resources->EndPrivateBindings();
+    if (inputs != LMXXF_NR_OK)
     { p->failed = true; p->Error("input recording failed"); return nullptr; }
     if (inlineResources) { inlineResources->RecordCapture(cmd); inlineResources->RecordWait(cmd); }
-    if ((!inlineResources && LmxxfCut::TrySplitAtEvaluate(cmd) != S_OK) ||
-        p->api.RecordOutputs(p->owner->context, job.handle, cmd) != LMXXF_NR_OK)
+    else if (lease->splitStamps) lease->splitStamps->Stamp(cmd, FrameDiag::kGpuCapEnd);
+    if (!inlineResources && LmxxfCut::TrySplitAtEvaluate(cmd) != S_OK)
     { p->failed = true; p->Error("recording failed"); return nullptr; }
+    if (!inlineResources && lease->splitStamps) lease->splitStamps->Stamp(cmd, FrameDiag::kGpuResume);
+    if (p->api.RecordOutputs(p->owner->context, job.handle, cmd) != LMXXF_NR_OK)
+    { p->failed = true; p->Error("recording failed"); return nullptr; }
+    if (!inlineResources && lease->splitStamps) {
+        lease->splitStamps->Stamp(cmd, FrameDiag::kGpuDone); lease->splitStamps->Resolve(cmd);
+    }
     if (inlineResources) inlineResources->RecordSelect(cmd, input.colourState);
     lease->ready = true;
     if (lease->trace) {

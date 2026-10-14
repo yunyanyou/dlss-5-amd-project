@@ -340,6 +340,8 @@ class Config
     CustomOptional<int> NrConvenience { 1 };
     CustomOptional<bool> NrTimingEnabled { false };
     CustomOptional<bool> NrTimingLog { false };
+    // Default-off per-frame NR diag for PresentMon join (NrFrameDiag.log).
+    CustomOptional<bool> NrFrameDiag { false };
     CustomOptional<bool> NrPersonPartition { false };
     CustomOptional<int> NrPersonModel { 0 };
     CustomOptional<int> NrFaceInputSize { 320 };
@@ -390,14 +392,25 @@ class Config
     // Allow NR on command lists that use D3D12 enhanced barriers (CommandListProxy::Barrier).
     // State is not fully modeled for those groups (layout/access), and a split can cut a
     // SYNC_SPLIT barrier group across two submits. Default false (fail-closed reject).
-    // true opts in for games that need those lists on the NR path.
-    CustomOptional<bool> LmxxfAllowEnhancedBarriers { false };
+    // true opts in for games that need those lists on the NR path. Unset = auto: on when the exe name
+    // contains "forza" (Mochizuki needs it there), off otherwise. Read it through
+    // AllowEnhancedBarriersEffective(); explicit true/false always wins.
+    CustomOptional<bool, NoDefault> LmxxfAllowEnhancedBarriers;
     CustomOptional<int> LmxxfInlineSlots { 3 };
+    // Inline capture discovery: 0 = exponential 50..5000 us (default), 1 = fixed 100 us, 2 = event. Applies per frame.
+    CustomOptional<int> NrCaptureBackoff { 0 };
+    // Reuse retired inline recordings (same inputs) instead of creating D3D12 objects every frame. Default off.
+    CustomOptional<bool> NrInlineReuse { false };
+    CustomOptional<bool> NrGpuHandoff { false };
     CustomOptional<bool> NrInline { false }; // Experimental same-list execution for lmxxf/Mochizuki.
     // Wrap host CreateCommandList results before the swapchain exists.
     // Missing = engine whitelist (Unreal + Forza). false = never. true = force for any engine.
     // Other engines (e.g. Yan Yun) can crash with early ArmCreate + wrap. Restart after change.
     CustomOptional<bool, NoDefault> LmxxfEarlyExeWrap;
+    // Unset = auto (on for exe names containing "forza"). Widens the pre-swapchain
+    // wrap to DIRECT lists created by any module (Streamline / overlays). Independent
+    // of LmxxfEarlyExeWrap, which stays exe-only.
+    CustomOptional<bool, NoDefault> LmxxfEarlyAnyModuleWrap;
     // Network tier: auto | 720 | 900 | 1080 (DLSS5_NETWORK_HEIGHT).
     CustomOptional<std::string> LmxxfNetworkHeight { "auto" };
     CustomOptional<bool> LmxxfNetworkFreeRes { true };
@@ -430,6 +443,17 @@ class Config
     CustomOptional<uint32_t> MochizukiLayerMode { 0u };
     CustomOptional<uint32_t> MochizukiPasses { 1u };
     CustomOptional<bool> MochizukiTemporal { true };
+    // Stop NR for the rest of the session when too many command lists arrive without
+    // a recording proxy. Unwrapped lists run the original colour, so a high miss rate
+    // makes NR and the original alternate frame by frame (visible flicker); holding NR
+    // off trades a uniform non-NR image for a stable one. Default false.
+    CustomOptional<bool> MochizukiProxyFallbackEnabled { false };
+    // Linear-input level for the mochizuki lane. Both default off: the white point stays the manual
+    // MochizukiWhitePoint exactly as before. UseGameExposure takes the game's exposure texture (times
+    // DLSS_Exposure_Scale over DLSS_Pre_Exposure) or, without one, 1/DLSS_Pre_Exposure; AutoExposureMeter
+    // meters the frame when the game supplies neither. Game exposure wins over the meter.
+    CustomOptional<bool> MochizukiUseGameExposure { false };
+    CustomOptional<bool> MochizukiAutoExposureMeter { false };
     CustomOptional<float> MochizukiHistoryStrength { 1.f };
     CustomOptional<bool> MochizukiPreprocess { false };
     CustomOptional<uint32_t> MochizukiPreprocessExposure { 1u };
@@ -1208,6 +1232,10 @@ class Config
 
     bool LoadFromPath(const wchar_t* InPath);
     bool SaveIni();
+    // LmxxfAllowEnhancedBarriers resolved: the explicit value, else auto (on for Forza).
+    bool AllowEnhancedBarriersEffective();
+    // The host exe's file name contains "forza" (case-insensitive). Cached.
+    static bool ExeIsForza();
     bool SaveXeFG();
 
     void CheckUpscalerFiles();

@@ -1,5 +1,6 @@
 #pragma once
 #include "../submission/CommandListProxy.h"
+#include "../NrFrameDiag.h"
 #include <d3dcompiler.h>
 #include <wrl/client.h>
 #include <chrono>
@@ -18,6 +19,7 @@ template<class T> using Ptr = Microsoft::WRL::ComPtr<T>;
 // Mochizuki's graphics/compute segments regress with longer wait dispatches.
 inline constexpr UINT kWaitSlices = 64;
 inline constexpr UINT kWaitIterations = 32768;
+inline constexpr UINT kCaptureWatchSlices = 4;
 // lmxxf benefits from fewer dispatch/barrier pairs with the same total work.
 // Neither schedule is a portable wall-clock timeout or concurrent-progress guarantee.
 inline constexpr UINT kLmxxfWaitSlices = 32;
@@ -107,6 +109,10 @@ class Resources
     Ptr<ID3D12PipelineState> controlPso, composePso;
     Ptr<ID3D12Resource> control, capture, sample, readback, decision, decisionReadback;
     Ptr<ID3D12Fence> sideFence, gameFence;
+    // NrGpuHandoff: the game queue signals armFence just before this list runs (BeforeExecute); the side
+    // queue waits on it (no spin while the game is still on earlier work), then watches the capture flag.
+    Ptr<ID3D12Fence> armFence; UINT64 armValue = 0;
+    Ptr<ID3D12CommandAllocator> armAlloc; Ptr<ID3D12GraphicsCommandList> armList;
     struct KernelHandle {
         HANDLE value = nullptr;
         ~KernelHandle() { if (value) CloseHandle(value); }
@@ -114,7 +120,7 @@ class Resources
     // Unique registrations are never reused for another fence value. Retain
     // even timed-out registrations until this recording's completion proof.
     std::vector<std::unique_ptr<KernelHandle>> captureEvents;
-    UINT64 serial = 0, finalValue = 0, gameValue = 0;
+    UINT64 serial = 0, finalValue = 0, gameValue = 0, armSerial = 0;
     std::atomic<bool> scheduled {false};
     bool started = false, uncertain = false;
     std::atomic<bool> sideUncertain {false};
@@ -152,7 +158,7 @@ class Resources
     }
     void Op(ID3D12GraphicsCommandList* list, UINT op, ID3D12Resource* target, UINT iterations = 0) {
         list->SetPipelineState(controlPso.Get()); list->SetComputeRootSignature(controlRoot.Get());
-        list->SetComputeRootUnorderedAccessView(0, (op == 1 || op == 3 || op == 6 ? capture : control)->GetGPUVirtualAddress());
+        list->SetComputeRootUnorderedAccessView(0, (op == 1 || op == 3 || op == 6 || op == 7 || op == 8 ? capture : control)->GetGPUVirtualAddress());
         list->SetComputeRootUnorderedAccessView(1, target->GetGPUVirtualAddress());
         const UINT args[] {op, iterations}; list->SetComputeRoot32BitConstants(2, 2, args, 0);
         list->Dispatch(1, 1, 1);
@@ -255,14 +261,21 @@ cbuffer Args : register(b0) { uint operation; uint iterations; }
  if (operation == 0 || operation == 6) { flag.Store(0, operation == 0 ? iterations : 0); }
  else if (operation == 1 || operation == 2) { flag.InterlockedExchange(0, 1, value); DeviceMemoryBarrier(); }
  else if (operation == 3) { flag.InterlockedCompareExchange(0, 0, 0, value); target.Store(0, value); }
- else if (operation == 4) {
+ else if (operation == 4 || operation == 7) {
+  // 7: side-queue capture watch (NrCaptureBackoff=2); same bounded spin on the capture flag.
   uint spun = 0;
   [loop] [allow_uav_condition] for (uint i = 0; i < iterations; ++i) {
    ++spun;
    DeviceMemoryBarrier();
    flag.InterlockedCompareExchange(0, 0, 0, value); if (value != 0) break;
   }
-  target.Store(8, spun);
+  if (operation == 4) target.Store(8, spun);
+ } else if (operation == 8) {
+  // GPU-armed handoff: record whether the watch saw the capture before the network was released.
+  flag.InterlockedCompareExchange(0, 0, 0, value); target.Store(12, value != 0 ? 1 : 0); DeviceMemoryBarrier();
+ } else if (operation == 9) {
+  // GPU-armed handoff done: network output is valid only if the capture was seen first; else bypass (original).
+  uint seen = target.Load(12); flag.InterlockedExchange(0, seen != 0 ? 1 : 2, value); DeviceMemoryBarrier();
  } else { flag.InterlockedCompareExchange(0, 0, 0, value); target.Store2(0, uint2(value == 1 ? 1 : 0, 0)); }
 })");
         D3D12_DESCRIPTOR_RANGE ranges[2] {};
@@ -297,7 +310,24 @@ cbuffer Size : register(b0) { uint width; uint height; }
     bool WasAborted() const { return noNetwork; }
     ID3D12Resource* OutputTexture() const { return output.texture.Get(); }
     ID3D12Resource* FirstTexture() const { return first.texture.Get(); }
-    void RecordCapture(ID3D12GraphicsCommandList* list) { Op(list, 1, decision.Get()); UavBarrier(list, capture.Get()); }
+    // NrFrameDiag GPU stamps (game queue + side queue). Created lazily, only when diag is on.
+    std::shared_ptr<FrameDiag::GpuStamps> gameStamps, sideStamps;
+    Ptr<ID3D12CommandQueue> gameQueue;
+    void DiagStamp(ID3D12GraphicsCommandList* list, UINT point) {
+        if (!diag.active) return;
+        if (!gameStamps) gameStamps = FrameDiag::GpuStamps::Acquire(device.Get(), FrameDiag::kGpuStampCount);
+        if (!gameStamps) return;
+        gameStamps->Stamp(list, point);
+    }
+    // At reclaim (Complete): both queues' resolves have retired. Hands the stamp sets to the async emitter
+    // (this recording takes fresh pooled ones if it is reused).
+    void DiagEmitAsync() {
+        if (!diag.active) return;
+        FrameDiag::AsyncEmit(diag, std::move(gameStamps), gameQueue.Get(),
+                             noNetwork ? nullptr : std::move(sideStamps), side.Get());
+        gameStamps.reset(); sideStamps.reset();
+    }
+    void RecordCapture(ID3D12GraphicsCommandList* list) { Op(list, 1, decision.Get()); UavBarrier(list, capture.Get()); DiagStamp(list, FrameDiag::kGpuCapEnd); }
     void RecordWait(ID3D12GraphicsCommandList* list, UINT slices = kWaitSlices, UINT iterations = kWaitIterations) {
         // Keep the predicate immutable after this point: late completion cannot select unrecorded output.
         for (UINT i = 0; i < slices; ++i) {
@@ -309,6 +339,7 @@ cbuffer Size : register(b0) { uint width; uint height; }
         Op(list, 5, decision.Get()); UavBarrier(list, decision.Get());
         Barrier(list, decision.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PREDICATION);
         list->SetPredication(decision.Get(), 0, D3D12_PREDICATION_OP_EQUAL_ZERO);
+        DiagStamp(list, FrameDiag::kGpuResume); // spin exit (EndQuery is not predicated)
     }
     void RecordSelect(ID3D12GraphicsCommandList* list, D3D12_RESOURCE_STATES colourState) {
         list->SetPredication(nullptr, 0, D3D12_PREDICATION_OP_EQUAL_ZERO);
@@ -318,11 +349,31 @@ cbuffer Size : register(b0) { uint width; uint height; }
         list->CopyBufferRegion(decisionReadback.Get(), 0, decision.Get(), 0, 16);
         Barrier(list, decision.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         decisionReadable = true;
+        DiagStamp(list, FrameDiag::kGpuDone);
+        if (diag.active && gameStamps) gameStamps->Resolve(list); // predication already cleared
     }
     bool Started() const { return started; }
+    // NrInlineReuse: a retired recording may serve a later frame with identical inputs.
+    // BeforeExecute already resets control/capture and continues the side-fence serial.
+    bool SameInputs(ID3D12Device* d, ID3D12Resource* s, ID3D12Resource* n, ID3D12Resource* f, UINT w, UINT h) const {
+        return device.Get() == d && output.original.Get() == s && output.neural.Get() == n &&
+               first.neural.Get() == f && output.width == w && output.height == h;
+    }
+    void PrepareReuse() {
+        captureEvents.clear(); started = false; decisionReadable = false; uncertain = noNetwork = false;
+        diag = {}; captureBackoff = 0; gpuArmed = false; activityToken = 0; reused = true;
+    }
     bool RetirementUncertain() const { return uncertain || sideUncertain; }
     // Set under RecordingMutex from the lease that admitted this recording.
     uint64_t activityToken = 0;
+    // Filled when NrFrameDiag is on; RecordingOwner / backends emit on reclaim.
+    FrameDiag::Counters diag;
+    // Capture discovery policy snapshot for this frame (0 exponential 50..5000 us, 1 fixed 100 us,
+    // 2 event: a bounded side-queue spin on the capture flag, then a fence event wakes the worker).
+    int captureBackoff = 0;
+    // NrGpuHandoff snapshot for this frame: release the network from the side queue when the capture lands.
+    bool gpuArmed = false;
+    bool reused = false; // came from NrInlineReuse pool
     bool Complete() const {
         if (!started) return true;
         if (RetirementUncertain() || !scheduled.load(std::memory_order_acquire) || !finalValue || !gameFence || !gameValue) return false;
@@ -345,6 +396,7 @@ cbuffer Size : register(b0) { uint width; uint height; }
     void BeforeExecute(ID3D12CommandQueue* game, bool bypass = false) {
         if (!Complete()) throw std::runtime_error("inline recording still executing");
         captureEvents.clear();
+        gameQueue = game;
         started = true; uncertain = noNetwork = false; sideUncertain = true;
         finalValue = gameValue = 0; gameFence.Reset();
         scheduled.store(false, std::memory_order_release);
@@ -356,6 +408,15 @@ cbuffer Size : register(b0) { uint width; uint height; }
         sideUncertain = false;
         // No CPU GPU wait under RecordingMutex. Only the producer depends on this clear.
         Check(game->Wait(sideFence.Get(), reset), "inline producer reset wait");
+        armValue = 0;
+        if (gpuArmed && !bypass) {
+            if (!armFence) Check(device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&armFence)), "inline arm fence");
+            // Queue-level signal before the producer list: everything earlier on the game queue is done.
+            const UINT64 next = armFence->GetCompletedValue() == UINT64_MAX ? 0 : armSerial + 1;
+            if (!next) throw std::runtime_error("inline arm fence lost");
+            Check(game->Signal(armFence.Get(), next), "inline arm signal");
+            armSerial = armValue = next;
+        }
     }
     void GameSubmitted(ID3D12Fence* fence, UINT64 value, HRESULT hr) {
         if (FAILED(hr) || !fence || !value || value == UINT64_MAX) { uncertain = true; return; }
@@ -371,6 +432,9 @@ cbuffer Size : register(b0) { uint width; uint height; }
     }
     bool WaitCapture() {
         const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        const bool fixedBackoff = captureBackoff == 1, eventWake = captureBackoff == 2;
+        if (diag.active) { diag.capturePolls = 0; diag.captureBackoffUsFinal = 0;
+            diag.captureBackoffMode = eventWake ? "event" : fixedBackoff ? "fixed100" : "exp";  diag.handoff = "cpu"; }
         // The event wakes this worker promptly; the fence remains the proof.
         // Reusing one event across values can let a late signal wake a new wait.
         auto waitFence = [&](UINT64 value) {
@@ -397,9 +461,13 @@ cbuffer Size : register(b0) { uint width; uint height; }
         timer->value = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_MODIFY_STATE | SYNCHRONIZE);
         if (!timer->value) timer->value = CreateWaitableTimerExW(nullptr, nullptr, 0, TIMER_MODIFY_STATE | SYNCHRONIZE);
         Check(timer->value ? S_OK : HRESULT_FROM_WIN32(GetLastError()), "inline capture backoff timer");
-        auto backoff = std::chrono::microseconds(50);
+        auto backoff = std::chrono::microseconds(fixedBackoff ? 100 : 50);
         for (unsigned polls = 0; polls < 2048 && std::chrono::steady_clock::now() < until; ++polls) {
+            if (diag.active) diag.capturePolls = polls + 1;
             Check(sampleAlloc->Reset(), "inline poll allocator"); Check(sampleList->Reset(sampleAlloc.Get(), nullptr), "inline poll list");
+            // Event: the side queue watches the flag (bounded, ~1 ms) so the fence fires at capture,
+            // not at the next CPU poll. The game queue is never touched; a miss just re-arms.
+            if (eventWake) { for (UINT i = 0; i < kCaptureWatchSlices; ++i) { Op(sampleList.Get(), 7, sample.Get(), kWaitIterations); UavBarrier(sampleList.Get(), capture.Get()); } }
             Op(sampleList.Get(), 3, sample.Get()); UavBarrier(sampleList.Get(), sample.Get());
             Barrier(sampleList.Get(), sample.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
             sampleList->CopyBufferRegion(readback.Get(), 0, sample.Get(), 0, 4);
@@ -410,18 +478,50 @@ cbuffer Size : register(b0) { uint width; uint height; }
             if (!waitFence(done)) return false;
             void* p = nullptr; D3D12_RANGE range {0, 4}; Check(readback->Map(0, &range, &p), "inline poll map");
             const UINT captured = *static_cast<const UINT*>(p); D3D12_RANGE none {0, 0}; readback->Unmap(0, &none);
-            if (captured) return true;
+            if (captured) {
+                if (diag.active) {
+                    diag.qpcCaptureSeen = FrameDiag::Qpc();
+                    diag.captureBackoffUsFinal = unsigned(backoff.count());
+                }
+                return true;
+            }
+            if (eventWake) continue; // the watch itself paced this round
             // sleep_for(50us) can sleep a whole Windows timer tick. Use a
             // private timer, without changing the process/system timer period.
             LARGE_INTEGER due {}; due.QuadPart = -10 * backoff.count();
             Check(SetWaitableTimer(timer->value, &due, 0, nullptr, nullptr, FALSE) ? S_OK : HRESULT_FROM_WIN32(GetLastError()), "inline capture timer arm");
             const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(until - std::chrono::steady_clock::now()).count();
             if (remaining <= 0 || WaitForSingleObject(timer->value, DWORD(remaining)) != WAIT_OBJECT_0) return false;
-            backoff = (std::min)(backoff * 2, std::chrono::microseconds(5000));
+            if (!fixedBackoff) backoff = (std::min)(backoff * 2, std::chrono::microseconds(5000));
         }
         return false;
     }
+    // NrGpuHandoff replacement for WaitCapture: no CPU wait. Side queue: Wait(arm) -> bounded watch on the
+    // capture flag -> record seen/unseen. The caller then enqueues the network behind it on the same queue;
+    // NetworkQueued's done op publishes 1 (apply) only if the watch saw the capture, else 2 (original frame).
+    bool GpuArmed() const { return armValue != 0; }
+    bool ArmCapture() {
+        if (!armValue || !armFence) return false;
+        if (diag.active) { diag.capturePolls = 0; diag.captureBackoffUsFinal = 0; diag.captureBackoffMode = "gpu"; diag.handoff = "gpu"; }
+        if (!armAlloc) {
+            Check(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_COMPUTE, IID_PPV_ARGS(&armAlloc)), "inline arm allocator");
+            Check(device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_COMPUTE, armAlloc.Get(), nullptr, IID_PPV_ARGS(&armList)), "inline arm list");
+        } else {
+            // Previous use retired: BeforeExecute requires Complete(), and finalValue follows this list on side.
+            Check(armAlloc->Reset(), "inline arm allocator reset"); Check(armList->Reset(armAlloc.Get(), nullptr), "inline arm list reset");
+        }
+        for (UINT i = 0; i < kWaitSlices; ++i) { Op(armList.Get(), 7, sample.Get(), kWaitIterations); UavBarrier(armList.Get(), capture.Get()); }
+        Op(armList.Get(), 8, sample.Get()); UavBarrier(armList.Get(), sample.Get());
+        Check(armList->Close(), "inline arm close");
+        sideUncertain = true;
+        Check(side->Wait(armFence.Get(), armValue), "inline arm wait");
+        Execute(side.Get(), armList.Get());
+        sideUncertain = false;
+        if (diag.active) diag.qpcCaptureSeen = FrameDiag::Qpc(); // armed (not seen): handoff is GPU-side
+        return true;
+    }
     void NetworkQueued(bool ok) {
+        if (diag.active) diag.qpcSideReady = FrameDiag::Qpc();
         // Failure can follow partial runtime submission. Append a fresh side tail,
         // rather than reusing serial (whose Signal might itself have failed).
         // This certifies host D3D12 resources only; CollectRecording still owns
@@ -431,7 +531,13 @@ cbuffer Size : register(b0) { uint width; uint height; }
         if (ok) {
             Check(doneAlloc->Reset(), "inline done allocator"); Check(doneList->Reset(doneAlloc.Get(), nullptr), "inline done list");
             // Runtime Enqueue inserted its network completion Wait on this same side queue.
-            Op(doneList.Get(), 2, sample.Get()); UavBarrier(doneList.Get(), control.Get());
+            if (diag.active && !sideStamps) sideStamps = FrameDiag::GpuStamps::Acquire(device.Get(), 1);
+            const bool stamp = diag.active && sideStamps;
+            if (stamp) sideStamps->Stamp(doneList.Get(), 0);
+            if (armValue) { UavBarrier(doneList.Get(), sample.Get()); Op(doneList.Get(), 9, sample.Get()); }
+            else Op(doneList.Get(), 2, sample.Get());
+            UavBarrier(doneList.Get(), control.Get());
+            if (stamp) sideStamps->Resolve(doneList.Get());
             Check(doneList->Close(), "inline done close"); Execute(side.Get(), doneList.Get());
         }
         finalValue = ++serial; Check(side->Signal(sideFence.Get(), finalValue), "inline tail signal");
@@ -439,4 +545,25 @@ cbuffer Size : register(b0) { uint width; uint height; }
         scheduled.store(true, std::memory_order_release);
     }
 };
+// Caller holds RecordingMutex. Null pool = always create (default). The pool holds one
+// reference; use_count()==1 means the owner, lease and recording have all released it.
+inline std::shared_ptr<Resources> AcquireResources(std::vector<std::shared_ptr<Resources>>* pool, ID3D12Device* device,
+    ID3D12Resource* source, ID3D12Resource* neural, ID3D12Resource* firstPass, UINT width, UINT height,
+    std::shared_ptr<Pipelines> cached)
+{
+    if (pool) {
+        for (auto& r : *pool)
+            if (r.use_count() == 1 && r->Complete() && r->SameInputs(device, source, neural, firstPass, width, height)) {
+                r->PrepareReuse(); return r;
+            }
+    }
+    auto r = std::make_shared<Resources>(device, source, neural, firstPass, width, height, std::move(cached));
+    if (pool) {
+        // Drop retired entries for other inputs (resolution/slot changes) before growing.
+        pool->erase(std::remove_if(pool->begin(), pool->end(), [](const std::shared_ptr<Resources>& e) {
+            return e.use_count() == 1 && e->Complete(); }), pool->end());
+        if (pool->size() < 8) pool->push_back(r);
+    }
+    return r;
+}
 }
