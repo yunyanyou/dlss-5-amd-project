@@ -32,6 +32,10 @@
 namespace DlssNr
 {
 
+#ifndef DLSSNR_SHOW_NGX_WHITE_POINT_UI
+#define DLSSNR_SHOW_NGX_WHITE_POINT_UI 0
+#endif
+
 static void ResetSharedEffectsDefaults(Config* config)
 {
     config->NrPersonPartition = std::optional<bool>{};
@@ -204,8 +208,7 @@ static void ResetMochizuki(Config* config, int selectedGroup = -1,
     if ((selectedGroup < 0 || selectedGroup == 4) &&
         (!page || *page == PipelineUi::Section::Input))
     {
-        config->MochizukiUseGameExposure = std::optional<bool> {};
-        config->MochizukiAutoExposureMeter = std::optional<bool> {};
+        config->MochizukiWhitePointSource = std::optional<uint32_t> {};
     }
     if ((selectedGroup < 0 || selectedGroup == 1) &&
         (!page || *page == PipelineUi::Section::Model))
@@ -349,6 +352,16 @@ static void RenderSharedOutputEffects(Config* config)
         if (MenuUi::Checkbox("Show person mask overlay", &debugMask)) config->NrPersonDebugMask = debugMask;
         HelpMarker("Displays a green overlay on detected person areas for alignment and stability diagnostics.");
         ImGui::EndDisabled();
+        // Mirrors nr::Preprocess::active(): an active preprocess stops the Mochizuki runtime exporting pass 1,
+        // so multi-pass person protection is bypassed (MochizukiNrRuntime.cpp g.firstPass).
+        const uint32_t prepExposure = config->MochizukiPreprocessExposure.value_or_default();
+        const bool prepActive = config->MochizukiPreprocess.value_or_default() &&
+            (prepExposure > 2 || prepExposure == 1 || (prepExposure == 2 && config->MochizukiPreprocessBiasEv.value_or_default() != 0.f) ||
+             config->MochizukiPreprocessCurve.value_or_default() != 0u || config->MochizukiPreprocessContrast.value_or_default() != 1.f ||
+             config->MochizukiPreprocessSaturation.value_or_default() != 1.f);
+        if (personKind == Backend::Kind::Mochizuki && personPasses > 1 && prepActive)
+            MenuUi::TextColored(ImVec4(0.95f, 0.70f, 0.20f, 1.0f),
+                               "Preprocessing is on: person protection does not work in multi-pass. Turn off preprocessing.");
         if (personSupported && personPasses == 1 && strength == 1.f && detail == 1.f && !debugMask)
             MenuUi::TextWrapped("Single pass: lower person strength or detail to apply protection.");
     }
@@ -444,6 +457,25 @@ static void RenderMochizukiMenu(Config* config, PipelineUi::Section page, const 
         if (!shown) continue;
         const auto passes = config->MochizukiEffectivePasses();
         if ((g == 5 && passes < 2) || (g == 6 && passes < 3)) continue;
+        if (g == 4 && page == PipelineUi::Section::Input)
+        {
+            // White point source and the manual white point sit together, outside the collapsed
+            // "Advanced input" node, so the choice is visible next to the value it replaces.
+            // Reset stays with group 4 (ResetMochizuki).
+            const char* sources[] = {"Off", "Follow game", "Own meter", "Auto"};
+            const uint32_t stored = config->MochizukiWhitePointSource.value_or_default();
+            int source = stored <= 3u ? int(stored) : 0;
+            if (MenuUi::Combo("White point source", &source, sources, IM_ARRAYSIZE(sources)))
+                config->MochizukiWhitePointSource = uint32_t(source);
+            HelpMarker("Mochizuki backend only. Where its linear/HDR white point comes from. Default Off.\nOff: manual White point only.\nFollow game: use the game's exposure; manual when the game gives none.\nOwn meter: ignore the game and measure the frame itself (one tiny GPU pass, one frame late).\nAuto: the game's exposure when usable, else the own meter, else manual.\nTry Own meter or Auto when skin turns red at overall intensity above 1 (e.g. Monster Hunter Wilds).\nINI: MochizukiWhitePointSource (0-3).");
+            float wp = config->MochizukiWhitePoint.value_or_default();
+            if (MochizukiFloatControl("White point / brightness trim", CfgKey::MochizukiWhitePoint, &wp, .01f, 100.f))
+            {
+                config->MochizukiWhitePoint = wp;
+                AmdBridge::InvalidateHistory();
+            }
+            HelpMarker("With white point source off, this is the white point. With any auto source, it is a brightness trim on top of the automatic result; 1.0 = no change. Mochizuki backend only.");
+        }
         ImGui::PushID(g);
         const char* label = g == 1 ? (page == PipelineUi::Section::Input ? "Resolution" : "Model passes") :
             g == 4 ? (page == PipelineUi::Section::Input ? "Advanced input" : "Prebuild capacity") : groups[g];
@@ -476,25 +508,13 @@ static void RenderMochizukiMenu(Config* config, PipelineUi::Section page, const 
                     changed = true;
                 }
             }
-#define MZ_F(name, def, low, high, group, label, target) if (g == group && MochizukiOptionOnPage(CfgKey::name, page)) { float v = config->name.value_or_default(); if (MochizukiFloatControl(label, CfgKey::name, &v, low, high)) { config->name = v; changed = true; } }
+#define MZ_F(name, def, low, high, group, label, target) if (g == group && MochizukiOptionOnPage(CfgKey::name, page) && !(page == PipelineUi::Section::Input && std::string_view(CfgKey::name) == CfgKey::MochizukiWhitePoint)) { float v = config->name.value_or_default(); if (MochizukiFloatControl(label, CfgKey::name, &v, low, high)) { config->name = v; changed = true; } }
 #define MZ_U(name, def, low, high, group, label, target) if (g == group && MochizukiOptionOnPage(CfgKey::name, page) && std::string_view(CfgKey::name) != CfgKey::MochizukiPasses && std::string_view(CfgKey::name) != CfgKey::MochizukiMaxPasses) { int v = static_cast<int>(config->name.value_or_default()); if (MochizukiIntegerControl(label, CfgKey::name, &v, low, high)) { config->name = static_cast<uint32_t>(v); changed = true; } }
 #define MZ_B(name, def, low, high, group, label, target) if (std::string_view(CfgKey::name) != CfgKey::MochizukiAcoMode && g == group && MochizukiOptionOnPage(CfgKey::name, page)) { bool v = config->name.value_or_default(); if (MenuUi::Checkbox(label, &v)) { config->name = v; changed = true; } }
 #include "backend/MochizukiOptions.inc"
 #undef MZ_F
 #undef MZ_U
 #undef MZ_B
-            if (g == 4 && page == PipelineUi::Section::Input)
-            {
-                const char* onOff[] = {"Off", "On"};
-                int useGame = config->MochizukiUseGameExposure.value_or_default() ? 1 : 0;
-                if (MenuUi::Combo("Use game exposure", &useGame, onOff, IM_ARRAYSIZE(onOff)))
-                    config->MochizukiUseGameExposure = useGame == 1;
-                HelpMarker("Default off. Linear/HDR input only.\nOn: the white point follows the game's exposure (DLSS exposure texture x scale / pre-exposure, or 1/pre-exposure).\nCan change the look of games that already look right; White point stays the trim.\nINI: MochizukiUseGameExposure.");
-                int meter = config->MochizukiAutoExposureMeter.value_or_default() ? 1 : 0;
-                if (MenuUi::Combo("Auto exposure meter", &meter, onOff, IM_ARRAYSIZE(onOff)))
-                    config->MochizukiAutoExposureMeter = meter == 1;
-                HelpMarker("Default off. Linear/HDR input only.\nOn: when the game gives no exposure, meter the frame and level it (one tiny GPU pass, one frame late).\nTry it when skin turns red at overall intensity above 1 (e.g. Monster Hunter Wilds). Game exposure wins.\nINI: MochizukiAutoExposureMeter.");
-            }
             if (g == 4 && page == PipelineUi::Section::Model)
             {
                 const int cap = config->MochizukiUnlockPasses.value_or_default() ? static_cast<int>(Config::kMochizukiLayerPasses) : 3;
@@ -514,6 +534,7 @@ static void RenderMochizukiMenu(Config* config, PipelineUi::Section page, const 
                 "The pass control applies when editing finishes. Allow up to 30 layers raises it from 1-3 to 1-30. The selected count can rebuild; 30 runs the model thirty times.");
             if (g == 2) MenuUi::TextWrapped("NR -> SR uses unjittered motion. Mochizuki SR -> NR passes the game vectors through, including jittered ones, and the runtime scales render-resolution motion. The separate Residual Stabilizer filters the final correction.");
             if (g == 3) MenuUi::TextWrapped("Runs before the network. Preprocessing changes what the model sees and reverses that transform from its answer.");
+            if (g == 3) MenuUi::TextColored(ImVec4(0.95f, 0.70f, 0.20f, 1.0f), "In multi-pass, active preprocessing disables person protection.");
             if (g == 4) MenuUi::TextWrapped(page == PipelineUi::Section::Input ?
                 "DRS buckets reduce rebuilds when the render size changes. White point controls linear-input brightness." :
                 "Automatic prebuild capacity grows as needed and is retained on pass reduction. Capacity is not the active pass count. 0 is automatic. An explicit count is at least the active passes.");
@@ -2208,6 +2229,12 @@ void RenderMenu(Config* config, float menuResScale)
             ImGui::TreePop();
         }
 
+        // The global white point (DlssNrWhitePointSource / DlssNrWhitePointScale / DlssNrWhitePointTrim and the
+        // exposure-scan anchors) is consumed only by ResolveWhitePoint / encode on the NGX NR path
+        // (shaders/dlssnr/DlssNr_Dx12.cpp, dlssnr/DlssNrFeature_Vk.cpp). That path is skipped whenever
+        // AmdBridge::Evaluate succeeds, and this branch is AMD-only, so the controls are hidden. Code, Config
+        // and ini keys are kept; build with DLSSNR_SHOW_NGX_WHITE_POINT_UI=1 to show them again.
+#if DLSSNR_SHOW_NGX_WHITE_POINT_UI
         MenuUi::TextDisabled("The model was trained on finished, sRGB-encoded frames. The upscaler's\n"
                             "output is not one: it is linear and open-ended. These decide how it is\n"
                             "mapped into something the model recognises. A frame the game reports as\n"
@@ -2531,6 +2558,8 @@ void RenderMenu(Config* config, float menuResScale)
                        "\n\nAt strength zero the frame is still bit-identical whatever this says.");
         }
 
+#endif // DLSSNR_SHOW_NGX_WHITE_POINT_UI
+
         // Highlight guard, directly under the white point / trim -- it bounds the model's edit and
         // belongs with the exposure controls it works alongside.
         float maxRatio = config->DlssNrMaxRatio.value_or_default();
@@ -2548,6 +2577,7 @@ void RenderMenu(Config* config, float menuResScale)
                        "\nlight turning into a string of coloured cells. Raise it only if bright areas"
                        "\nlook clipped.");
 
+#if DLSSNR_SHOW_NGX_WHITE_POINT_UI
         // Directly under the white point, because that is the number it moves and the number the
         // anchor captures. It used to sit under Inspect, a whole section away from the slider it
         // reads, which left "Anchor here" looking like a control for something else entirely.
@@ -2772,6 +2802,7 @@ void RenderMenu(Config* config, float menuResScale)
 
 
         }
+#endif // DLSSNR_SHOW_NGX_WHITE_POINT_UI
 
         MenuUi::SeparatorText("Compare");
 
