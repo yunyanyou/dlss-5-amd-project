@@ -4220,7 +4220,13 @@ void MenuCommon::RenderFrameGenerationRuntimeSettings(RenderMenuContext& ctx)
                                    static_cast<unsigned long long>(multiplier->requested) + 1, multiplier->target + 1);
         }
 
-        if (XeFGProxy::Version().major >= 3)
+        // The public XeSS SDK (3.0.2) still reports the XeFG API as v1.3.1 and the
+        // dynamic controller lives in this host, not in the provider: the runtime
+        // path has no version check, and xefgSwapChainSetNumInterpolatedFrames is
+        // exported by 1.3.1 (count >= 1). Keep the option available there too; the
+        // only cost is that the provider may re-initialise inside a multiplier
+        // change, which is what 3.x removes.
+        if (XeFGProxy::Version().major >= 1)
         {
             ImGui::BeginDisabled(maxInterpolationCount <= 1);
             bool dynamicMfg = config->FGXeFGDynamicMFG.value_or_default();
