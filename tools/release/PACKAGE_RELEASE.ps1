@@ -492,8 +492,8 @@ AmdModelScale=1
 
 ; Encoding format mode for model inputs/outputs
 ; 0 = Auto (existing), 1 = Linear, 2 = sRGB, 3 = Gamma 2.2
-; Integer value - Default (auto) is 0 Auto
-AmdEncoding=auto
+; Integer value - Default is 2 sRGB
+AmdEncoding=2
 
 ; Schedule neural rendering execution on every frame
 ; When enabled, avoids skipping frames; multi-slot pipeline skips post-execute wait
