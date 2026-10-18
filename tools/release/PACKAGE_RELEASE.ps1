@@ -491,9 +491,9 @@ LmxxfAutoExposureScale=8
 AmdModelScale=1
 
 ; Encoding format mode for model inputs/outputs
-; 0 = FP16 (standard), 1 = FP8 / compressed
-; Integer value - Default is 0
-AmdEncoding=2
+; 0 = Auto (existing), 1 = Linear, 2 = sRGB, 3 = Gamma 2.2
+; Integer value - Default (auto) is 0 Auto
+AmdEncoding=auto
 
 ; Schedule neural rendering execution on every frame
 ; When enabled, avoids skipping frames; multi-slot pipeline skips post-execute wait
