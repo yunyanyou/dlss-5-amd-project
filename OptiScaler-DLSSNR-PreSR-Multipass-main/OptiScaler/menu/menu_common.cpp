@@ -4073,28 +4073,10 @@ void MenuCommon::RenderFrameGenerationRuntimeSettings(RenderMenuContext& ctx)
         {
             ImGui::SameLine(0.0f, 16.0f);
 
-            // 2X-4X are the multipliers that hold up without an external limiter, so
-            // they get names of their own. Anything above them goes through a single
-            // free-form slot: the provider does accept 5X and 6X, but at those rates
-            // the generated frames are presented faster than the display refreshes
-            // unless the present rate is capped, so they are better reached on
-            // purpose than by scrolling one click past the end of a list.
-            const char* intModes[] = { "2X", "3X", "4X" };
-            constexpr int namedCount = (int) IM_ARRAYSIZE(intModes);
-
-            // The named entries are 2X..4X, so the first multiplier *without* a name
-            // is one past the highest named one - not one past the number of them.
-            // Getting that wrong lands the custom slot on 4X, which already has a
-            // name, so the slot silently reverts to listing the named entry.
-            constexpr int highestNamedMultiplier = namedCount + 1;            // 4X
-            constexpr int firstCustomMultiplier = highestNamedMultiplier + 1; // 5X
-
             // No ceiling of our own: this follows whatever the provider reports,
-            // which follows XeFG\MaxInterpolatedFrames. Capping it here as well is
-            // how the custom slot ended up unable to reach the values it is for.
+            // which follows XeFG\MaxInterpolatedFrames. Every multiplier the provider
+            // reports is directly selectable, like the NR override below.
             const int maxMultiplier = maxInterpolationCount + 1;
-
-            const bool allowCustom = maxMultiplier >= firstCustomMultiplier;
 
             // "Auto" is not a fourth value sitting next to 2X-4X: it is the absence of a
             // value, which is what the backend reads as "use whatever the game asked
@@ -4105,15 +4087,6 @@ void MenuCommon::RenderFrameGenerationRuntimeSettings(RenderMenuContext& ctx)
             const int currentCount = (int) fgOutput->GetInterpolatedFrameCount();
             const int currentSet = currentCount - 1;
 
-            // Only an explicit choice can be "custom". While auto is following the game
-            // the count is just as likely to land above 4X, and showing that as a custom
-            // entry would take credit for a multiplier this menu never picked.
-            const bool custom = !autoMode && allowCustom && currentSet >= namedCount;
-
-            // Remembers what was last typed, so leaving and re-entering the custom
-            // slot does not silently drop back to the first custom multiplier.
-            static int customMultiplier = firstCustomMultiplier;
-
             char currentLabel[32];
             if (autoMode)
                 // Spelling out the multiplier auto resolved to is the point of the
@@ -4121,11 +4094,8 @@ void MenuCommon::RenderFrameGenerationRuntimeSettings(RenderMenuContext& ctx)
                 // the live count reads as 0.
                 std::snprintf(currentLabel, sizeof(currentLabel), currentCount > 0 ? "Auto (%dX)" : "Auto",
                               currentCount + 1);
-            else if (custom)
-                std::snprintf(currentLabel, sizeof(currentLabel), "%dX (custom)", currentCount + 1);
             else
-                std::snprintf(currentLabel, sizeof(currentLabel), "%s",
-                              intModes[currentSet >= 0 && currentSet < namedCount ? currentSet : 0]);
+                std::snprintf(currentLabel, sizeof(currentLabel), "%dX", currentCount + 1);
 
             ImGui::PushItemWidth(95.0f * menuResScale);
 
@@ -4142,70 +4112,21 @@ void MenuCommon::RenderFrameGenerationRuntimeSettings(RenderMenuContext& ctx)
                     config->FGXeFGInterpolationCount = std::nullopt;
                 }
 
-                for (int i = 0; i < namedCount && i < maxInterpolationCount; i++)
+                for (int count = 1; count <= maxInterpolationCount; ++count)
                 {
-                    if (MenuUi::Selectable(intModes[i], (currentSet == i)))
+                    const auto label = std::to_string(static_cast<uint64_t>(count) + 1) + "X";
+                    if (MenuUi::Selectable(label.c_str(), !autoMode && currentSet == count - 1))
                     {
-                        LOG_DEBUG("XeFG Interpolation Count set to: {}", i + 1);
+                        LOG_DEBUG("XeFG Interpolation Count set to: {}", count);
                         state.fgChanged = true;
-                        config->FGXeFGInterpolationCount = i + 1;
+                        config->FGXeFGInterpolationCount = count;
                     }
-                }
-
-                if (allowCustom && MenuUi::Selectable("Custom...", custom))
-                {
-                    if (customMultiplier < firstCustomMultiplier || customMultiplier > maxMultiplier)
-                        customMultiplier = firstCustomMultiplier;
-
-                    LOG_INFO("MFG menu: Custom selected, asking for {}X (interpolation count {})", customMultiplier,
-                             customMultiplier - 1);
-                    state.fgChanged = true;
-                    config->FGXeFGInterpolationCount = customMultiplier - 1;
                 }
 
                 ImGui::EndCombo();
             }
 
             ImGui::PopItemWidth();
-
-            if (custom)
-            {
-                // The value in the config is the interpolation count, so the
-                // multiplier is always one more than it.
-                if (customMultiplier - 1 != currentCount)
-                    customMultiplier = currentCount + 1;
-
-                // On its own line rather than a SameLine off the MFG combo above.
-                // The menu window is AlwaysAutoResize, so its width is the width of
-                // its widest row -- appending this field to the MFG row made
-                // picking Custom... widen every other row in the menu with it.
-                ImGui::PushItemWidth(60.0f * menuResScale);
-
-                if (MenuUi::InputInt("Multiplier##mfgCustom", &customMultiplier, 1, 0))
-                {
-                    if (customMultiplier < firstCustomMultiplier)
-                        customMultiplier = firstCustomMultiplier;
-                    else if (customMultiplier > maxMultiplier)
-                        customMultiplier = maxMultiplier;
-
-                    LOG_INFO("MFG menu: custom multiplier set to {}X (interpolation count {})", customMultiplier,
-                             customMultiplier - 1);
-                    state.fgChanged = true;
-                    config->FGXeFGInterpolationCount = customMultiplier - 1;
-                }
-
-                ImGui::PopItemWidth();
-
-                // Above 4X the burst arrives faster than the display refreshes, and
-                // nothing inside the provider can pull that back - it needs the
-                // present rate capped from the outside. Only reachable through this
-                // slot: the named entries stop at 4X.
-                if (customMultiplier > highestNamedMultiplier)
-                {
-                    ImGui::SameLine(0.0f, 8.0f);
-                    MenuUi::TextColored(toneMapColor(ImVec4(1.f, 0.8f, 0.f, 1.f)), "! Enable VSync");
-                }
-            }
 
             // The upper bound is spelled out from the live value rather than as a
             // fixed number, so narrowing XeFG\MaxInterpolatedFrames does not leave
@@ -4219,7 +4140,7 @@ void MenuCommon::RenderFrameGenerationRuntimeSettings(RenderMenuContext& ctx)
                           "Above 4X the generated frames are presented faster than\n"
                           "the display refreshes, so VSync (or a frame rate cap) is\n"
                           "required - without it the extra frames tear and judder.\n\n"
-                          "Use Custom... for anything above 4X, up to %dX.",
+                          "Listed up to %dX.",
                           maxMultiplier);
 
             ShowHelpMarker(mfgTip);
