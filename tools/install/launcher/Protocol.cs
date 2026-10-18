@@ -1,0 +1,147 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Json;
+using System.Text;
+
+namespace OptScalerNR.Launcher
+{
+    [DataContract]
+    public sealed class LauncherRequest
+    {
+        [DataMember(Name = "schema")] public int Schema = 1;
+        [DataMember(Name = "requestId")] public string RequestId;
+        [DataMember(Name = "action")] public string Action;
+        [DataMember(Name = "gameExe")] public string GameExe;
+        [DataMember(Name = "proxyChoice")] public string ProxyChoice;
+        [DataMember(Name = "backendChoice")] public string BackendChoice;
+        [DataMember(Name = "explicitDecisions")] public Decisions ExplicitDecisions;
+        [DataMember(Name = "fingerprint")] public string Fingerprint;
+        [DataMember(Name = "packageRoot")] public string PackageRoot;
+        [DataMember(Name = "backends")] public string[] Backends;
+        [DataMember(Name = "activeBackend")] public string ActiveBackend;
+        [DataMember(Name = "language")] public string Language;
+    }
+
+    [DataContract]
+    public sealed class Decisions
+    {
+        [DataMember(Name = "existingInstall")] public string ExistingInstall;
+        [DataMember(Name = "existingIni")] public string ExistingIni;
+        [DataMember(Name = "missingMochizukiModel")] public string MissingMochizukiModel;
+        [DataMember(Name = "mochizukiModels")] public string MochizukiModels;
+        [DataMember(Name = "shortFileContinue")] public string ShortFileContinue;
+        [DataMember(Name = "foreignProxy")] public Dictionary<string, string> ForeignProxy;
+    }
+
+    [DataContract]
+    public sealed class LauncherResult
+    {
+        [DataMember(Name = "schema")] public int Schema;
+        [DataMember(Name = "requestId")] public string RequestId;
+        [DataMember(Name = "status")] public string Status;
+        [DataMember(Name = "effectiveGameDir")] public string EffectiveGameDir;
+        [DataMember(Name = "resolvedProxy")] public string ResolvedProxy;
+        [DataMember(Name = "candidates")] public Candidate[] Candidates;
+        [DataMember(Name = "conflicts")] public Conflict[] Conflicts;
+        [DataMember(Name = "requiredDecisions")] public RequiredDecision[] RequiredDecisions;
+        [DataMember(Name = "logPath")] public string LogPath;
+        [DataMember(Name = "error")] public string Error;
+        [DataMember(Name = "fingerprint")] public string Fingerprint;
+        [DataMember(Name = "notes")] public string[] Notes;
+        [DataMember(Name = "partial")] public bool Partial;
+        [DataMember(Name = "recommend")] public string Recommend;
+        [DataMember(Name = "games")] public GameInfo[] Games;
+        [DataMember(Name = "backends")] public BackendInfo[] Backends;
+        [DataMember(Name = "packageRoot")] public string PackageRoot;
+    }
+
+    [DataContract]
+    public sealed class BackendInfo
+    {
+        [DataMember(Name = "id")] public string Id;
+        [DataMember(Name = "runtimeState")] public string RuntimeState;
+        [DataMember(Name = "modelState")] public string ModelState;
+        [DataMember(Name = "enabled")] public bool Enabled;
+        [DataMember(Name = "reasonCode")] public string ReasonCode;
+        [DataMember(Name = "reason")] public string Reason;
+        [DataMember(Name = "hints")] public string[] Hints;
+        [DataMember(Name = "missingPackageFiles")] public string[] MissingPackageFiles;
+    }
+
+    [DataContract]
+    public sealed class GameInfo
+    {
+        [DataMember(Name = "id")] public string Id;
+        [DataMember(Name = "name")] public string Name;
+        [DataMember(Name = "exe")] public string Exe;
+        [DataMember(Name = "source")] public string Source;
+        [DataMember(Name = "installed")] public bool Installed;
+        [DataMember(Name = "cover")] public string Cover;
+        [DataMember(Name = "hero")] public string Hero;
+        [DataMember(Name = "exeOverride", EmitDefaultValue = false)] public bool? ExeOverride;
+    }
+
+    [DataContract]
+    public sealed class Candidate
+    {
+        [DataMember(Name = "name")] public string Name;
+        [DataMember(Name = "rank")] public int Rank;
+        [DataMember(Name = "confidence")] public string Confidence;
+        [DataMember(Name = "reason")] public string Reason;
+    }
+
+    [DataContract]
+    public sealed class Conflict
+    {
+        [DataMember(Name = "name")] public string Name;
+        [DataMember(Name = "kind")] public string Kind;
+        [DataMember(Name = "detail")] public string Detail;
+    }
+
+    [DataContract]
+    public sealed class RequiredDecision
+    {
+        [DataMember(Name = "id")] public string Id;
+        [DataMember(Name = "file")] public string File;
+        [DataMember(Name = "prompt")] public string Prompt;
+        [DataMember(Name = "options")] public string[] Options;
+    }
+
+    public static class JsonUtil
+    {
+        static DataContractJsonSerializer Serializer(Type type)
+        {
+            return new DataContractJsonSerializer(type, new DataContractJsonSerializerSettings
+            {
+                UseSimpleDictionaryFormat = true
+            });
+        }
+
+        public static string Write<T>(T value)
+        {
+            var ser = Serializer(typeof(T));
+            using (var ms = new MemoryStream())
+            {
+                ser.WriteObject(ms, value);
+                return Encoding.UTF8.GetString(ms.ToArray());
+            }
+        }
+
+        public static T Read<T>(string json)
+        {
+            var ser = Serializer(typeof(T));
+            using (var ms = new MemoryStream(Encoding.UTF8.GetBytes(json)))
+                return (T)ser.ReadObject(ms);
+        }
+
+        public static void WriteFile<T>(string path, T value)
+        {
+            var tmp = path + ".tmp";
+            File.WriteAllText(tmp, Write(value), new UTF8Encoding(false));
+            File.Copy(tmp, path, true);
+            File.Delete(tmp);
+        }
+    }
+}

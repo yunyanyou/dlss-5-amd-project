@@ -1,0 +1,385 @@
+﻿# Schema 1 worker. Inspect is read-only. Install/uninstall call the existing scripts.
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)][string]$RequestJson,
+    [Parameter(Mandatory = $true)][string]$EventsJsonl,
+    [Parameter(Mandatory = $true)][string]$ResultJson
+)
+$ErrorActionPreference = 'Stop'
+$here = $PSScriptRoot
+. (Join-Path $here 'proxy-probe.ps1')
+
+function Write-Event([string]$stage, [string]$message) {
+    $line = (@{ schema = 1; requestId = $script:rid; stage = $stage; message = $message } | ConvertTo-Json -Compress)
+    [IO.File]::AppendAllText($EventsJsonl, $line + [Environment]::NewLine)
+}
+function Write-Result($obj) {
+    $tmp = $ResultJson + '.tmp'
+    [IO.File]::WriteAllText($tmp, ($obj | ConvertTo-Json -Depth 8))
+    [IO.File]::Copy($tmp, $ResultJson, $true)
+    Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+}
+function New-Result([string]$status, [string]$error) {
+    return @{
+        schema = 1
+        requestId = $script:rid
+        status = $status
+        effectiveGameDir = $script:gameDir
+        resolvedProxy = $script:resolved
+        candidates = $script:candidates
+        conflicts = $script:conflicts
+        requiredDecisions = $script:needed
+        logPath = $EventsJsonl
+        error = $error
+        fingerprint = $script:fingerprint
+        notes = $script:notes
+        partial = $script:partial
+        recommend = $script:recommend
+        backends = $script:backends
+        packageRoot = $script:packageRoot
+    }
+}
+function Fail-Result([string]$status, [string]$error, [int]$code) {
+    Write-Result (New-Result $status $error)
+    exit $code
+}
+function Find-Sibling([string]$name) {
+    $dirs = @(
+        $here,
+        (Split-Path $here -Parent),
+        (Join-Path (Split-Path $here -Parent) 'tools'),
+        (Join-Path $here '..\..\tools')
+    )
+    foreach ($dir in $dirs) {
+        try {
+            $p = [IO.Path]::GetFullPath((Join-Path $dir $name))
+            if (Test-Path -LiteralPath $p -PathType Leaf) { return $p }
+        } catch { }
+    }
+    return $null
+}
+
+if (-not [IO.Path]::IsPathRooted($RequestJson) -or -not [IO.Path]::IsPathRooted($EventsJsonl) -or -not [IO.Path]::IsPathRooted($ResultJson)) {
+    throw 'RequestJson, EventsJsonl and ResultJson must be absolute paths'
+}
+$req = Get-Content -LiteralPath $RequestJson -Raw -Encoding UTF8 | ConvertFrom-Json
+if ([int]$req.schema -ne 1) { throw "unsupported schema $($req.schema)" }
+$script:rid = [string]$req.requestId
+$script:gameDir = ''
+$script:resolved = $null
+$script:candidates = @()
+$script:conflicts = @()
+$script:needed = @()
+$script:notes = @()
+$script:fingerprint = $null
+$script:partial = $false
+$allowedProxy = @('dxgi.dll','winmm.dll','d3d12.dll','winhttp.dll','wininet.dll','dbghelp.dll')
+$allowedAction = @('inspect','install','update','uninstall','scan')
+$allowedBackend = @('auto','daniel','lmxxf','mochizuki','all')
+if ($allowedAction -notcontains [string]$req.action) { throw "invalid action $($req.action)" }
+
+# An explicitly empty list must not fall through to automatic/all-backend installation.
+$hasRequestedBackends = $null -ne $req.backends
+if ($req.action -in @('install','update')) {
+    if ($hasRequestedBackends) {
+        if (@($req.backends).Count -eq 0) { Fail-Result 'failed' 'Select at least one backend.' 1 }
+        if ($req.backendChoice -and $req.backendChoice -ne 'auto') {
+            Fail-Result 'failed' 'Pass either backendChoice or backends, not both.' 1
+        }
+        $seenRequestedBackends = @{}
+        foreach ($id in @($req.backends)) {
+            if ($id -notin @('lmxxf','daniel','mochizuki')) { Fail-Result 'failed' "Unknown backend id: $id" 1 }
+            if ($seenRequestedBackends.ContainsKey($id)) { Fail-Result 'failed' "Duplicate backend id: $id" 1 }
+            $seenRequestedBackends[$id] = $true
+        }
+        if ($req.activeBackend -and -not $seenRequestedBackends.ContainsKey([string]$req.activeBackend)) {
+            Fail-Result 'failed' 'Active backend must be in the selected backends.' 1
+        }
+    } elseif ($req.activeBackend) {
+        Fail-Result 'failed' 'Active backend requires an explicit backends list.' 1
+    }
+}
+
+if ($req.action -eq 'scan') {
+    Write-Event 'scan' 'Scanning game libraries...'
+    $scan = Join-Path $here 'library-scan.ps1'
+    if (-not (Test-Path -LiteralPath $scan)) { $scan = Find-Sibling 'library-scan.ps1' }
+    if (-not $scan) { Fail-Result 'failed' 'library-scan.ps1 is missing from the package.' 1 }
+    . $scan
+    $games = @(Get-OptScalerGameLibrary)
+    $obj = New-Result 'success' $null
+    $obj.games = $games
+    Write-Result $obj
+    Write-Event 'done' "scan complete ($($games.Count) games found)"
+    exit 0
+}
+function Resolve-XboxGamePath([string]$exe) {
+    if ($exe -notmatch '(?i)\\WindowsApps\\') { return $exe }
+    $name = [IO.Path]::GetFileName($exe)
+    if (-not $name) { return $exe }
+    $hits = New-Object System.Collections.Generic.List[string]
+    foreach ($drive in [IO.DriveInfo]::GetDrives()) {
+        if (-not $drive.IsReady) { continue }
+        $root = Join-Path $drive.Name 'XboxGames'
+        if (-not (Test-Path -LiteralPath $root -PathType Container)) { continue }
+        $stack = New-Object System.Collections.Generic.Stack[object]
+        $stack.Push(@{ Path = $root; Depth = 0 })
+        while ($stack.Count -gt 0 -and $hits.Count -lt 32) {
+            $cur = $stack.Pop()
+            if ($cur.Depth -gt 8) { continue }
+            $entries = @()
+            try { $entries = [IO.Directory]::GetFileSystemEntries($cur.Path) } catch { continue }
+            foreach ($entry in $entries) {
+                $leaf = [IO.Path]::GetFileName($entry)
+                $isDir = $false
+                $reparse = $false
+                try {
+                    $attr = [IO.File]::GetAttributes($entry)
+                    $isDir = [bool]($attr -band [IO.FileAttributes]::Directory)
+                    $reparse = [bool]($attr -band [IO.FileAttributes]::ReparsePoint)
+                } catch {
+                    if ([string]::Equals($leaf, $name, [StringComparison]::OrdinalIgnoreCase)) {
+                        [void]$hits.Add($entry)
+                    }
+                    continue
+                }
+                if ($reparse) { continue }
+                if ($isDir) {
+                    $stack.Push(@{ Path = $entry; Depth = $cur.Depth + 1 })
+                    continue
+                }
+                if ([string]::Equals($leaf, $name, [StringComparison]::OrdinalIgnoreCase)) {
+                    [void]$hits.Add($entry)
+                }
+            }
+        }
+    }
+    if ($hits.Count -eq 0) { return $exe }
+    return @($hits | Sort-Object {
+        if ($_ -match '(?i)\\WinGDK\\') { 0 } elseif ($_ -match '(?i)\\Win64\\') { 1 } elseif ($_ -match '(?i)\\Binaries\\') { 2 } else { 3 }
+    }, { $_.Length })[0]
+}
+
+$exe = [string]$req.gameExe
+if (-not $exe -or -not [IO.Path]::IsPathRooted($exe)) { Fail-Result 'failed' 'gameExe must be an absolute path' 1 }
+$exe = Resolve-XboxGamePath $exe
+try {
+    $item = Get-Item -LiteralPath $exe -Force -ErrorAction Stop
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { Fail-Result 'failed' 'gameExe cannot be a reparse point' 1 }
+} catch [UnauthorizedAccessException] {
+    Write-Event 'inspect' 'selected exe is protected; using its folder'
+} catch {
+    $parent = [IO.Path]::GetDirectoryName($exe)
+    if (-not $parent -or -not (Test-Path -LiteralPath $parent -PathType Container)) {
+        Fail-Result 'failed' 'gameExe not found' 1
+    }
+    Write-Event 'inspect' 'selected exe metadata unavailable; using its folder'
+}
+
+Write-Event 'inspect' 'reading PE imports and local dependencies'
+$probe = Get-ProxyRecommendation $exe
+$script:gameDir = [string]$probe.gameDir
+$script:candidates = @($probe.candidates)
+$script:conflicts = @($probe.conflicts)
+$script:fingerprint = $probe.fingerprint
+$script:partial = [bool]$probe.partial
+$choice = [string]$req.proxyChoice
+if (-not $choice -or $choice -eq 'auto') {
+    if ($probe.recommend) { $script:resolved = [string]$probe.recommend }
+    else { $script:resolved = $null }
+} elseif ($allowedProxy -contains $choice) {
+    $script:resolved = $choice
+} else {
+    Fail-Result 'failed' 'invalid proxyChoice' 1
+}
+$backend = [string]$req.backendChoice
+if ($backend -and $allowedBackend -notcontains $backend) { Fail-Result 'failed' 'invalid backendChoice' 1 }
+
+function Find-PackageRoot([string]$requested) {
+    $dirs = @()
+    if ($requested) { $dirs += $requested }
+    else {
+        $dirs += $here
+        $dirs += (Split-Path $here -Parent)
+    }
+    foreach ($d in $dirs) {
+        if (-not $d) { continue }
+        try { $d = [IO.Path]::GetFullPath($d) } catch { continue }
+        $dll = Join-Path $d 'OptiScaler.dll'
+        $setup = @(
+            (Join-Path $d 'Setup.ps1'),
+            (Join-Path $d 'install-amd-presr.ps1')
+        ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }
+        if ((Test-Path -LiteralPath $dll -PathType Leaf) -and $setup) { return $d }
+    }
+    return $null
+}
+$script:packageRoot = Find-PackageRoot ([string]$req.packageRoot)
+$pkg = $script:packageRoot
+if ($pkg) {
+    $pythonHelper = Join-Path $pkg 'mochizuki-python.ps1'
+    if (-not (Test-Path $pythonHelper)) { $pythonHelper = Join-Path $here 'mochizuki-python.ps1' }
+    $hasModel = Test-Path -LiteralPath (Join-Path $pkg 'dlssnr-amd\dlssnr.bin')
+    $hasNv = Test-Path -LiteralPath (Join-Path $pkg 'nvngx_dlssnr.dll')
+    $script:notes += ('Package model file present: {0}. That is not a GPU compatibility test.' -f $hasModel)
+    $script:notes += ('NVIDIA DLL for optional extraction present: {0}.' -f $hasNv)
+}
+
+$script:recommend = $probe.recommend
+$script:backends = @()
+$capScript = Join-Path $here 'install-capabilities.ps1'
+if (-not (Test-Path -LiteralPath $capScript)) { $capScript = Find-Sibling 'install-capabilities.ps1' }
+if ($capScript -and (Test-Path -LiteralPath $capScript)) {
+    . $capScript
+    $script:backends = @(Get-OptScalerBackendCapabilities $script:packageRoot $script:gameDir)
+}
+
+
+if ($req.action -eq 'inspect') {
+    if ($probe.hint) { $script:notes += $probe.hint }
+    Write-Event 'done' 'inspect complete'
+    Fail-Result 'success' $null 0
+}
+
+if ($req.action -in @('install','update') -and $req.fingerprint -and $req.fingerprint -ne $script:fingerprint) {
+    $script:needed += @{ id = 'reinspect'; prompt = 'Game folder files changed since the last inspect. Inspect again.'; options = @('ok') }
+    Fail-Result 'needsInput' 'stale inspect fingerprint' 2
+}
+
+function Find-Setup([string]$name) {
+    # Scripts and runtime inputs must belong to the same selected package.
+    if ($script:packageRoot) {
+        $path = Join-Path $script:packageRoot $name
+        if (Test-Path -LiteralPath $path -PathType Leaf) { return $path }
+        return $null
+    }
+    if ($req.packageRoot) { return $null }
+    return Find-Sibling $name
+}
+$install = Find-Setup 'install-amd-presr.ps1'
+if (-not $install) { $install = Find-Setup 'Setup.ps1' }
+$uninstall = Find-Setup 'uninstall-amd-presr.ps1'
+if (-not $uninstall) { $uninstall = Find-Setup 'Uninstall_OptiScaler_NR.ps1' }
+if ($req.action -eq 'uninstall') { $install = $uninstall }
+if (-not $install) {
+    Fail-Result 'failed' 'Complete package required: setup scripts are missing. Unzip the full package again.' 1
+}
+
+function ConvertTo-ForeignProxyMap($raw) {
+    $map = @{}
+    if ($null -eq $raw) { return $map }
+    $items = @($raw)
+    if ($items.Count -gt 0 -and $null -ne $items[0].PSObject.Properties['Key']) {
+        foreach ($row in $items) {
+            if ($row.Key) { $map[[string]$row.Key] = [string]$row.Value }
+        }
+        return $map
+    }
+    foreach ($p in $raw.PSObject.Properties) {
+        $map[[string]$p.Name] = [string]$p.Value
+    }
+    return $map
+}
+
+$dec = $req.explicitDecisions
+if ($req.action -in @('install','update')) {
+    if ($probe.blockInstall) { Fail-Result 'failed' $probe.hint 1 }
+    if (-not $script:resolved) { Fail-Result 'needsInput' 'No proxy recommendation is available. Select a DLL explicitly.' 2 }
+    if (-not $script:packageRoot) {
+        Fail-Result 'failed' 'Complete package required: OptiScaler.dll was not found next to the installer. Unzip the full package and run Setup.bat from that folder.' 1
+    }
+}
+if ($req.action -ne 'uninstall') {
+    $mochiAvailable = @($script:backends | Where-Object { $_.id -eq 'mochizuki' -and $_.runtimeState -eq 'ready' }).Count -gt 0
+    $mochiSelected = if ($hasRequestedBackends) { @($req.backends) -contains 'mochizuki' } else {
+        $backend -eq 'mochizuki' -or (($backend -in @('auto','all','')) -and $mochiAvailable)
+    }
+    if ($mochiSelected) {
+        $modelChoice = if ($dec) { [string]$dec.mochizukiModels } else { '' }
+        if (-not $modelChoice) {
+            $script:needed += @{
+                id = 'mochizukiModels'
+                prompt = 'Select Mochizuki models explicitly. The new model requires nvngx_dlssnr.dll 310.9.16.0; Original uses older weights.'
+                options = @('both','small','original')
+            }
+        } elseif ($modelChoice -notin @('both','small','original')) {
+            Fail-Result 'failed' 'Invalid Mochizuki models choice.' 1
+        }
+    }
+    if ($probe.conflicts.Count -gt 0) {
+        $map = @{}
+        if ($dec -and $dec.foreignProxy) { $map = ConvertTo-ForeignProxyMap $dec.foreignProxy }
+        foreach ($c in $probe.conflicts) {
+            $name = $c.name
+            $has = $map.ContainsKey($name) -or $map.ContainsKey($name.ToLowerInvariant())
+            if (-not $has) {
+                $script:needed += @{
+                    id = 'foreignProxy'
+                    file = $name
+                    prompt = "$name exists and is not this project. Backup, keep, or cancel?"
+                    options = @('backup','keep','cancel')
+                }
+            }
+        }
+    }
+    if ($script:needed.Count -gt 0) {
+        Write-Event 'validate' 'waiting for explicit decisions'
+        Fail-Result 'needsInput' 'missing decisions' 2
+    }
+}
+
+Write-Event 'validate' 're-checking paths and locks'
+$ps51 = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+$stdoutLog = Join-Path ([IO.Path]::GetDirectoryName($ResultJson)) 'setup.stdout.log'
+$stderrLog = Join-Path ([IO.Path]::GetDirectoryName($ResultJson)) 'setup.stderr.log'
+$dj = $null
+if ($req.action -eq 'uninstall') {
+    Write-Event 'install' 'starting uninstall'
+} else {
+    $dj = Join-Path ([IO.Path]::GetDirectoryName($ResultJson)) 'decisions.json'
+    $payload = @{
+        existingInstall = 'overwrite'
+        existingIni = 'keep'
+        shortFileContinue = 'abort'
+        optiPatcher = 'skip'
+        language = if ($req.language -eq 'zh') { 'zh' } else { 'en' }
+    }
+    if ($dec) {
+        foreach ($name in @('existingInstall','existingIni','mochizukiModels','shortFileContinue','optiPatcher','foreignProxy')) {
+            if ($dec.PSObject.Properties[$name] -and $null -ne $dec.$name) {
+                if ($name -eq 'foreignProxy') { $payload[$name] = ConvertTo-ForeignProxyMap $dec.$name }
+                else { $payload[$name] = $dec.$name }
+            }
+        }
+    }
+    if ($hasRequestedBackends) { $payload['backends'] = @($req.backends) }
+    ($payload | ConvertTo-Json -Depth 6) | Set-Content -LiteralPath $dj -Encoding UTF8
+    Write-Event 'install' "starting $($req.action)"
+}
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+if ($req.action -eq 'uninstall') {
+    & $ps51 -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $install -GameDir $script:gameDir -NonInteractive -NoPause 1>$stdoutLog 2>$stderrLog
+} elseif ($hasRequestedBackends) {
+    $activeArguments = @()
+    if ($req.activeBackend) { $activeArguments = @('-ActiveBackend', [string]$req.activeBackend) }
+    & $ps51 -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $install -GameDir $script:gameDir -Proxy $script:resolved -NoPause -NonInteractive -Root $script:packageRoot @activeArguments -DecisionJson $dj 1>$stdoutLog 2>$stderrLog
+} elseif ($backend -and $backend -ne 'auto') {
+    & $ps51 -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $install -GameDir $script:gameDir -Proxy $script:resolved -NoPause -NonInteractive -Root $script:packageRoot -Backend $backend -DecisionJson $dj 1>$stdoutLog 2>$stderrLog
+} else {
+    & $ps51 -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $install -GameDir $script:gameDir -Proxy $script:resolved -NoPause -NonInteractive -Root $script:packageRoot -DecisionJson $dj 1>$stdoutLog 2>$stderrLog
+}
+$code = $LASTEXITCODE
+$ErrorActionPreference = $prevEap
+if (Test-Path -LiteralPath $stdoutLog) {
+    Get-Content -LiteralPath $stdoutLog -ErrorAction SilentlyContinue | ForEach-Object { Write-Event 'log' $_ }
+}
+if ($code -eq 0) {
+    Write-Event 'verify' 'setup process exit 0'
+    Write-Event 'done' "$($req.action) complete"
+    Fail-Result 'success' $null 0
+}
+Write-Event 'done' "$($req.action) failed ($code)"
+$tail = ''
+if (Test-Path -LiteralPath $stderrLog) { $tail = (Get-Content -LiteralPath $stderrLog -Raw -ErrorAction SilentlyContinue) }
+Fail-Result 'failed' ("setup exit $code $tail").Trim() 1

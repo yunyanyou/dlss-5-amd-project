@@ -19,19 +19,19 @@ inspect = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(inspect)
 
 
-def fixture(name='block0.layer0.layer', broken_weights=False):
+def fixture(name='block0.layer0.layer', broken_weights=False, resource='WEIGHTS_HT'):
     payload = b'opaque weight bytes'
     body_size = 40 + len(payload)
     body = struct.pack('<QQI', body_size, len(payload), 0) + payload
     body += struct.pack('<IIQI', 1, 2, 1, len(payload))
     record = struct.pack('<Q', len(name)) + name.encode() + struct.pack('<Q', body_size) + body
     weights = struct.pack('<Q', 8 + len(record) + int(broken_weights)) + record
-    tree = bytearray(128) + weights
-    struct.pack_into('<HHII', tree, 12, 1, 0, 0x80000020, 0x40)
-    label = 'WEIGHTS_HT'.encode('utf-16le')
+    tree = bytearray(160) + weights
+    struct.pack_into('<HHII', tree, 12, 1, 0, 0x80000020, 0x60)
+    label = resource.encode('utf-16le')
     struct.pack_into('<H', tree, 0x20, len(label) // 2)
     tree[0x22:0x22 + len(label)] = label
-    struct.pack_into('<IIII', tree, 0x40, 0x1080, len(weights), 0, 0)
+    struct.pack_into('<IIII', tree, 0x60, 0x10a0, len(weights), 0, 0)
     data = bytearray(512) + tree
     data[:2] = b'MZ'
     struct.pack_into('<I', data, 0x3c, 0x80)
@@ -96,6 +96,54 @@ class ModelExtractionTests(unittest.TestCase):
         self.assertEqual(len(list((self.root / 'full/cubins').glob('*.cubin'))), 1)
         self.assertFalse((self.root / 'inventory/weights').exists())
 
+    def test_small_resource_selection_reads_only_its_weights(self):
+        self.source.write_bytes(fixture(resource='WEIGHTS_CC_SMALL_FP8')[0])
+        output = self.root / 'small'
+        summary = self.run_mode(['--extract-weights', '--resource', 'WEIGHTS_CC_SMALL_FP8'], output)
+        self.assertIsNone(summary['cuda_modules'])
+        self.assertEqual((output / 'weights/block0.layer0.layer.bin').read_bytes(), self.payload)
+        with self.assertRaises(inspect.FormatError):
+            self.run_mode(['--extract-weights'], self.root / 'wrong-resource')
+
+    def test_converter_selects_both_models_and_validates_before_publish(self):
+        spec = importlib.util.spec_from_file_location('mochi_model', ROOT / 'tools/install/mochizuki-model.py')
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+        destination = self.root / 'dlssnr.bin'
+        small = self.root / 'dlssnr-small.bin'
+        calls = []
+
+        def converter(command, **kwargs):
+            calls.append(command)
+            if Path(command[3]).name == 'pack_model.py':
+                target = Path(command[command.index('--out') + 1])
+                if fail_small and target.name == 'dlssnr-small.bin':
+                    raise subprocess.CalledProcessError(1, command)
+                target.write_bytes(target.name.encode())
+            return subprocess.CompletedProcess(command, 0, json.dumps({'dll_sha256': version}))
+
+        version, fail_small = model.DLL_3109, False
+        with patch.object(model.subprocess, 'run', side_effect=converter):
+            model.extract(self.source, destination, VENDOR, self.root)
+        self.assertEqual(destination.read_bytes(), b'dlssnr.bin')
+        self.assertEqual(small.read_bytes(), b'dlssnr-small.bin')
+        resources = [c[c.index('--resource') + 1] for c in calls if '--resource' in c]
+        self.assertEqual(resources, ['WEIGHTS_HT', 'WEIGHTS_CC_SMALL_FP8'])
+        packs = [c for c in calls if Path(c[3]).name == 'pack_model.py']
+        self.assertEqual([Path(c[c.index('--verify') + 1]).name for c in packs],
+                         ['model-files.sha256', 'model-files-small.sha256'])
+        destination.write_bytes(b'keep original'); small.write_bytes(b'keep new')
+        fail_small = True
+        with patch.object(model.subprocess, 'run', side_effect=converter), self.assertRaises(subprocess.CalledProcessError):
+            model.extract(self.source, destination, VENDOR, self.root)
+        self.assertEqual(destination.read_bytes(), b'keep original')
+        self.assertEqual(small.read_bytes(), b'keep new')
+        calls.clear(); version, fail_small = model.DLL_3108, False
+        with patch.object(model.subprocess, 'run', side_effect=converter):
+            model.extract(self.source, destination, VENDOR, models='original', temporary_parent=self.root)
+        self.assertEqual(small.read_bytes(), b'keep new')
+        self.assertEqual([c[c.index('--resource') + 1] for c in calls if '--resource' in c], ['WEIGHTS_HT'])
+
     def test_irrelevant_broken_cuda_is_not_parsed_at_install(self):
         self.source.write_bytes(self.data + b'\x7fELF\x02\x01')
         self.run_mode(['--extract-weights'], self.root / 'install')
@@ -117,7 +165,7 @@ class ModelExtractionTests(unittest.TestCase):
         destination = self.root / 'dlssnr.bin'
         destination.write_bytes(b'existing model')
         result = subprocess.run([sys.executable, '-B', str(ROOT / 'tools/install/mochizuki-model.py'),
-                                 str(self.source), str(destination), '--work', str(self.root)],
+                                 str(self.source), str(destination), '--models', 'both', '--work', str(self.root)],
                                 capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('SHA256 mismatch', result.stderr)
@@ -128,6 +176,103 @@ class ModelExtractionTests(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
             self.run_mode(['--extract', '--extract-weights'], self.root / 'bad')
         self.assertEqual(error.exception.code, 2)
+
+    def test_models_argument_required_for_cli(self):
+        destination = self.root / 'dlssnr.bin'
+        result = subprocess.run([sys.executable, '-B', str(ROOT / 'tools/install/mochizuki-model.py'),
+                                 str(self.source), str(destination), '--work', str(self.root)],
+                                capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('--models', result.stderr)
+
+    def test_single_model_selection_and_legacy_refusal(self):
+        spec = importlib.util.spec_from_file_location('mochi_model', ROOT / 'tools/install/mochizuki-model.py')
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+        destination = self.root / 'dlssnr.bin'
+        small = self.root / 'dlssnr-small.bin'
+        calls = []
+
+        def converter(command, **kwargs):
+            calls.append(command)
+            if Path(command[3]).name == 'pack_model.py':
+                target = Path(command[command.index('--out') + 1])
+                target.write_bytes(target.name.encode())
+            return subprocess.CompletedProcess(command, 0, json.dumps({'dll_sha256': version}))
+
+        # Small only with 310.9.16
+        version = model.DLL_3109
+        with patch.object(model.subprocess, 'run', side_effect=converter):
+            model.extract(self.source, destination, VENDOR, models='small', temporary_parent=self.root)
+        self.assertFalse(destination.exists())
+        self.assertEqual(small.read_bytes(), b'dlssnr-small.bin')
+        resources = [c[c.index('--resource') + 1] for c in calls if '--resource' in c]
+        self.assertEqual(resources, ['WEIGHTS_CC_SMALL_FP8'])
+        small.unlink()
+
+        # Original only with 310.9.16
+        calls.clear()
+        with patch.object(model.subprocess, 'run', side_effect=converter):
+            model.extract(self.source, destination, VENDOR, models='original', temporary_parent=self.root)
+        self.assertEqual(destination.read_bytes(), b'dlssnr.bin')
+        self.assertFalse(small.exists())
+        resources = [c[c.index('--resource') + 1] for c in calls if '--resource' in c]
+        self.assertEqual(resources, ['WEIGHTS_HT'])
+
+        # 310.8.0 refuses small or both with English explanation
+        version = model.DLL_3108
+        with patch.object(model.subprocess, 'run', side_effect=converter), self.assertRaises(ValueError) as err:
+            model.extract(self.source, destination, VENDOR, models='small', temporary_parent=self.root)
+        self.assertIn('cannot provide the new model', str(err.exception))
+
+    def test_zip_candidate_selection_and_safety(self):
+        # 1. Multiple duplicate identical candidates in ZIP should be deduplicated
+        archive = self.root / 'dup.zip'
+        with zipfile.ZipFile(archive, 'w') as z:
+            z.writestr('a/nvngx_dlssnr.dll', self.data)
+            z.writestr('b/nvngx_dlssnr.dll', self.data)
+        out = self.root / 'dup_out'
+        summary = self.run_mode(['--extract-weights'], out, archive)
+        self.assertEqual(summary['dll_sha256'], inspect.sha256(self.data))
+
+        # 2. Path traversal in ZIP must be rejected
+        bad_archive = self.root / 'bad_traversal.zip'
+        with zipfile.ZipFile(bad_archive, 'w') as z:
+            z.writestr('../nvngx_dlssnr.dll', self.data)
+        with self.assertRaises(inspect.FormatError) as err:
+            self.run_mode(['--extract-weights'], self.root / 'bad_out', bad_archive)
+        self.assertIn('traversal', str(err.exception).lower())
+
+        # 3. Multiple distinct DLL candidates in ZIP: selects the one providing requested resource
+        mixed_archive = self.root / 'mixed.zip'
+        small_data = fixture(resource='WEIGHTS_CC_SMALL_FP8')[0]
+        ht_data = self.data
+        with zipfile.ZipFile(mixed_archive, 'w') as z:
+            z.writestr('old/nvngx_dlssnr.dll', ht_data)
+            z.writestr('new/nvngx_dlssnr.dll', small_data)
+        out_small = self.root / 'mixed_small'
+        summary = self.run_mode(['--extract-weights', '--resource', 'WEIGHTS_CC_SMALL_FP8'], out_small, mixed_archive)
+        self.assertEqual(summary['dll_sha256'], inspect.sha256(small_data))
+
+    def test_model_pack_verification(self):
+        spec = importlib.util.spec_from_file_location('mochi_model', ROOT / 'tools/install/mochizuki-model.py')
+        model = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(model)
+
+        # Corrupted / invalid model
+        corrupted = self.root / 'corrupted.bin'
+        corrupted.write_bytes(b'garbage data')
+        self.assertFalse(model.verify_model_pack(corrupted))
+
+        # Truncated header
+        truncated = self.root / 'truncated.bin'
+        truncated.write_bytes(b'NRMODEL1')
+        self.assertFalse(model.verify_model_pack(truncated))
+
+        # Invalid entry count
+        invalid_count = self.root / 'invalid_count.bin'
+        invalid_count.write_bytes(b'NRMODEL1' + struct.pack('<II', 123, 0))
+        self.assertFalse(model.verify_model_pack(invalid_count))
 
 
 if __name__ == '__main__':

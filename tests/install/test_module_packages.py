@@ -57,12 +57,16 @@ Add-Type -TypeDefinition 'public static class PackageFixture { public static int
         (self.root / 'tools/release').mkdir(parents=True)
         (self.root / 'tools/lmxxf-sync').mkdir(parents=True)
         (self.root / 'tools/install').mkdir(parents=True, exist_ok=True)
+        (self.root / 'tools/build').mkdir(parents=True, exist_ok=True)
         shutil.copy2(REPO / 'tools/install/mochizuki-owned.txt', self.root / 'tools/install/mochizuki-owned.txt')
         for name in ('release/PACKAGE_RELEASE.ps1', 'install-amd-presr.ps1', 'uninstall-amd-presr.ps1',
                      'lmxxf-module-package.ps1', 'stage-lmxxf-beside-optiscaler.cmd',
                      'stage-lmxxf-beside-optiscaler.ps1', 'release/check-module-contract.ps1',
-                     'release/check-release-freshness.ps1', 'release/package-signing.ps1', 'lmxxf-sync/manifest.json'):
+                     'release/check-release-freshness.ps1', 'release/package-signing.ps1', 'lmxxf-sync/manifest.json',
+                     'build/build-launcher.ps1', 'install/launcher-worker.ps1', 'install/proxy-probe.ps1',
+                     'install/library-scan.ps1', 'install/install-capabilities.ps1'):
             shutil.copy2(REPO / 'tools' / name, self.root / 'tools' / name)
+        shutil.copytree(REPO / 'tools/install/launcher', self.root / 'tools/install/launcher')
         for name in ('LICENSE', 'NOTICE', 'OptiScaler-DLSSNR-PreSR-Multipass-main/LICENSE',
                      'third_party/lmxxf/LICENSE', 'third_party/onnxruntime/LICENSE',
                      'third_party/onnxruntime/YOLO11_AGPL-3.0.txt',
@@ -332,7 +336,7 @@ Add-Type -TypeDefinition 'public static class PackageFixture { public static int
             archive.extractall(extracted)
         game = self.root / 'game'
         game.mkdir()
-        code, out = self.run_ps(['-File', str(extracted / 'Setup.ps1'), '-GameDir', str(game), '-NonInteractive'])
+        code, out = self.run_ps(['-File', str(extracted / 'Setup.ps1'), '-GameDir', str(game), '-NonInteractive', '-Backend', 'lmxxf'])
         self.assertEqual(code, 0, out)
         self.assertIn('MODEL SETUP REQUIRED', out)
         self.assertNotIn('Install SUCCEEDED', out)
@@ -369,7 +373,7 @@ Add-Type -TypeDefinition 'public static class PackageFixture { public static int
         self.assertEqual(snapshot_files(game / 'lmxxf-modules'), snapshot_files(self.modules))
 
         code, out = self.run_ps(['-File', str(extracted / 'Setup.ps1'), '-GameDir', str(game),
-                                 '-NonInteractive', '-UninstallExisting'])
+                                 '-NonInteractive', '-UninstallExisting', '-Backend', 'lmxxf'])
         self.assertEqual(code, 0, out)
         self.assertIn('Uninstall SUCCEEDED', out)
         self.assertIn('MODEL SETUP REQUIRED', out)
@@ -403,11 +407,16 @@ Add-Type -TypeDefinition 'public static class PackageFixture { public static int
             archive.extractall(extracted)
         model = extracted / 'dlssnr-amd/dlssnr.bin'
         # Recognized header; this lifecycle fixture is not an inference model.
-        model.write_bytes(b'NRMODEL1' + (599).to_bytes(4, 'little') + b'user-owned model fixture')
+        model.write_bytes(b'NRMODEL1' + (599).to_bytes(4, 'little') + bytes(20))
+        setup_script = extracted / 'Setup.ps1'
+        h = hashlib.sha256(model.read_bytes()).hexdigest()
+        text = setup_script.read_text(encoding='utf-8-sig').replace(
+            '2b41c888cf4155b8958c665ba64018ab0bd25c85fc71a2b6db86d0d04d1f7fbd', h)
+        setup_script.write_bytes(b'\xef\xbb\xbf' + text.encode('utf-8'))
         game = self.root / 'mochizuki game'
         game.mkdir()
         code, out = self.run_ps(['-File', str(extracted / 'Setup.ps1'), '-GameDir', str(game),
-                                '-Backend', 'mochizuki', '-NonInteractive'])
+                                '-Backend', 'mochizuki', '-MochizukiModels', 'original', '-NonInteractive'])
         self.assertEqual(code, 0, out)
         self.assertTrue((game / 'MochizukiNrRuntime.dll').is_file())
         self.assertFalse((game / 'LmxxfNrRuntime.dll').exists())
@@ -415,6 +424,7 @@ Add-Type -TypeDefinition 'public static class PackageFixture { public static int
         parsed = configparser.ConfigParser()
         parsed.read(game / 'OptiScaler.ini', encoding='utf-8-sig')
         self.assertEqual(parsed['DlssNr']['NrBackend'], 'mochizuki')
+        self.assertEqual(parsed['DlssNr']['MochizukiNetworkModel'], '0')
         self.assertEqual((game / 'dlssnr-amd/dlssnr.bin').read_bytes(), model.read_bytes())
         owned_aco = (
             'dlssnr-amd/aco/records/03aef996aaf9f54a.nrp',

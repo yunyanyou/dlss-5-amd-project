@@ -21,14 +21,18 @@ if /i "%~1"=="source-pin" (
 )
 call tests\_lib\msvc-env.cmd || exit /b 1
 if not exist exports\mochizuki-tests mkdir exports\mochizuki-tests
+if /i "%~1"=="renodx-feed" goto renodxfeed
+if /i "%~1"=="abi" call :renodxfeed || exit /b 1
 if /i "%~1"=="exposure-recording" goto exposurerecording
 if /i "%~1"=="inline-auto-spin" goto inlineautospin
 if /i "%~1"=="pool-trim" goto pooltrim
 if /i "%~1"=="abi" call :acounit || exit /b 1
+if /i "%~1"=="abi" call :networkmodel || exit /b 1
 if /i "%~1"=="abi" call :exposurerecording || exit /b 1
 if /i "%~1"=="abi" call :inlineautospin || exit /b 1
 if /i "%~1"=="abi" call :pooltrim || exit /b 1
 if /i "%~1"=="aco-unit" goto acounit
+if /i "%~1"=="network-model" goto networkmodel
 if /i "%~1"=="windows005" goto windows005
 if /i "%~1"=="inline" goto inline
 if /i "%~1"=="inline-armed" goto inline
@@ -68,6 +72,10 @@ if /i "%~1"=="gpu" (
 )
 if errorlevel 1 exit /b 1
 python -X utf8 -c "from pathlib import Path; import hashlib; p=Path('exports/mochizuki-runtime'); (p/'abi-ci.sha256').write_text(hashlib.sha256((p/'MochizukiNrRuntime.dll').read_bytes()).hexdigest()+'\n')"
+exit /b %errorlevel%
+
+:renodxfeed
+python -B tests\mochizuki\test_renodx_feed.py
 exit /b %errorlevel%
 
 :splitretain
@@ -280,6 +288,11 @@ exit /b %errorlevel%
 :acorapid
 exports\mochizuki-tests\runtime.exe "%CD%\exports\mochizuki-runtime\MochizukiNrRuntime.dll" "%CD%\exports\mochizuki-runtime" --aco-rapid
 exit /b %errorlevel%
+
+:networkmodel
+cl /nologo /std:c++20 /EHsc /O2 /MT /utf-8 /I third_party/mochizuki/windows/src/core tests/mochizuki/network_model.cpp third_party/mochizuki/windows/src/core/nr_native_plan.cpp /Foexports/mochizuki-tests/ /Feexports/mochizuki-tests/network_model.exe || exit /b 1
+exports\mochizuki-tests\network_model.exe || exit /b 1
+exit /b 0
 
 :acounit
 cl /nologo /std:c++20 /EHsc /O2 /MT /utf-8 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /I exports/mochizuki-toolchain/Vulkan-Headers-e3b1eec08173d6b825cd3ac88c885a63b621504a/include /I third_party/mochizuki/windows/src/core tests/mochizuki/aco.cpp /Foexports/mochizuki-tests/aco.obj /Feexports/mochizuki-tests/aco.exe || exit /b 1

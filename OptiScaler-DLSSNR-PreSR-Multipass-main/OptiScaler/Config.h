@@ -342,6 +342,8 @@ class Config
     CustomOptional<bool> NrTimingLog { false };
     // Default-off per-frame NR diag for PresentMon join (NrFrameDiag.log).
     CustomOptional<bool> NrFrameDiag { false };
+    // One capture switch: coverage details, frame trace, game wait timing and file logging.
+    CustomOptional<bool> NrFlickerDiag { false };
     // Default-off game-thread timing (Present -> submit, fence waits) in NrFrameDiag lines; timestamps only.
     CustomOptional<bool> NrGameWaitDiag { false };
     CustomOptional<bool> NrPersonPartition { false };
@@ -433,6 +435,7 @@ class Config
     CustomOptional<bool> LmxxfNetworkFreeRes { true };
     CustomOptional<bool> LmxxfFastNumeric { true };
     CustomOptional<uint32_t> LmxxfMultiPass { 1 };
+    CustomOptional<uint32_t> LmxxfNetworkModel { 0 }; // Original=0, 310.9.16 Small=1; passes remain independent.
     CustomOptional<bool> LmxxfMultiPassPredict { true };
     CustomOptional<bool> LmxxfMultiPassSkinProtect { false };
     CustomOptional<std::string> LmxxfMultiPassSkipBlocks { "none" };
@@ -455,6 +458,7 @@ class Config
     CustomOptional<uint32_t> MochizukiEnlargeMode { 0u };
     CustomOptional<uint32_t> MochizukiClassicScaler { 1u };
     CustomOptional<bool> MochizukiAcoMode { true };
+    CustomOptional<uint32_t> MochizukiNetworkModel { 1u }; // 0: 310.8.0, 1: 310.9.16
     CustomOptional<bool> MochizukiInt4Mixed { false };
     CustomOptional<bool> MochizukiRenoDX { false };
     CustomOptional<bool> MochizukiNoiseEveryFrame { false };

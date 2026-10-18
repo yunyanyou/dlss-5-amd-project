@@ -286,16 +286,22 @@ void RememberUnsupported(LUID luid, const char* reason)
 }
 
 // The runtime's own lines and the network's, in mochizuki_nr.log beside dlssnr-amd\ (DataDirectory).
+// Rotates to mochizuki_nr.1.log at 4 MiB so recent diagnostics are always preserved.
 void LogLine(const char* line)
 {
     if (!g_logging.load(std::memory_order_relaxed)) return;
     static std::mutex mutex;
     static const std::wstring path = DataDirectory() + L"\\mochizuki_nr.log";
+    static const std::wstring backupPath = DataDirectory() + L"\\mochizuki_nr.1.log";
     std::lock_guard lock(mutex);
-    // Keep the runtime/core diagnostics bounded even during a long build session.
+    // Keep the runtime/core diagnostics bounded: rotate at 4 MiB to keep the most recent history.
     WIN32_FILE_ATTRIBUTE_DATA attr {};
     if (GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &attr) &&
-        (attr.nFileSizeHigh || attr.nFileSizeLow >= 4u * 1024u * 1024u)) return;
+        (attr.nFileSizeHigh || attr.nFileSizeLow >= 4u * 1024u * 1024u))
+    {
+        DeleteFileW(backupPath.c_str());
+        MoveFileW(path.c_str(), backupPath.c_str());
+    }
     FILE* f = _wfopen(path.c_str(), L"ab");
     if (!f)
         return;
@@ -627,6 +633,7 @@ struct SessionControls
     bool compactTransfer = true;
     bool acoRequested = false;
     bool int4 = false, renodx = false;
+    uint32_t networkModel = 1;
     nr::renodx::Settings reno;
     uint32_t maxPasses = 0;  // 0: the frame's passes
     uint32_t drsMode = 0;    // MochizukiNrControls::drs_mode: 0 exact, 1 auto, 2 always (Session::DrsExtent)
@@ -638,6 +645,7 @@ void DefaultControls(MochizukiNrControls& c)
     const nr::PassControls pass;
     c = {};
     c.struct_size = sizeof c;
+    c.network_model = 1;
     c.intensity = model.intensity;
     c.style = uint32_t(model.style);
     c.local_tone = model.local_tone;
@@ -696,6 +704,7 @@ SessionControls Sanitise(const MochizukiNrControls& c)
     out.compactTransfer = c.compact_transfer != 0;
     out.acoRequested = c.aco_mode != 0;
     out.int4 = c.int4_mixed != 0;
+    out.networkModel = c.network_model <= 1 ? c.network_model : 1;
     out.renodx = c.renodx_enabled != 0;
     m.noise_every_frame = c.noise_every_frame != 0;
 #define RDX_F(member, field, def, low, high) out.reno.field = San(c.member, low, high, def);
@@ -1980,6 +1989,7 @@ struct Job
     MotionPath motionPath = Uploaded;
     float motionScaleX = 0, motionScaleY = 0;
     bool reset = false;
+    bool normalizationReset = false; // explicit cut/queue discontinuity, separate from network history
     nr::renodx::Settings reno;
     nr::Controls controls;            // the frame's, sanitised: validate() cannot refuse them
     bool afterUpscale = false;
@@ -2073,6 +2083,7 @@ struct NetworkKey
     bool firstPass = false;
     bool aco = false; // this build imports the ACO network; the device must already expose pipeline binaries
     bool int4 = false, renodx = false;
+    uint32_t networkModel = 1;
     uint32_t renoWidth = 0, renoHeight = 0, sourceEncoding = 0;
     float linearNits = 0.f;
     bool computeConvert = false; // NrInlineComputeConvert on a listed-format key (RuntimeConfig::compute_convert_colour)
@@ -2085,12 +2096,14 @@ struct NetworkKey
         return width == other.width && height == other.height && format == other.format &&
                scale == other.scale && linear == other.linear && prep == other.prep &&
                compactTransfer == other.compactTransfer && firstPass == other.firstPass && aco == other.aco &&
-               int4 == other.int4 && renodx == other.renodx && renoWidth == other.renoWidth &&
+               networkModel == other.networkModel && int4 == other.int4 && renodx == other.renodx && renoWidth == other.renoWidth &&
                renoHeight == other.renoHeight && sourceEncoding == other.sourceEncoding && linearNits == other.linearNits &&
                computeConvert == other.computeConvert && computeDownscale == other.computeDownscale &&
                computeExport == other.computeExport && motionPasses == other.motionPasses;
     }
 };
+
+static std::atomic<uint64_t> g_nextNetworkId { 0 };
 
 // Stage resources share the network's retained-recording ownership and GPU retirement.
 struct ProductRuntime : nr::Runtime
@@ -2102,10 +2115,16 @@ struct ProductRuntime : nr::Runtime
     } exposure;
     std::unique_ptr<nr::renodx::Stage> reno;
     uint32_t renoPasses = 0;
+    uint64_t id = 0;
+    NetworkKey key {};
+
     ProductRuntime(const nr::HostDevice& host, const nr::RuntimeConfig& config,
                    const nr::TemporalConfig& temporal, const NetworkKey& key, Vulkan& vk)
-        : nr::Runtime(host, config, nr::ControlMaskConfig {}, temporal)
+        : nr::Runtime(host, config, nr::ControlMaskConfig {}, temporal), id(++g_nextNetworkId), key(key)
     {
+        nr::logf("[mochizuki] network #%llu created (%ux%u, model=%u, maxPasses=%u, renodx=%d)",
+                 static_cast<unsigned long long>(id), key.width, key.height, key.networkModel, key.maxPasses,
+                 key.renodx ? 1 : 0);
         if (!key.renodx) return;
         nr::renodx::StageConfig sc;
         sc.shaders = (std::filesystem::path(config.root) / "dlssnr-amd/shaders/renodx").string();
@@ -2120,6 +2139,11 @@ struct ProductRuntime : nr::Runtime
         reno = std::make_unique<nr::renodx::Stage>(host, sc);
         exposure.device = host.device;
         exposure.image.Create(vk, VK_FORMAT_R32_SFLOAT, 1, 1);
+    }
+
+    ~ProductRuntime()
+    {
+        nr::logf("[mochizuki] network #%llu destroy.begin (%ux%u)", static_cast<unsigned long long>(id), key.width, key.height);
     }
 };
 
@@ -2549,6 +2573,8 @@ struct Session
     // submitMutex. Only EnsureNetwork and ~Session join the builder, under buildMutex once buildDone is set.
     std::shared_ptr<ProductRuntime> runtime;
     NetworkKey net, buildKey;
+    nr::renodx::Stage::ExposureSnapshot exposureSnapshot; // only the small shared meter resources
+    ULONGLONG executionLogAt = 0;
     // Auto DRS can still use exact extents (whole allocations, or no blit support).
     // A transient request must not take the working network away from normal frames.
     NetworkKey extentCandidate;
@@ -2616,7 +2642,7 @@ struct Session
     bool deviceStarted = false;
     bool acoAtDevice = false;
     bool acoEffective = false;
-    std::atomic<uint32_t> infoInt4 {0}, infoReno {0};
+    std::atomic<uint32_t> infoInt4 {0}, infoReno {0}, infoNetwork {0};
     char acoFallback[128] {};
     // The builder's result for the network it is about to hand to Install. A discarded candidate leaves these unused.
     bool candidateReady = false;
@@ -3011,18 +3037,24 @@ struct Session
     // memory for that it leaks rather than be freed under the GPU. Any thread.
     void RetireNetwork(std::shared_ptr<ProductRuntime> network, UINT64 finished) noexcept
     {
+        if (!network) return;
+        const uint64_t nid = network->id;
+        size_t qCount = 0;
         try
         {
             std::lock_guard lock(releaseMutex);
             retired.reserve(retired.size() + 1); // the one step that may throw, before the network moves
             retired.push_back({ std::move(network), finished });
             ++releasing;
+            qCount = retired.size();
         }
         catch (...)
         {
             Quarantine(network);
             return;
         }
+        nr::logf("[mochizuki] network #%llu retired to release queue (queue length %zu, fence %llu)",
+                 static_cast<unsigned long long>(nid), qCount, static_cast<unsigned long long>(finished));
         releaseWake.notify_all();
     }
 
@@ -3077,11 +3109,21 @@ struct Session
             }
             std::shared_ptr<ProductRuntime> network = std::move(retired.front().network);
             retired.erase(retired.begin());
+            const uint64_t nid = network ? network->id : 0;
+            const size_t remaining = retired.size();
             lock.unlock();
             const auto t0 = std::chrono::steady_clock::now();
+            UINT64 usageBefore = 0, usageAfter = 0, budget = 0;
+            const bool usageKnown = vram.Read(usageBefore, budget);
             network.reset();
-            nr::logf("[mochizuki] the old network released in %.1f ms",
-                     std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+            const bool usageAfterKnown = vram.Read(usageAfter, budget);
+            nr::logf("[mochizuki] network #%llu queue reference dropped in %.1f ms (remaining queue length %zu; "
+                     "process VRAM %llu -> %llu MB, budget %llu MB, known=%d)",
+                     static_cast<unsigned long long>(nid),
+                     std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count(),
+                     remaining, static_cast<unsigned long long>(usageBefore >> 20),
+                     static_cast<unsigned long long>(usageAfter >> 20), static_cast<unsigned long long>(budget >> 20),
+                     usageKnown && usageAfterKnown ? 1 : 0);
             lock.lock();
             --releasing;
             releaseWake.notify_all();
@@ -4115,7 +4157,8 @@ struct Session
     {
         LogNetworkTime(why);
         finished = lastFinished.load();
-        infoInt4 = infoReno = 0;
+        infoInt4 = infoReno = infoNetwork = 0;
+        exposureSnapshot = runtime && runtime->reno ? runtime->reno->exposure_state() : nullptr;
         return std::move(runtime);
     }
 
@@ -4139,6 +4182,9 @@ struct Session
             if (runtime)
                 old = TakeNetwork("replacing the network", oldFinished);
             runtime = std::move(built);
+            if (runtime->reno && runtime->reno->seed_from(exposureSnapshot))
+                nr::logf("[mochizuki] network #%llu inherited shared scalar exposure state", static_cast<unsigned long long>(runtime->id));
+            exposureSnapshot.reset();
             net = buildKey;
             RequestHistoryReset(ResetNetwork);
             historyBits = 0;
@@ -4175,7 +4221,9 @@ struct Session
         prepared = std::move(builtBuffers);
         const char* const kept = old ? "; the frames ran on the old one meanwhile" : "";
         if (old)
+        {
             ReleaseLater(std::move(old), oldFinished);
+        }
         buildHold = {};
         SetNetworkDeferred("");
         {
@@ -4185,11 +4233,15 @@ struct Session
         infoFrameWidth = net.width;
         infoFrameHeight = net.height;
         infoInt4 = runtime->int4_mixed();
+        infoNetwork = runtime->network() == nr::NetworkModel::Small ? 1u : 0u;
         infoReno = runtime->reno != nullptr;
         infoModelWidth = runtime->model_width();
         infoModelHeight = runtime->model_height();
         infoMaxPasses = net.maxPasses;
         infoBuildSeconds = float(buildSeconds);
+        nr::logf("[mochizuki] network #%llu installed (%ux%u, maxPasses=%u, model=%u)",
+                 static_cast<unsigned long long>(runtime->id), net.width, net.height, net.maxPasses,
+                 unsigned(runtime->network()));
         if (runtime->model_width() != net.width || runtime->model_height() != net.height || net.maxPasses > 1)
             nr::logf("[mochizuki] network ready at %ux%u (model %ux%u, up to %u passes) in %.1f s%s", net.width,
                      net.height, runtime->model_width(), runtime->model_height(), net.maxPasses, buildSeconds, kept);
@@ -4211,13 +4263,12 @@ struct Session
     // is none. g is the frame's geometry, `colour` its colour: buffers made for another one are retired before a build,
     // and the build makes the new ones beside the network.
     bool EnsureNetwork(const NetworkKey& key, const Geometry& g, ID3D12Resource* colour, std::string& why,
-                       bool automaticCapacity, bool settleExactExtent)
+                       bool automaticCapacity, bool settleExtent)
     {
         static const char* const kBuilding = "building the network (the first time takes about half a minute)";
-        // The host bypasses its settle window when DRS is enabled. Only a real
-        // bucket handles changing extents immediately; auto/exact still needs a
-        // stable replacement size. Startup and same-size setting edits are immediate.
-        if (!settleExactExtent || !runtime || (net.width == key.width && net.height == key.height))
+        // Exact resolution changes and bucket shrinks must be stable for kExactExtentSettleMs before
+        // rebuilding. Bucketed subrect changes inside an existing bucket extent do not rebuild.
+        if (!settleExtent || !runtime || (net.width == key.width && net.height == key.height))
             extentCandidatePending = false;
         else
         {
@@ -4228,9 +4279,10 @@ struct Session
                 extentCandidateSince = now;
                 extentCandidatePending = true;
                 if (++extentDeferrals <= 8 || extentDeferrals % 100 == 0)
-                    nr::logf("[mochizuki] extent settle #%u: keeping %ux%u; request %ux%u, colour allocation "
+                    nr::logf("[mochizuki] extent settle #%u: keeping %ux%u; request %ux%u (%s), colour allocation "
                              "%llux%u DXGI %u, motion %ux%u DXGI %u; waiting %llu ms before rebuilding",
                              extentDeferrals, net.width, net.height, key.width, key.height,
+                             (key.width < net.width || key.height < net.height) ? "shrinking" : "exact change",
                              static_cast<unsigned long long>(g.colourWidth), g.colourHeight, unsigned(g.colourFormat),
                              g.motionWidth, g.motionHeight, unsigned(g.motionFormat), kExactExtentSettleMs);
             }
@@ -4302,6 +4354,7 @@ struct Session
             {
                 std::lock_guard lock(submitMutex);
                 LogNetworkTime("replacing the network");
+                exposureSnapshot = runtime->reno ? runtime->reno->exposure_state() : nullptr;
                 runtime.reset();
             }
             if (geometry.width && !(geometry == g))
@@ -4366,6 +4419,7 @@ struct Session
             config.colour_format = key.format;
             config.linear_input = key.linear;
             config.model_scale = key.scale;
+            config.network = int(key.networkModel); // Product INI/menu overrides DLSSNR_MODEL and upstream INI.
             config.max_passes = key.maxPasses;
             config.preprocess = key.prep;
             config.compact_transfer = key.compactTransfer;
@@ -4410,12 +4464,16 @@ struct Session
             infoBuilding = true;
             gpuUsed = true;
             // The builder takes `old` over only once its thread exists: a failed start must not free it here.
-            const auto handed = old;
             const bool buildAco = key.aco;
+            // Keep the caller's reference until thread creation succeeds, then transfer the
+            // lambda's only reference into Build so old.reset there actually releases the net.
+            auto handed = old;
+            std::lock_guard handoff(buildMutex);
             builder = std::thread(
-                [this, host, config, temporal, handed, oldFinished, buildAco, key, buffers = std::move(buffers)]() mutable
+                [this, host, config, temporal, handed = std::move(handed), oldFinished, buildAco, key, buffers = std::move(buffers)]() mutable
                 {
-                    Build(host, config, temporal, handed, oldFinished, std::move(buffers), buildAco, key);
+                    { std::lock_guard ownership(buildMutex); } // caller drops its copy before Build starts
+                    Build(host, config, temporal, std::move(handed), oldFinished, std::move(buffers), buildAco, key);
                 });
             old.reset();
         }
@@ -4456,11 +4514,18 @@ struct Session
         ReportProgress(this, "Waiting for previous GPU work", 0, 0);
         if (old)
         {
+            const uint64_t oldId = old->id;
             if (WaitFinished(oldFinished, [this] { return abandon.load(); }) == VK_SUCCESS)
             {
+                UINT64 usageBefore = 0, usage = 0, budget = 0;
+                const bool knownBefore = vram.Read(usageBefore, budget);
                 old.reset();
-                UINT64 usage = 0, budget = 0;
-                if (buildBaseUsage && vram.Read(usage, budget))
+                const bool knownAfter = vram.Read(usage, budget);
+                nr::logf("[mochizuki] network #%llu builder reference dropped (process VRAM %llu -> %llu MB, "
+                         "budget %llu MB, known=%d)", static_cast<unsigned long long>(oldId),
+                         static_cast<unsigned long long>(usageBefore >> 20), static_cast<unsigned long long>(usage >> 20),
+                         static_cast<unsigned long long>(budget >> 20), knownBefore && knownAfter ? 1 : 0);
+                if (buildBaseUsage && knownAfter)
                     buildBaseUsage = usage; // the growth is measured from after the release
             }
             else
@@ -4706,6 +4771,7 @@ struct Session
         const bool known = vram.Read(before, budget);
         {
             std::lock_guard lock(submitMutex);
+            exposureSnapshot = runtime && runtime->reno ? runtime->reno->exposure_state() : nullptr;
             runtime.reset();
         }
         const UINT64 freed = known && vram.Read(after, budget) && before > after ? before - after : 0;
@@ -5440,6 +5506,9 @@ struct Session
         runtime->set_white_point(job.white);
         runtime->set_stage_timing(job.stageTiming);
         bool consumed = false;
+        std::string recordedStyles;
+        uint32_t recordedPasses = 0;
+        const bool logExecution = GetTickCount64() - executionLogAt >= 10000;
         if (motion)
         {
             frame.motion = frame.colour;
@@ -5461,6 +5530,7 @@ struct Session
             nr::renodx::StageFrame sf;
             sf.colour = sf.output = frame.colour;
             sf.reset = job.reset;
+            sf.preserve_normalization = !job.normalizationReset;
             sf.after_upscale = job.afterUpscale;
             sf.motion = frame.motion;
             frame.motion_scale_x *= rs.mvec_scale_x;
@@ -5502,6 +5572,11 @@ struct Session
                 ck.local_structure = own ? rs.pass_local_structure[k - 1] : rs.local_structure;
                 ck.skin_structure = own ? rs.pass_skin_structure[k - 1] : rs.skin_structure;
                 ck.automatic_mask = own ? rs.pass_auto_mask[k - 1] : rs.auto_mask;
+                if (logExecution) {
+                    if (recordedPasses) recordedStyles += ',';
+                    recordedStyles += std::to_string(ck.style);
+                    ++recordedPasses;
+                }
                 if (rs.skin_independent && ck.automatic_mask) {
                     ck.local_structure = std::min(ck.local_structure, 1.f);
                     if (ck.skin_structure < 0.f) ck.skin_structure = 1.f;
@@ -5538,6 +5613,16 @@ struct Session
             {
                 ComputeChainRefused(fullCompute, e);
                 throw;
+            }
+        }
+        if (logExecution && !runtime->reno) {
+            for (int p = 0; p < job.controls.passes; ++p) {
+                const auto index = size_t(p ? p - 1 : 0);
+                const int style = p && index < job.controls.per_pass.size() && job.controls.per_pass[index].used
+                    ? job.controls.per_pass[index].style : job.controls.style;
+                if (p) recordedStyles += ',';
+                recordedStyles += std::to_string(style);
+                ++recordedPasses;
             }
         }
         if (job.firstPass && runtime->first_pass_packed())
@@ -5692,6 +5777,13 @@ struct Session
             inFlight[slot] = true;
         }
         sub.submitted = true;
+        if (logExecution && call != hooks.dropSubmitAt) {
+            executionLogAt = GetTickCount64();
+            nr::logf("[mochizuki] submitted network #%llu model=%s int4=%d renodx=%d passes=%u styles=[%s] fence=%llu",
+                static_cast<unsigned long long>(runtime->id), runtime->network() == nr::NetworkModel::Small ? "small" : "original",
+                runtime->int4_mixed() ? 1 : 0, runtime->reno ? 1 : 0, recordedPasses, recordedStyles.c_str(),
+                static_cast<unsigned long long>(sub.finished));
+        }
         Check(producer->Wait(fromVk.fence, sub.finished), "wait for the network");
         ++frames;
     }
@@ -5730,6 +5822,7 @@ struct Session
         if (gpuUsed && deviceLost)
         {
             Rerelease();
+            Quarantine(exposureSnapshot);
             Quarantine(runtime);
             Quarantine(built);
             Quarantine(allocation);
@@ -5749,6 +5842,7 @@ struct Session
             LogNetworkTime("session end");
         runtime.reset();
         built.reset();
+        exposureSnapshot.reset();
         retired.clear();
         ReleaseGeometry();
         for (auto& pooled : recordingPool) pooled.Release(vk.device);
@@ -5994,7 +6088,7 @@ int32_t CorePrepareFrame(void* context, const MochizukiNrFrameInfo* info, LmxxfN
                 MZ_HOLDS(info, MochizukiNrFrameInfo, passes) ? std::clamp(info->passes, 1u, kMaxPasses) : 1u; // 0 is 1
             nr::Controls model;
             float history = 1.f, white = 1.f;
-            uint32_t linearMode = 0, maxPassesSetting = 0, drsMode = 0;
+            uint32_t linearMode = 0, maxPassesSetting = 0, drsMode = 0, networkModel = 1;
             bool compactTransfer = true, aco = false, prepRequested = false, int4 = false, renodx = false;
             nr::renodx::Settings reno;
             float renoExposure = 0.f;
@@ -6026,6 +6120,7 @@ int32_t CorePrepareFrame(void* context, const MochizukiNrFrameInfo* info, LmxxfN
                 drsMode = s->controls.drsMode;
                 compactTransfer = s->controls.compactTransfer;
                 aco = s->controls.acoRequested && s->acoAtDevice;
+                networkModel = s->controls.networkModel;
                 int4 = s->controls.int4; renodx = s->controls.renodx; reno = s->controls.reno;
                 prepRequested = s->prepRequested; // the one field of the session SetControls writes under this lock
             }
@@ -6082,7 +6177,9 @@ int32_t CorePrepareFrame(void* context, const MochizukiNrFrameInfo* info, LmxxfN
                 keyFormat == VK_FORMAT_A2B10G10R10_UNORM_PACK32 || keyFormat == VK_FORMAT_A2R10G10B10_UNORM_PACK32;
             NetworkKey key { g.width, g.height, keyFormat, scale, maxPasses, linear, s->prepWanted || prepRequested,
                                     compactTransfer, g.firstPass, aco };
-            key.int4 = int4; key.renodx = renodx;
+            key.networkModel = networkModel;
+            key.int4 = int4 && networkModel == 0; // INT4 records/weights describe the original model only.
+            key.renodx = renodx;
             if (renodx) {
                 nr::renodx::working_resolution(reno, g.width, g.height, motionW, motionH, &key.renoWidth, &key.renoHeight);
                 key.sourceEncoding = reno.source_encoding; key.linearNits = reno.linear_unit_nits;
@@ -6104,26 +6201,39 @@ int32_t CorePrepareFrame(void* context, const MochizukiNrFrameInfo* info, LmxxfN
             if (GetTickCount64() - s->inputLogAt >= 10000)
             {
                 s->inputLogAt = GetTickCount64();
+                const char* const modelName = networkModel == 1 ? "small" : (int4 ? "original(int4 requested)" : "original");
+                int effStyle[3] = { model.style, model.style, model.style };
+                if (renodx)
+                {
+                    effStyle[0] = int(reno.style);
+                    effStyle[1] = int(reno.pass_follow[0] ? reno.style : reno.pass_style[0]);
+                    effStyle[2] = int(reno.pass_follow[1] ? reno.style : reno.pass_style[1]);
+                }
                 nr::logf("[mochizuki] input: %ux%u frame %ux%u colour VkFormat %d key VkFormat %d DXGI %u linearMode=%u linear=%d "
-                         "white=%.4f exposure=%.4f texture=%.4f meter=%.4f(%s) prep(want=%d latch=%d active=%d mode=%d curve=%d "
-                         "bias=%.2f) "
-                         "aco=%d compact=%d passes=%u capacity=%u scale=%.2f history=%.3f "
-                         "controls(intensity=%.3f style=%d tone=%.2f structure=%.2f skin=%.2f mask=%d detail=%.3f "
-                         "colour=%.3f)",
+                         "white=%.4f exposure=%.4f texture=%.4f meter=%.4f(%s) prep(want=%d latch=%d active=%d mode=%d curve=%d bias=%.2f) "
+                         "requested.model=%s aco=%d compact=%d passes=%u capacity=%u scale=%.2f history=%.3f "
+                         "controls(intensity=%.3f model.style=%d tone=%.2f structure=%.2f skin=%.2f mask=%d detail=%.3f colour=%.3f) "
+                         "renodx=%d",
                          g.width, g.height, w, h, int(cf.vk), int(keyFormat), unsigned(cd.Format), linearMode, linear ? 1 : 0, white,
                          s->gameExposure.load(std::memory_order_relaxed),
                          s->textureExposure.load(std::memory_order_relaxed),
                          s->meteredExposure.load(std::memory_order_relaxed),
                          s->meterEnabled.load(std::memory_order_relaxed) ? "on" : "off", s->prepWanted ? 1 : 0,
                          prepRequested ? 1 : 0, model.preprocess.active() ? 1 : 0, model.preprocess.exposure,
-                         model.preprocess.curve, model.preprocess.bias_ev, aco ? 1 : 0, compactTransfer ? 1 : 0,
+                         model.preprocess.curve, model.preprocess.bias_ev,
+                         modelName, aco ? 1 : 0, compactTransfer ? 1 : 0,
                          passes, maxPasses, scale, history, model.intensity, model.style, model.local_tone,
                          model.local_structure, model.skin_structure, model.automatic_mask ? 1 : 0, detail,
-                         colourStrength);
+                         colourStrength, renodx ? 1 : 0);
+                if (renodx)
+                    nr::logf("[mochizuki] renodx style: requested=%d requested.passes=[%d,%d,%d] feed_mode=%u",
+                             int(reno.style), effStyle[0], effStyle[1], effStyle[2], reno.feed_mode);
             }
             std::string why;
             s->infoRequestedPasses = passes;
-            if (!s->EnsureNetwork(key, g, colour, why, maxPassesSetting == 0, drsMode != 0 && !g.bucketed))
+            const bool extentShrinking = s->runtime && (key.width < s->net.width || key.height < s->net.height);
+            const bool settleExtent = !g.bucketed || extentShrinking;
+            if (!s->EnsureNetwork(key, g, colour, why, maxPassesSetting == 0, settleExtent))
                 return Fail(LMXXF_NR_UNAVAILABLE, why.c_str());
             if (!(s->geometry == g))
             {
@@ -6179,6 +6289,7 @@ int32_t CorePrepareFrame(void* context, const MochizukiNrFrameInfo* info, LmxxfN
 
             Job next;
             next.colour = colour;
+            next.normalizationReset = info->reset != 0;
             next.colourState = static_cast<D3D12_RESOURCE_STATES>(info->color_state);
             next.canonicalise = g.canonicalise;
             next.width = w;
@@ -6521,8 +6632,8 @@ int32_t GetLastError(char* buf, uint32_t chars)
 // MochizukiNrControls.h. Every Controls field is 4 bytes and 4-aligned and the struct ends at its last field, so the
 // whole fields a caller's struct holds are its first struct_size & ~3 bytes.
 static_assert(alignof(MochizukiNrControls) == 4 &&
-              sizeof(MochizukiNrControls) == offsetof(MochizukiNrControls, reno_mvec_scale_y) +
-                                                 sizeof(MochizukiNrControls::reno_mvec_scale_y) &&
+              sizeof(MochizukiNrControls) == offsetof(MochizukiNrControls, network_model) +
+                                                 sizeof(MochizukiNrControls::network_model) &&
               offsetof(MochizukiNrControls, pass) == 72 && offsetof(MochizukiNrControls, preprocess) == 136 &&
               sizeof(MochizukiNrPassControls) == 32);
 // Info has no implicit padding (reserved0 fills the gap before frames), so its offsets do not depend on packing; its
@@ -6558,7 +6669,7 @@ int32_t SetControls(void* context, const MochizukiNrControls* in)
 {
     auto* s = static_cast<Session*>(context);
     if (!s || !in || in->struct_size != sizeof(MochizukiNrControls) || in->flags)
-        return Fail(LMXXF_NR_INVALID_ARGUMENT, "SetControls: bad arguments");
+        return Fail(LMXXF_NR_INVALID_ARGUMENT, "SetControls: package ABI mismatch or bad arguments; update the complete package");
     try
     {
         const MochizukiNrControls c = *in; // Exact current-package ABI only.
@@ -6592,7 +6703,7 @@ int32_t GetInfo(void* context, MochizukiNrInfo* out)
 {
     auto* s = static_cast<Session*>(context);
     if (!s || !out || out->struct_size != sizeof(MochizukiNrInfo))
-        return Fail(LMXXF_NR_INVALID_ARGUMENT, "GetInfo: bad arguments");
+        return Fail(LMXXF_NR_INVALID_ARGUMENT, "GetInfo: package ABI mismatch or bad arguments; update the complete package");
     try
     {
         MochizukiNrInfo info {};
@@ -6634,6 +6745,7 @@ int32_t GetInfo(void* context, MochizukiNrInfo* out)
         info.failed = s->failed;
         info.network_dispatches = s->dispatches;
         info.int4_effective = s->infoInt4;
+        info.network_effective = s->infoNetwork;
         info.renodx_effective = s->infoReno;
         info.preprocess_ev = s->infoPrepEv;
         info.white_point = s->infoWhite;
@@ -6641,6 +6753,7 @@ int32_t GetInfo(void* context, MochizukiNrInfo* out)
             std::lock_guard lock(s->controlsMutex);
             info.aco_requested = s->controls.acoRequested ? 1u : 0u;
             info.int4_requested = s->controls.int4;
+            info.network_requested = s->controls.networkModel;
             info.aco_effective = s->acoEffective ? 1u : 0u;
             std::memcpy(info.aco_fallback, s->acoFallback, sizeof info.aco_fallback);
         }

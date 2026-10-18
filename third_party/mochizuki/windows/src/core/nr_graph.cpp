@@ -17,6 +17,13 @@
 //
 // Two things this is not, yet: every family - `--report` says which - and the
 // OptiScaler entry point. The arenas are already the shapes that adapter wants.
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <bcrypt.h>
+#pragma comment(lib, "bcrypt.lib")
+#include "nr_model_profile.hpp"
 #if NR_INT4
 #include "nr_build_cfg.hpp"
 #endif
@@ -38,9 +45,7 @@
 #include <iostream>
 #include <map>
 #include <mutex>
-#if NR_INT4
 #include <memory>
-#endif
 #include <set>
 #include <sstream>
 #include <string>
@@ -326,10 +331,54 @@ bool slot_reading_diagnostic(int c, char** v) {
 // is what it was with loose files.
 struct ModelPack {
     std::string root, file;
+    std::shared_ptr<void> read_lease;
     std::map<std::string, std::pair<uint64_t, uint64_t>> index;   // name -> offset, size
 };
 ModelPack g_pack;
-bool open_model_pack(const std::string& file, const std::string& root, std::string* why) {
+bool model_range_sha256(std::ifstream& f, uint64_t offset, uint64_t size, std::string& hex) {
+    BCRYPT_ALG_HANDLE algorithm = nullptr;
+    if (BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, 0) < 0) return false;
+    struct AlgorithmGuard {
+        BCRYPT_ALG_HANDLE value;
+        ~AlgorithmGuard() { BCryptCloseAlgorithmProvider(value, 0); }
+    } algorithm_guard{algorithm};
+    DWORD object_size = 0, written = 0;
+    if (BCryptGetProperty(algorithm, BCRYPT_OBJECT_LENGTH, reinterpret_cast<PUCHAR>(&object_size),
+                          sizeof object_size, &written, 0) < 0 || !object_size) return false;
+    std::vector<unsigned char> object(object_size);
+    BCRYPT_HASH_HANDLE hash = nullptr;
+    if (BCryptCreateHash(algorithm, &hash, object.data(), object_size, nullptr, 0, 0) < 0) return false;
+    struct HashGuard {
+        BCRYPT_HASH_HANDLE value;
+        ~HashGuard() { BCryptDestroyHash(value); }
+    } hash_guard{hash};
+    f.clear();
+    f.seekg(static_cast<std::streamoff>(offset));
+    if (!f) return false;
+    std::array<unsigned char, 65536> buffer{};
+    while (size) {
+        const auto n = static_cast<ULONG>(std::min<uint64_t>(size, buffer.size()));
+        if (!f.read(reinterpret_cast<char*>(buffer.data()), n) ||
+            BCryptHashData(hash, buffer.data(), n, 0) < 0) return false;
+        size -= n;
+    }
+    std::array<unsigned char, 32> digest{};
+    if (BCryptFinishHash(hash, digest.data(), static_cast<ULONG>(digest.size()), 0) < 0) return false;
+    static constexpr char digits[] = "0123456789abcdef";
+    hex.clear();
+    for (auto b : digest) { hex += digits[b >> 4]; hex += digits[b & 15]; }
+    return true;
+}
+bool open_model_pack(const std::string& file, const std::string& root, const std::string& family, std::string* why) {
+    ModelPack p; p.root = root; p.file = file;
+    // Keep writers and renames out until all validated tensors have been uploaded.
+    const HANDLE handle = CreateFileW(std::filesystem::path(file).c_str(), GENERIC_READ,
+                                      FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (handle == INVALID_HANDLE_VALUE) {
+        if (why) *why = "cannot lock model pack for verified reading: " + file;
+        return false;
+    }
+    p.read_lease = std::shared_ptr<void>(handle, [](void* h) { CloseHandle(h); });
     std::ifstream f(file, std::ios::binary);
     char magic[8];
     uint32_t count = 0, reserved = 0;
@@ -338,15 +387,54 @@ bool open_model_pack(const std::string& file, const std::string& root, std::stri
         if (why) *why = "not a model pack: " + file;
         return false;
     }
-    ModelPack p; p.root = root; p.file = file;
+    if (reserved != 0 || (count != 599 && count != 255)) {
+        if (why) *why = "unexpected model pack count or format: " + file;
+        return false;
+    }
+    if ((!family.empty() && family != "small" && family != "original") ||
+        (family == "small" && count != 255) || (family == "original" && count != 599)) {
+        if (why) *why = "model pack does not match the selected network: " + file;
+        return false;
+    }
+    f.seekg(0, std::ios::end);
+    const auto end = f.tellg();
+    if (end < std::streampos(16)) { if (why) *why = "truncated model pack"; return false; }
+    const uint64_t file_len = static_cast<uint64_t>(end);
+    f.seekg(16, std::ios::beg);
     for (uint32_t i = 0; i < count; ++i) {
         uint32_t n = 0; uint64_t off = 0, size = 0;
-        if (!f.read(reinterpret_cast<char*>(&n), 4) || n > 4096) { if (why) *why = "model pack index is damaged"; return false; }
+        if (!f.read(reinterpret_cast<char*>(&n), 4) || n == 0 || n > 4096) { if (why) *why = "model pack index is damaged"; return false; }
         std::string name(n, '\0');
         if (!f.read(name.data(), n) || !f.read(reinterpret_cast<char*>(&off), 8) ||
             !f.read(reinterpret_cast<char*>(&size), 8)) { if (why) *why = "model pack index is damaged"; return false; }
-        p.index[name] = {off, size};
+        if (off < 16 || size == 0 || off > file_len || size > file_len - off ||
+            !p.index.emplace(name, std::make_pair(off, size)).second) {
+            if (why) *why = "invalid or duplicate model pack entry";
+            return false;
+        }
     }
+    const uint64_t index_end = static_cast<uint64_t>(f.tellg());
+    std::vector<std::pair<uint64_t, uint64_t>> ranges;
+    for (const auto& entry : p.index) {
+        const auto [off, size] = entry.second;
+        if (off < index_end) { if (why) *why = "model data overlaps its index"; return false; }
+        ranges.emplace_back(off, off + size);
+    }
+    std::sort(ranges.begin(), ranges.end());
+    for (size_t i = 1; i < ranges.size(); ++i) {
+        if (ranges[i].first < ranges[i - 1].second) { if (why) *why = "overlapping model tensors"; return false; }
+    }
+    const auto* expected = count == 255 ? nr::model_profile::small_tensors : nr::model_profile::original_tensors;
+    for (uint32_t i = 0; i < count; ++i) {
+        const auto it = p.index.find(expected[i].name);
+        std::string digest;
+        if (it == p.index.end() || !model_range_sha256(f, it->second.first, it->second.second, digest) ||
+            digest != expected[i].sha256) {
+            if (why) *why = "model tensor integrity failed: " + std::string(expected[i].name);
+            return false;
+        }
+    }
+    nr::logf("[nr] verified model identity=%s tensors=%u", count == 255 ? "small" : "original", count);
     g_pack = std::move(p);
     return true;
 }
@@ -1359,6 +1447,9 @@ struct NrSession {
     std::vector<const Step*> run;
     std::map<int, size_t> reader_tokens;   // block -> tokens of whoever reads it
     std::map<int, int> last_layer;   // block -> its final layer
+    // The ViT blocks (CCVit1D*): 310.8 b31..b38, 310.9 small b11..b18. The block
+    // before them ends in the C512 FinalHead, the one after is the decoder input.
+    int vit_first = -1, vit_last = -1, vit_last_layer = -1;
     std::function<int(const Step&)> x_src;
     bool host_boundary = false;
     const char* seed_path = nullptr;
@@ -1377,6 +1468,11 @@ static std::recursive_mutex g_build_lock;
 
 int NrSession::build(int argc, char** argv, const std::vector<Step>* prepared_plan) {
     std::lock_guard<std::recursive_mutex> one_build(g_build_lock);
+    struct ModelReadScope {
+        ModelPack previous;
+        ~ModelReadScope() { g_pack = std::move(previous); }
+    } model_read_scope{std::move(g_pack)};
+    g_pack = {};
     // A build lays out its own persistent sync words; an epoch word left from a
     // previous build (another extent) would point into the old layout.
     g_chain_epoch_word = 0xFFFFFFFFu;
@@ -1401,7 +1497,7 @@ int NrSession::build(int argc, char** argv, const std::vector<Step>* prepared_pl
     const std::string unp = arg(argc, argv, "--unpacked", "artifacts");
     if (const char* pack = arg(argc, argv, "--model-pack")) {
         std::string why;
-        if (!open_model_pack(pack, unp, &why)) { std::fprintf(stderr, "%s\n", why.c_str()); return 1; }
+        if (!open_model_pack(pack, unp, arg(argc, argv, "--model-family", ""), &why)) { std::fprintf(stderr, "%s\n", why.c_str()); return 1; }
         std::printf("model pack: %s (%zu entries)\n", pack, g_pack.index.size());
     }
     const std::string accumulation=arg(argc,argv,"--accumulation","fp32");
@@ -1528,6 +1624,12 @@ int NrSession::build(int argc, char** argv, const std::vector<Step>* prepared_pl
 
     for (const Step& s : plan)
         last_layer[s.block] = std::max(last_layer[s.block], s.layer);
+    for (const Step& s : plan)
+        if (s.type.rfind("CCVit1D", 0) == 0) {
+            if (vit_first < 0) vit_first = s.block;
+            vit_last = s.block; vit_last_layer = s.layer;
+        }
+    if (vit_first < 0) throw std::runtime_error("plan has no ViT blocks");
 
     // ---- what runs ---------------------------------------------------------
     for (const Step& s : plan) {
@@ -1685,10 +1787,10 @@ int NrSession::build(int argc, char** argv, const std::vector<Step>* prepared_pl
         // picture.
         if (host_boundary && s.type == "CCSplitSwin16HFinalHead")
             overread[pool_key(s.block)] = std::max(overread[pool_key(s.block)], size_t(s.tokens) * 512);
-        if (host_boundary && s.block == 31 && s.layer == 0)
-            vsize[lift_key(31)] = align(size_t(s.tokens),32) * 1024;
-        if (host_boundary && s.block == 38 && s.layer == 4)
-            vsize[ups_key(38)] = align(size_t(s.tokens),32) * 1024;
+        if (host_boundary && s.block == vit_first && s.layer == 0)
+            vsize[lift_key(vit_first)] = align(size_t(s.tokens),32) * 1024;
+        if (host_boundary && s.block == vit_last && s.layer == vit_last_layer)
+            vsize[ups_key(vit_last)] = align(size_t(s.tokens),32) * 1024;
         // A partial ViT token tile still spans every channel group. M*C bytes
         // is insufficient for tile-blocked M when M is not 16-aligned. PTX
         // rounds its ViT domain to 32; preserve zero padding in separate slots.
@@ -1717,8 +1819,8 @@ int NrSession::build(int argc, char** argv, const std::vector<Step>* prepared_pl
     // the second crashes at run time, which is why `last_layer` is a member.
     x_src = [this](const Step& s) {
         if (host_boundary && s.type == "CCSplitSwin16HFinalHead") return pool_key(s.block);
-        if (host_boundary && s.block == 31 && s.layer == 0) return lift_key(31);
-        if (host_boundary && s.block == 39) return ups_key(38);
+        if (host_boundary && s.block == vit_first && s.layer == 0) return lift_key(vit_first);
+        if (host_boundary && s.type == "CCDecInputUpsample") return ups_key(vit_last);
         if (s.layer > 0) return key_of(s.block, s.layer - 1);
         const int b = s.in0 >= 0 ? s.in0 : s.block;
         return key_of(b, last_layer.count(b) ? last_layer.at(b) : 0);
@@ -3323,11 +3425,11 @@ int NrSession::build(int argc, char** argv, const std::vector<Step>* prepared_pl
             // NR_REPACK_FOLD: FinalHead (gemmnores, NR_OUT_PERM=2) writes the
             // raster copy itself; the repack below only runs when it cannot.
             bool in_folded = false;
-            if (NR_REPACK_FOLD && host_boundary && s.block == 31 && s.layer == 0 &&
+            if (NR_REPACK_FOLD && host_boundary && s.block == vit_first && s.layer == 0 &&
                 s.W % 4 == 0 && s.H % 4 == 0 && !flag(argc, argv, "--no-repack-fold") &&
             !slot_reading_diagnostic(argc, argv)) {
                 for (auto it = disp.rbegin(); it != disp.rend(); ++it)
-                    if (it->s->block == 30 && it->s->layer == 4 && it->kern == "gemmnores") {
+                    if (it->s->block == vit_first - 1 && it->s->type == "CCSplitSwin16HFinalHead" && it->kern == "gemmnores") {
                         PushGemm q{};
                         std::memcpy(&q, it->push.data(), sizeof q);
                         // The slot is written by FinalHead now, so its lifetime
@@ -3337,7 +3439,7 @@ int NrSession::build(int argc, char** argv, const std::vector<Step>* prepared_pl
                         const int lowering_now = voff.step;
                         for (size_t i = 0; i < run.size(); ++i)
                             if (run[i] == it->s) voff.step = int(i);
-                        q.p_off = uint32_t(voff[lift_key(31)]);
+                        q.p_off = uint32_t(voff[lift_key(vit_first)]);
                         voff.step = lowering_now;
                         // PushRepack's W/H are passed as s.H/s.W: the repack's raster
                         // is s.H wide and s.W tall, so the fold uses the same.
@@ -3347,9 +3449,9 @@ int NrSession::build(int argc, char** argv, const std::vector<Step>* prepared_pl
                         break;
                     }
             }
-            if (host_boundary && s.block == 31 && s.layer == 0 && !in_folded) {
+            if (host_boundary && s.block == vit_first && s.layer == 0 && !in_folded) {
                 Disp rep{&s};
-                PushRepack p{uint32_t(voff[blk_out(30)]), uint32_t(voff[lift_key(31)]),
+                PushRepack p{uint32_t(voff[blk_out(vit_first - 1)]), uint32_t(voff[lift_key(vit_first)]),
                              uint32_t(s.H), uint32_t(s.W), 1024, 0};
                 rep.kern = "repack"; rep.gx = (p.W * p.H * (NR_REPACK_VEC ? p.C / 16u : p.C) + 63) / 64;
                 rep.gy = rep.gz = 1; rep.push.resize(sizeof p);
@@ -3762,21 +3864,21 @@ int NrSession::build(int argc, char** argv, const std::vector<Step>* prepared_pl
         // NR_REPACK_FOLD: the last ViT projection stores at the tile
         // positions the inverse repack would move its raster tokens to.
         bool out_folded = false;
-        if (NR_REPACK_FOLD && host_boundary && s.block == 38 && s.layer == 4 && d.kern == "gemmproj" &&
+        if (NR_REPACK_FOLD && host_boundary && s.block == vit_last && s.layer == vit_last_layer && d.kern == "gemmproj" &&
             s.W % 4 == 0 && s.H % 4 == 0 && !flag(argc, argv, "--no-repack-fold") &&
             !slot_reading_diagnostic(argc, argv)) {
             PushGemm q{};
             std::memcpy(&q, d.push.data(), sizeof q);
-            q.o_off = uint32_t(voff[ups_key(38)]);
+            q.o_off = uint32_t(voff[ups_key(vit_last)]);
             q.W = uint32_t(s.H); q.rows = uint32_t(s.W);   // as the repack (see b031l0)
             std::memcpy(d.push.data(), &q, sizeof q);
             d.kern = "gemmprojt";
             out_folded = true;
         }
         disp.push_back(std::move(d));
-        if (host_boundary && s.block == 38 && s.layer == 4 && !out_folded) {
+        if (host_boundary && s.block == vit_last && s.layer == vit_last_layer && !out_folded) {
             Disp rep{&s};
-            PushRepack p{uint32_t(voff[key_of(38,4)]), uint32_t(voff[ups_key(38)]),
+            PushRepack p{uint32_t(voff[key_of(vit_last,vit_last_layer)]), uint32_t(voff[ups_key(vit_last)]),
                          uint32_t(s.H), uint32_t(s.W), 1024, 1};
             rep.kern = "repack"; rep.gx = (p.W * p.H * (NR_REPACK_VEC ? p.C / 16u : p.C) + 63) / 64;
             rep.gy = rep.gz = 1; rep.push.resize(sizeof p);
@@ -3988,7 +4090,9 @@ int NrSession::build(int argc, char** argv, const std::vector<Step>* prepared_pl
                            fp(disp[j + 1]).tiles_y == fp(disp[i]).tiles_y &&
                            fp(disp[j + 1]).x_off == fp(disp[j]).o_off)
                         ++j;
-                if (j == i) { out.push_back(std::move(disp[i])); i = j + 1; continue; }
+                // One plain layer is a run too when a DS or UPS folds into it (the small
+                // model has one plain layer a level); a lone plain layer stays as it is.
+                const bool short_run = j == i;
                 // The fused downsample that follows the run joins it as
                 // its last layer - same body, same tiles, the DS epilogue behind
                 // a wave-uniform branch in the shader.
@@ -4013,6 +4117,7 @@ int NrSession::build(int argc, char** argv, const std::vector<Step>* prepared_pl
                     fp(out.back()).tiles_x == fp(disp[i]).tiles_x &&
                     fp(out.back()).tiles_y == fp(disp[i]).tiles_y &&
                     fp(out.back()).o_off == fp(disp[i]).x_off;
+                if (short_run && !ds_fold && !up_fold) { out.push_back(std::move(disp[i])); i = i + 1; continue; }
                 Disp up_disp{disp[i].s};
                 if (up_fold) { up_disp = std::move(out.back()); out.pop_back(); }
                 std::vector<const Disp*> lay;
@@ -5548,16 +5653,16 @@ int main(int argc, char** argv) try {
                                     s2.block, s2.layer, cap);
                     continue;
                 }
-                if (host_boundary && s2.block==38 && s2.layer==4) {
-                    const auto side=slurp(std::string(seed_dir)+"/b038l4_2d.bin");
+                if (host_boundary && s2.block==vit_last && s2.layer==vit_last_layer) {
+                    const auto side=slurp(std::string(seed_dir)+"/b"+(vit_last<100?"0":"")+(vit_last<10?"0":"")+std::to_string(vit_last)+"l"+std::to_string(vit_last_layer)+"_2d.bin");
                     const size_t M=size_t(s2.W)*s2.H,C=1024;
                     if(side.size()<M*C) { std::fprintf(stderr,"missing b38 repacked side tensor\n");return 1; }
                     std::vector<uint8_t> canon(M*C);
                     for(size_t t=0;t<M;++t)for(size_t c=0;c<C;++c)canon[t*C+c]=side[tin::byte_of(t,c,C)];
-                    put_slot(ups_key(38),canon,M,C);
+                    put_slot(ups_key(vit_last),canon,M,C);
                 }
                 if (host_boundary && (s2.type == "CCSplitSwin16HProjPool" ||
-                                      (s2.block == 31 && s2.layer == 0))) {
+                                      (s2.block == vit_first && s2.layer == 0))) {
                     char sidepath[256];
                     std::snprintf(sidepath, sizeof sidepath, "%s/b%03dl%d_o1.bin",
                                   seed_dir, s2.block, s2.layer);
@@ -5572,7 +5677,7 @@ int main(int argc, char** argv) try {
                     std::vector<uint8_t> canon(M*C);
                     for (size_t t=0; t<M; ++t)
                         for (size_t c=0; c<C; ++c) canon[t*C+c]=side[tin::byte_of(t,c,C)];
-                    put_slot(pool ? pool_key(s2.block) : lift_key(31), canon, M, C);
+                    put_slot(pool ? pool_key(s2.block) : lift_key(vit_first), canon, M, C);
                 }
                 // **`CCVit1DQKV` has three outputs, in three layouts.** Our own
                 // GEMM writes one 3C tensor, so seeding this slot means

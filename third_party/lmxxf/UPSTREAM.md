@@ -1,7 +1,7 @@
 # lmxxf runtime source revision
 
 - Upstream: https://github.com/lmxxf/dlss5-on-amd-9070xt-porting
-- Commit: `3a1be68c35dbac7d7edeb2073723e82076bb1a39` (synced 2026-10-16)
+- Commit: `00a7d047c289e5809cb911563cb8fa6cd3141799` (synced 2026-10-18)
 - License: MIT, Copyright (c) 2026 Kien (`LICENSE`)
 - `hip_api.h` also carries the AMD HIP runtime API MIT notice from ROCm 7.1.1.
 
@@ -10,6 +10,14 @@ last completed integration; `sync-state.json` records any pending attempt.
 [Sync workflow](../../tools/lmxxf-sync/README.md) is the entry point for updates.
 
 ## Current ownership after PR #12
+
+0.44 updates the network and modules; see the [consumer review](../../docs/lmxxf-044-consumer-review.md).
+`consumer-model-mode.patch` adds per-network explicit model selection. The product rebuilds
+recording chains on menu changes and never polls the addon F9 hotkey. The unchanged-base
+statements below describe the earlier interface-only patch history.
+The [0.44 hotfix review](../../docs/lmxxf-044-hotfix-consumer-review.md) covers cold
+preparation before producer waits. Product `allow_model_prewarm=false` disables
+F9 twin-model prewarming and alternate-head loading; model/adaptive policies belong to each chain.
 
 The product adds explicit, opt-in interface patches (`first-pass-output.patch`,
 `inline-side-queue.patch`, `inline-ahead-capture.patch`, and `inline-compute-recording.patch`) on this unchanged upstream base. The side-queue patch lets

@@ -6,6 +6,7 @@ The batch pause gets an output marker because its own text is localized.
 """
 from pathlib import Path
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -36,7 +37,9 @@ class InstallerExitTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="amd-installer-exit-")
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        # Actions TEMP may use RUNNER~1; Setup resolves it to the long account name.
+        # Compare diagnostics against the same canonical path, including spaces/Unicode.
+        self.root = Path(self.temp.name).resolve()
         self.package = self.root / "OptScaler(NR) package with spaces"
         self.game = self.root / "game with spaces"
         self.package.mkdir()
@@ -64,6 +67,11 @@ class InstallerExitTests(unittest.TestCase):
             batch = batch.replace("\npause\n", f"\necho {PAUSE_MARKER}\npause\n")
             (self.package / f"{file_name}.bat").write_bytes(batch.replace("\n", "\r\n").encode("ascii"))
             original = (REPO / f"tools/{script}-amd-presr.ps1").read_text(encoding="utf-8-sig")
+            if script == "install":
+                orig_hash = hashlib.sha256(b"NRMODEL1" + (599).to_bytes(4, "little") + bytes(20)).hexdigest()
+                small_hash = hashlib.sha256(b"NRMODEL1" + (255).to_bytes(4, "little") + bytes(20)).hexdigest()
+                original = re.sub(r"(\$knownOriginalSha\s*=\s*)'[a-f0-9]{64}'", r"\g<1>'" + orig_hash + "'", original)
+                original = re.sub(r"(\$knownSmallSha\s*=\s*)'[a-f0-9]{64}'", r"\g<1>'" + small_hash + "'", original)
             write_ps(self.package / f"{file_name}.ps1", original)
 
     def launcher_files(self, name):
@@ -136,6 +144,85 @@ class InstallerExitTests(unittest.TestCase):
     def broken_author_setup(self):
         (self.package / "OptiScaler.dll").write_bytes(b"fixture proxy")
         (self.package / "dlssnr_on_amd_setup.exe").write_bytes(b"invalid executable")
+
+    def backend_decisions(self, backends):
+        path = self.root / "backend-decisions.json"
+        path.write_text(json.dumps({"backends": backends, "existingIni": "keep"}), encoding="utf-8")
+        return ("-NonInteractive", "-DecisionJson", str(path))
+
+    def test_explicit_active_backend_survives_install_update_and_reinstall(self):
+        self.ready_install()
+        self.ready_lmxxf_dual_arch()
+        (self.package / "OptiScaler.ini").write_text(
+            "[DlssNr]\nNrBackend=lmxxf\nAmdModelScale=0.75\n", encoding="utf-8"
+        )
+        flags = self.backend_decisions(["lmxxf", "daniel"]) + ("-ActiveBackend", "daniel")
+        for action in ("install", "overwrite", "reinstall"):
+            with self.subTest(action=action):
+                if action == "reinstall":
+                    code, output = self.run_direct(name="Uninstall")
+                    self.assertEqual(code, 0, output)
+                code, output = self.run_direct(flags=flags)
+                self.assertEqual(code, 0, output)
+                self.assertIn("Active Backend: daniel", output)
+                ini = (self.game / "OptiScaler.ini").read_text(encoding="utf-8-sig")
+                self.assertRegex(ini, r"NrBackend\s*=\s*daniel")
+                self.assertRegex(ini, r"AmdModelScale\s*=\s*0\.75")
+                record = (self.game / "amd-presr-install.txt").read_text(encoding="utf-8-sig")
+                self.assertIn("backend=daniel", record)
+
+    def test_explicit_backend_list_without_active_uses_first_available(self):
+        self.ready_install()
+        self.ready_lmxxf_dual_arch()
+        code, output = self.run_direct(flags=self.backend_decisions(["daniel", "lmxxf"]))
+        self.assertEqual(code, 0, output)
+        self.assertIn("Active Backend: lmxxf", output)
+
+    def test_explicit_mochizuki_active_backend_with_multiple_backends(self):
+        self.ready_install()
+        self.ready_mochizuki(model=True)
+        (self.package / "OptiScaler.ini").write_text("[DlssNr]\nNrBackend=lmxxf\n", encoding="utf-8")
+        flags = self.backend_decisions(["daniel", "mochizuki"]) + (
+            "-ActiveBackend", "mochizuki", "-MochizukiModels", "original"
+        )
+        code, output = self.run_direct(flags=flags)
+        self.assertEqual(code, 0, output)
+        self.assertIn("Active Backend: mochizuki", output)
+        self.assertRegex((self.game / "OptiScaler.ini").read_text(encoding="utf-8-sig"),
+                         r"NrBackend\s*=\s*mochizuki")
+
+    def test_failed_active_backend_falls_back_to_installed_backend(self):
+        self.ready_install()
+        self.ready_lmxxf_dual_arch()
+        (self.package / "dlssnr_on_amd_weights.bin").write_bytes(b"truncated")
+        code, output = self.run_direct(
+            flags=self.backend_decisions(["lmxxf", "daniel"]) + ("-ActiveBackend", "daniel")
+        )
+        self.assertEqual(code, 0, output)
+        self.assertIn("Skipping daniel: weights check failed", output)
+        self.assertIn("Active backend changed to lmxxf", output)
+        self.assertIn("Active Backend: lmxxf", output)
+        self.assertFalse((self.game / "dlssnr_amd_pass1.dll").exists())
+
+    def test_invalid_or_unselected_active_backend_does_not_change_game(self):
+        self.ready_install()
+        self.ready_lmxxf_dual_arch()
+        before = snapshot_files(self.game)
+        for active in ("unknown", "", "mochizuki"):
+            with self.subTest(active=active):
+                code, output = self.run_direct(
+                    flags=self.backend_decisions(["lmxxf", "daniel"]) + ("-ActiveBackend", active)
+                )
+                self.assertEqual(code, 1, output)
+                self.assertIn("ActiveBackend", output)
+                self.assertEqual(snapshot_files(self.game), before)
+
+    def test_active_backend_requires_explicit_backend_list(self):
+        self.ready_install()
+        code, output = self.run_direct(flags=("-NonInteractive", "-ActiveBackend", "daniel"))
+        self.assertEqual(code, 1, output)
+        self.assertIn("ActiveBackend requires", output)
+        self.assertFalse((self.game / "dxgi.dll").exists())
 
     def test_noninteractive_ini_overwrite_keeps_install_backend(self):
         self.ready_install()
@@ -494,7 +581,7 @@ class InstallerExitTests(unittest.TestCase):
         self.assertFalse(list(self.package.glob('.amd-presr-model-*')))
         other_game = self.root / 'another game'
         other_game.mkdir()
-        code, output = self.run_direct(game=other_game, flags=('-NonInteractive', '-Backend', 'all'))
+        code, output = self.run_direct(game=other_game, flags=('-NonInteractive', '-Backend', 'all', '-MochizukiModels', 'original'))
         self.assertEqual(code, 0, output)
         self.assertIn('Install SUCCEEDED.', output)
         for relative, data in expected.items():
@@ -517,6 +604,95 @@ class InstallerExitTests(unittest.TestCase):
             self.assertEqual((self.package / relative).read_bytes(), data)
         self.assertFalse((self.package / 'native-game-tiled-assets/block0-ffn.f16').exists())
         self.assertFalse(list(self.package.glob('.amd-presr-model-*')))
+
+    def test_small_cache_with_existing_original_installs_next_game(self):
+        self.ready_mochizuki(model=True)
+        small = b'NRMODEL1' + (255).to_bytes(4, 'little') + bytes(20)
+        source = self.game / 'dlssnr-amd/dlssnr-small.bin'
+        source.parent.mkdir(parents=True)
+        source.write_bytes(small)
+        (self.package / 'OptiScaler.ini').write_text('[DlssNr]\n', encoding='utf-8')
+        original = (self.package / 'dlssnr-amd/dlssnr.bin').read_bytes()
+        flags = ('-NonInteractive', '-Backend', 'mochizuki', '-MochizukiModels', 'both')
+        code, output = self.run_direct(flags=flags)
+        self.assertEqual(code, 0, output)
+        self.assertEqual((self.package / 'dlssnr-amd/dlssnr-small.bin').read_bytes(), small)
+        self.assertEqual((self.package / 'dlssnr-amd/dlssnr.bin').read_bytes(), original)
+        other = self.root / 'next game'
+        other.mkdir()
+        code, output = self.run_direct(game=other, flags=flags)
+        self.assertEqual(code, 0, output)
+        self.assertEqual((other / 'dlssnr-amd/dlssnr-small.bin').read_bytes(), small)
+        self.assertEqual((other / 'dlssnr-amd/dlssnr.bin').read_bytes(), original)
+        self.assertNotIn('Extracting Mochizuki', output)
+        self.assertFalse(list(self.package.glob('.amd-presr-model-*')))
+
+    def test_small_cache_validates_and_preserves_existing_destination(self):
+        self.ready_install()
+        source = self.game / 'dlssnr-amd/dlssnr-small.bin'
+        source.parent.mkdir(parents=True)
+        source.write_bytes(b'corrupt small model')
+        dest = self.package / 'dlssnr-amd/dlssnr-small.bin'
+        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'daniel'))
+        self.assertEqual(code, 0, output)
+        self.assertFalse(dest.exists())
+        source.write_bytes(b'NRMODEL1' + (255).to_bytes(4, 'little') + bytes(20))
+        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'daniel'))
+        self.assertEqual(code, 0, output)
+        self.assertEqual(dest.read_bytes(), source.read_bytes())
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b'user existing model')
+        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'daniel'))
+        self.assertEqual(code, 0, output)
+        self.assertEqual(dest.read_bytes(), b'user existing model')
+
+    def test_small_only_install_needs_no_original(self):
+        self.ready_mochizuki()
+        small = b'NRMODEL1' + (255).to_bytes(4, 'little') + bytes(20)
+        (self.package / 'dlssnr-amd/dlssnr-small.bin').write_bytes(small)
+        (self.package / 'OptiScaler.ini').write_text('[DlssNr]\n', encoding='utf-8')
+        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki', '-MochizukiModels', 'small'))
+        self.assertEqual(code, 0, output)
+        self.assertIn('Install SUCCEEDED.', output)
+        self.assertFalse((self.game / 'dlssnr-amd/dlssnr.bin').exists())
+        self.assertEqual((self.game / 'dlssnr-amd/dlssnr-small.bin').read_bytes(), small)
+        self.assertRegex((self.game / 'OptiScaler.ini').read_text(encoding='utf-8-sig'), r'MochizukiNetworkModel\s*=\s*1')
+
+    def test_both_extracts_only_missing_original_with_legacy_source(self):
+        self.ready_supported_mochizuki_source()
+        small = b'NRMODEL1' + (255).to_bytes(4, 'little') + bytes(20)
+        existing = self.game / 'dlssnr-amd/dlssnr-small.bin'
+        existing.parent.mkdir(parents=True)
+        existing.write_bytes(small)
+        (self.package / 'mochizuki-model.py').write_text(
+            "import sys\nfrom pathlib import Path\n"
+            "assert sys.argv[3:] == ['--models', 'original'], sys.argv\n"
+            "p=Path(sys.argv[2]); p.parent.mkdir(parents=True,exist_ok=True)\n"
+            "p.write_bytes(b'NRMODEL1'+(599).to_bytes(4,'little')+bytes(20))\n", encoding='utf-8')
+        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki', '-MochizukiModels', 'both'))
+        self.assertEqual(code, 0, output)
+        self.assertEqual(existing.read_bytes(), small)
+        self.assertTrue((self.game / 'dlssnr-amd/dlssnr.bin').is_file())
+
+    def test_both_extracts_only_missing_small_preserving_game_original(self):
+        self.ready_supported_mochizuki_source()
+        script = self.package / 'Setup.ps1'
+        source_hash = hashlib.sha256((self.package / 'nvngx_dlssnr.dll').read_bytes()).hexdigest()
+        write_ps(script, re.sub(r"(\$mochizukiNewNvSha\s*=\s*)'[a-f0-9]{64}'",
+                               r"\g<1>'" + source_hash + "'", script.read_text(encoding='utf-8-sig')))
+        original = b'NRMODEL1' + (599).to_bytes(4, 'little') + bytes(20)
+        existing = self.game / 'dlssnr-amd/dlssnr.bin'
+        existing.parent.mkdir(parents=True)
+        existing.write_bytes(original)
+        (self.package / 'mochizuki-model.py').write_text(
+            "import sys\nfrom pathlib import Path\n"
+            "assert sys.argv[3:] == ['--models', 'small'], sys.argv\n"
+            "p=Path(sys.argv[2]).with_name('dlssnr-small.bin'); p.parent.mkdir(parents=True,exist_ok=True)\n"
+            "p.write_bytes(b'NRMODEL1'+(255).to_bytes(4,'little')+bytes(20))\n", encoding='utf-8')
+        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki', '-MochizukiModels', 'both'))
+        self.assertEqual(code, 0, output)
+        self.assertEqual(existing.read_bytes(), original)
+        self.assertTrue((self.game / 'dlssnr-amd/dlssnr-small.bin').is_file())
 
     def test_game_model_cache_package_is_game_skips_copy_and_cleans_temporary_runtime(self):
         self.ready_install()
@@ -612,14 +788,24 @@ class InstallerExitTests(unittest.TestCase):
             self.assertFalse((self.game / "MochizukiNrRuntime.dll").exists(), output)
             saved.rename(path)
 
-    def test_mochizuki_missing_model_reports_pending(self):
+    def test_mochizuki_missing_model_fails_and_preserves_game(self):
         self.ready_mochizuki()
-        code, output = self.run_direct(flags=("-NonInteractive", "-Backend", "mochizuki"))
-        self.assertEqual(code, 0, output)
-        self.assertIn("MODEL SETUP REQUIRED", output)
+        before = self.game_snapshot()
+        code, output = self.run_direct(flags=("-NonInteractive", "-Backend", "mochizuki", "-MochizukiModels", "original"))
+        self.assertEqual(code, 1, output)
+        self.assertIn("The requested Mochizuki model selection is unavailable", output)
         self.assertNotIn("Install SUCCEEDED.", output)
-        self.assertIn("310.8.0", output)
-        self.assertTrue((self.game / "MochizukiNrRuntime.dll").is_file())
+        self.assertFalse((self.game / "MochizukiNrRuntime.dll").exists())
+        self.assertEqual(self.game_snapshot(), before)
+
+    def test_mochizuki_noninteractive_requires_models_choice(self):
+        self.ready_mochizuki(model=True)
+        before = self.game_snapshot()
+        code, output = self.run_direct(flags=("-NonInteractive", "-Backend", "mochizuki"))
+        self.assertEqual(code, 1, output)
+        self.assertIn("MochizukiModels parameter is required in -NonInteractive mode", output)
+        self.assertNotIn("Install SUCCEEDED.", output)
+        self.assertEqual(self.game_snapshot(), before)
 
     def test_unselected_mochizuki_never_prepares_weights(self):
         self.ready_install()
@@ -640,30 +826,31 @@ class InstallerExitTests(unittest.TestCase):
         self.ready_mochizuki(model=True)
         args = [str(PS), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
                 str(self.package / 'Setup.ps1'), '-GameDir', str(self.game), '-Proxy', 'dxgi.dll', '-NoPause']
-        code, output = self.run_process(args, '2\n\n\n')
+        # '2' chooses mochizuki backend; '1' confirms original model under legacy warning
+        code, output = self.run_process(args, '2\n1\n')
         self.assertEqual(code, 0, output)
         self.assertLess(output.index('Choose NR backends to install:'), output.index('Preparing INT4'))
         self.assertEqual(output.count('Preparing INT4'), 1, output)
         self.assertTrue((self.game / 'dlssnr-amd/dlssnr-int4.bin').is_file())
 
-    def test_mochizuki_interactive_runtime_only_skips_extraction(self):
+    def test_mochizuki_interactive_cancel_preserves_game(self):
         self.ready_supported_mochizuki_source()
-        (self.package / 'mochizuki-model.py').write_text("raise RuntimeError('EXTRACTOR_MUST_NOT_RUN')", encoding='utf-8')
+        before = self.game_snapshot()
         args = [str(PS), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
                 str(self.package / 'Setup.ps1'), '-GameDir', str(self.game),
                 '-Proxy', 'dxgi.dll', '-Backend', 'mochizuki', '-NoPause']
-        code, output = self.run_process(args, '2\n')
+        # '0' cancels at model selection prompt
+        code, output = self.run_process(args, '0\n')
         self.assertEqual(code, 0, output)
-        self.assertIn('MODEL SETUP REQUIRED', output)
-        self.assertNotIn('EXTRACTOR_MUST_NOT_RUN', output)
-        self.assertNotIn('Preparing INT4', output)
-        self.assertFalse((self.game / 'dlssnr-amd/dlssnr.bin').exists())
-        self.assertTrue((self.game / 'MochizukiNrRuntime.dll').is_file())
+        self.assertIn('Cancelled.', output)
+        self.assertNotIn('Install SUCCEEDED.', output)
+        self.assertFalse((self.game / 'MochizukiNrRuntime.dll').exists())
+        self.assertEqual(self.game_snapshot(), before)
 
     def test_existing_mochizuki_model_ignores_unneeded_nvidia_dll(self):
         self.ready_mochizuki(model=True)
         (self.game / 'nvngx_dlssnr.dll').write_bytes(b'unrelated DLL version')
-        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki'))
+        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki', '-MochizukiModels', 'original'))
         self.assertEqual(code, 0, output)
         self.assertNotIn('DLL is not supported', output)
         self.assertNotIn('Extracting Mochizuki model', output)
@@ -672,16 +859,40 @@ class InstallerExitTests(unittest.TestCase):
     def test_mochizuki_existing_model_needs_no_extraction(self):
         self.ready_mochizuki(model=True)
         expected = (self.package / "dlssnr-amd/dlssnr.bin").read_bytes()
-        code, output = self.run_direct(flags=("-NonInteractive", "-Backend", "mochizuki"))
+        code, output = self.run_direct(flags=("-NonInteractive", "-Backend", "mochizuki", "-MochizukiModels", "original"))
         self.assertEqual(code, 0, output)
         self.assertIn("Install SUCCEEDED.", output)
         self.assertNotIn("Extracting Mochizuki model", output)
         self.assertEqual((self.game / "dlssnr-amd/dlssnr.bin").read_bytes(), expected)
         self.assertEqual((self.game / "dlssnr-amd/dlssnr-int4.bin").read_bytes(), INT4_PAYLOAD)
 
+    def test_mochizuki_installs_both_models_and_preserves_selection_on_upgrade(self):
+        self.ready_mochizuki(model=True)
+        small = b'NRMODEL1' + (255).to_bytes(4, 'little') + bytes(20)
+        (self.package / 'dlssnr-amd/dlssnr-small.bin').write_bytes(small)
+        ini = self.game / 'OptiScaler.ini'
+        ini.write_text('[DlssNr]\nBackend=mochizuki\nMochizukiNetworkModel=0\nMochizukiInt4Mixed=true\n', encoding='utf-8')
+        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki', '-MochizukiModels', 'both'))
+        self.assertEqual(code, 0, output)
+        self.assertEqual((self.game / 'dlssnr-amd/dlssnr-small.bin').read_bytes(), small)
+        self.assertRegex(ini.read_text(encoding='utf-8-sig'), r'MochizukiNetworkModel\s*=\s*0')
+        self.assertIn('MochizukiInt4Mixed=true', ini.read_text(encoding='utf-8-sig'))
+        (self.package / 'dlssnr-amd/dlssnr-small.bin').write_bytes(small + b'package copy changed')
+        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki', '-MochizukiModels', 'both'))
+        self.assertEqual(code, 0, output)
+        self.assertEqual((self.game / 'dlssnr-amd/dlssnr-small.bin').read_bytes(), small)
+
+    def test_mochizuki_invalid_small_model_is_not_copied(self):
+        self.ready_mochizuki(model=True)
+        (self.package / 'dlssnr-amd/dlssnr-small.bin').write_bytes(b'NRMODEL1' + (599).to_bytes(4, 'little') + bytes(20))
+        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki', '-MochizukiModels', 'original'))
+        self.assertEqual(code, 0, output)
+        self.assertFalse((self.game / 'dlssnr-amd/dlssnr-small.bin').exists())
+        self.assertTrue((self.game / 'dlssnr-amd/dlssnr.bin').is_file())
+
     def test_mochizuki_int4_reuse_and_failed_conversion_preserve_weights(self):
         self.ready_mochizuki(model=True)
-        flags = ('-NonInteractive', '-Backend', 'mochizuki')
+        flags = ('-NonInteractive', '-Backend', 'mochizuki', '-MochizukiModels', 'original')
         code, output = self.run_direct(flags=flags)
         self.assertEqual(code, 0, output)
         output_model = self.game / 'dlssnr-amd/dlssnr-int4.bin'
@@ -707,7 +918,7 @@ class InstallerExitTests(unittest.TestCase):
         self.ready_install()
         self.ready_mochizuki(model=True)
         (self.package / 'model-tools/dlssnr-int4.sha256').write_text('ab' * 32 + '\n')
-        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'all'))
+        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'all', '-MochizukiModels', 'original'))
         self.assertEqual(code, 0, output)
         self.assertIn('WEIGHTS CHECK: problems found', output)
         self.assertIn('<mochizuki: FAILED - this backend will not be installed', output)
@@ -731,7 +942,7 @@ class InstallerExitTests(unittest.TestCase):
             "        & $generator $Model $Data $temporary | Out-Host\n"
             "        if ($Model -like '*game with spaces*') { [IO.File]::WriteAllText($temporary, 'stale') }")
         script.write_text(text, encoding='utf-8-sig')
-        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki'))
+        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki', '-MochizukiModels', 'original'))
         self.assertEqual(code, 0, output)
         self.assertIn('Wrong file: ' + str(stale), output)
         self.assertIn('Setup will use the matching model instead: ' + str(self.package / 'dlssnr-amd' / 'dlssnr.bin'), output)
@@ -774,7 +985,7 @@ class InstallerExitTests(unittest.TestCase):
         (self.game / 'dxgi.dll').write_bytes(b'original proxy fixture')
         (self.package / 'model-tools/dlssnr-int4.sha256').write_text('ab' * 32 + '\n')
         before = self.game_snapshot()
-        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki'))
+        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki', '-MochizukiModels', 'original'))
         self.assertNotEqual(code, 0, output)
         self.assertEqual(self.game_snapshot(), before, output)
         for text in ('WEIGHTS CHECK: problems found',
@@ -793,7 +1004,7 @@ class InstallerExitTests(unittest.TestCase):
         model.parent.mkdir()
         data = b'NRMODEL1' + (599).to_bytes(4, 'little') + bytes(20)
         model.write_bytes(data)
-        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki'))
+        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki', '-MochizukiModels', 'original'))
         self.assertEqual(code, 0, output)
         self.assertIn('Install SUCCEEDED.', output)
         self.assertNotIn('Extracting Mochizuki model', output)
@@ -804,23 +1015,25 @@ class InstallerExitTests(unittest.TestCase):
         model = self.game / 'dlssnr-amd/dlssnr.bin'
         model.parent.mkdir()
         model.write_bytes(b'user invalid model')
-        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki'))
+        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki', '-MochizukiModels', 'original'))
         self.assertEqual(code, 0, output)
         self.assertIn('Install SUCCEEDED.', output)
-        self.assertIn('Renamed mismatched Mochizuki model', output)
+        self.assertIn('Backed up mismatched or invalid model', output)
         self.assertEqual(model.read_bytes(), (self.package / 'dlssnr-amd/dlssnr.bin').read_bytes())
         backups = list(model.parent.glob('dlssnr.bin.mismatch-*'))
         self.assertEqual(len(backups), 1)
         self.assertEqual(backups[0].read_bytes(), b'user invalid model')
 
-    def test_mochizuki_unsupported_nvidia_dll_reports_model_pending(self):
+    def test_mochizuki_unsupported_nvidia_dll_fails_and_preserves_game(self):
         self.ready_mochizuki()
         (self.package / 'nvngx_dlssnr.dll').write_bytes(b'unsupported model DLL')
-        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki'))
-        self.assertEqual(code, 0, output)
-        self.assertIn('DLL is not supported', output)
-        self.assertIn('MODEL SETUP REQUIRED', output)
-        self.assertNotIn('Extracting Mochizuki model', output)
+        before = self.game_snapshot()
+        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki', '-MochizukiModels', 'original'))
+        self.assertEqual(code, 1, output)
+        self.assertIn('Wrong file: ', output)
+        self.assertIn('The requested Mochizuki model selection is unavailable', output)
+        self.assertNotIn('Install SUCCEEDED.', output)
+        self.assertEqual(self.game_snapshot(), before)
 
     def ready_supported_mochizuki_source(self):
         self.ready_mochizuki()
@@ -838,20 +1051,22 @@ class InstallerExitTests(unittest.TestCase):
         (self.package / 'mochizuki-model.py').write_text(
             "import sys\nfrom pathlib import Path\np=Path(sys.argv[2]); p.parent.mkdir(parents=True,exist_ok=True)\n"
             "p.write_bytes(b'NRMODEL1'+(599).to_bytes(4,'little')+bytes(20))\n", encoding='utf-8')
-        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki'))
+        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki', '-MochizukiModels', 'original'))
         self.assertEqual(code, 0, output)
-        self.assertIn('Extracting Mochizuki model', output)
+        self.assertIn('Extracting Mochizuki models', output)
         self.assertIn('Install SUCCEEDED.', output)
         self.assertTrue((self.game / 'dlssnr-amd/dlssnr.bin').is_file())
 
     def test_mochizuki_extractor_failure_leaves_actionable_pending(self):
         self.ready_supported_mochizuki_source()
         (self.package / 'mochizuki-model.py').write_text('import sys; print("fixture extraction error", file=sys.stderr); sys.exit(4)\n', encoding='utf-8')
-        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki'))
-        self.assertEqual(code, 0, output)
-        self.assertIn('Model extraction failed', output)
-        self.assertIn('MODEL SETUP REQUIRED', output)
-        self.assertNotIn('search for Python', output)
+        before = self.game_snapshot()
+        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki', '-MochizukiModels', 'original'))
+        self.assertEqual(code, 1, output)
+        self.assertIn('Model preparation failed', output)
+        self.assertIn('The existing installation was preserved', output)
+        self.assertNotIn('Install SUCCEEDED.', output)
+        self.assertEqual(self.game_snapshot(), before)
 
     def test_mochizuki_missing_python_leaves_actionable_pending(self):
         self.ready_supported_mochizuki_source()
@@ -860,13 +1075,14 @@ class InstallerExitTests(unittest.TestCase):
         old = "@('python', 'python3', 'py')"
         self.assertEqual(text.count(old), 1)
         write_ps(script, text.replace(old, "@('nonexistent-python-fixture')"))
-        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki'))
-        self.assertEqual(code, 0, output)
+        before = self.game_snapshot()
+        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki', '-MochizukiModels', 'original'))
+        self.assertEqual(code, 1, output)
         self.assertIn('Python 3.10+', output)
         self.assertIn('Microsoft Store (Windows Store)', output)
-        self.assertIn('search for Python', output)
+        self.assertIn('The existing installation was preserved', output)
         self.assertNotIn('Extracting Mochizuki model', output)
-        self.assertIn('MODEL SETUP REQUIRED', output)
+        self.assertEqual(self.game_snapshot(), before)
 
     def fixture_python_candidates(self, candidates):
         script = self.package / 'mochizuki-python.ps1'
@@ -876,7 +1092,7 @@ class InstallerExitTests(unittest.TestCase):
         paths = ', '.join("'" + str(p).replace("'", "''") + "'" for p in candidates)
         write_ps(script, text.replace(old, '@(' + paths + ')'))
 
-    def test_mochizuki_unusable_python_does_not_abort_setup(self):
+    def test_mochizuki_unusable_python_fails_and_preserves_game(self):
         self.ready_supported_mochizuki_source()
         broken = self.package / 'broken-python.cmd'
         broken.write_text('@echo off\necho Python was not found 1>&2\nexit /b 1\n', encoding='ascii')
@@ -885,13 +1101,13 @@ class InstallerExitTests(unittest.TestCase):
         old = self.package / 'old-python.cmd'
         old.write_text('@echo off\necho MOCHI_PYTHON_TOO_OLD\nexit /b 0\n', encoding='ascii')
         self.fixture_python_candidates((broken, empty, old))
-        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki'))
-        self.assertEqual(code, 0, output)
-        self.assertIn('no working Python 3.10+', output)
-        self.assertIn('Microsoft Store', output)
-        self.assertIn('MODEL SETUP REQUIRED', output)
-        self.assertNotIn('Extracting Mochizuki model', output)
+        before = self.game_snapshot()
+        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki', '-MochizukiModels', 'original'))
+        self.assertEqual(code, 1, output)
+        self.assertIn('Python 3.10+', output)
+        self.assertIn('The existing installation was preserved', output)
         self.assertNotIn('Install SUCCEEDED.', output)
+        self.assertEqual(self.game_snapshot(), before)
 
     def test_mochizuki_python_fallback_after_broken_launcher(self):
         self.ready_supported_mochizuki_source()
@@ -901,7 +1117,7 @@ class InstallerExitTests(unittest.TestCase):
         (self.package / 'mochizuki-model.py').write_text(
             "import sys\nfrom pathlib import Path\np=Path(sys.argv[2]); p.parent.mkdir(parents=True,exist_ok=True)\n"
             "p.write_bytes(b'NRMODEL1'+(599).to_bytes(4,'little')+bytes(20))\n", encoding='utf-8')
-        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki'))
+        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki', '-MochizukiModels', 'original'))
         self.assertEqual(code, 0, output)
         self.assertIn('Install SUCCEEDED.', output)
         self.assertNotIn('search for Python', output)
@@ -917,18 +1133,18 @@ class InstallerExitTests(unittest.TestCase):
         (self.package / 'mochizuki-model.py').write_text(
             "import sys\nfrom pathlib import Path\np=Path(sys.argv[2]); p.parent.mkdir(parents=True,exist_ok=True)\n"
             "p.write_bytes(b'NRMODEL1'+(599).to_bytes(4,'little')+bytes(20))\n", encoding='utf-8')
-        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki'))
+        code, output = self.run_direct(flags=('-NonInteractive', '-Backend', 'mochizuki', '-MochizukiModels', 'original'))
         self.assertEqual(code, 0, output)
         self.assertIn('Install SUCCEEDED.', output)
         self.assertNotIn('search for Python', output)
 
-    def run_mochizuki_model_launcher(self):
+    def run_mochizuki_model_launcher(self, stdin="1\n"):
         source = (REPO / 'tools/release/PACKAGE_RELEASE.ps1').read_text(encoding='utf-8-sig')
         body = re.search(r"@'\n(@echo off\nsetlocal\nset \"SOURCE=%~1\".*?)\n'@ \| Set-Content", source, re.S)
         self.assertIsNotNone(body)
         launcher = self.package / 'Mochizuki-Model.bat'
         launcher.write_text(body.group(1), encoding='ascii')
-        code, output = self.run_process('cmd.exe /d /s /c "' + subprocess.list2cmdline([str(launcher)]) + '"', '\n')
+        code, output = self.run_process('cmd.exe /d /s /c "' + subprocess.list2cmdline([str(launcher)]) + '"', stdin)
         return code, output
 
     def test_mochizuki_model_launcher_missing_python(self):
@@ -1331,6 +1547,32 @@ class InstallerExitTests(unittest.TestCase):
         self.assertEqual(snapshot_files(self.game), before)
         self.assertFalse(list(self.game.glob(".lmxxf-stage-*")))
 
+
+    def test_retained_custom_asi_enables_only_automatic_loading_after_ini_replacement(self):
+        self.ready_install()
+        for index, (setting, expected, plugin) in enumerate((
+            ('auto', 'true', 'MFGUnlocker.asi'),
+            ('false', 'false', 'MFGUnlocker.asi'),
+            ('true', 'true', 'MFGUnlocker.asi'),
+            ('auto', 'auto', None),
+        )):
+            with self.subTest(setting=setting, plugin=plugin):
+                game = self.root / f'retained-asi-{index}'
+                target = game / 'OptiScaler/plugins'
+                target.mkdir(parents=True)
+                if plugin:
+                    (target / plugin).write_bytes(b'user plugin; never executed')
+                (self.package / 'OptiScaler.ini').write_text(
+                    '[Plugins]\nLoadAsiPlugins=' + setting + '\n', encoding='utf-8')
+                (game / 'OptiScaler.ini').write_text(
+                    '[Plugins]\nLoadAsiPlugins=true\nUserSentinel=old\n', encoding='utf-8')
+                code, output = self.run_direct(game=game)
+                self.assertEqual(code, 0, output)
+                actual = (game / 'OptiScaler.ini').read_text(encoding='utf-8-sig')
+                self.assertNotIn('UserSentinel', actual)
+                self.assertRegex(actual, r'LoadAsiPlugins\s*=\s*' + expected)
+                if plugin:
+                    self.assertEqual((target / plugin).read_bytes(), b'user plugin; never executed')
 
     def test_custom_plugins_keep_configs_readme_and_explicit_loader_setting(self):
         self.ready_install()

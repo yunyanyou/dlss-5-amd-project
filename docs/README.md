@@ -16,6 +16,7 @@
 | [architecture/lmxxf-c-abi.md](architecture/lmxxf-c-abi.md) | `LmxxfNrRuntime.dll` 的 C ABI：为什么有 DLL 边界、`struct_size` 分档、四条演进规则、资源查找 |
 | [architecture/lmxxf-native-history.md](architecture/lmxxf-native-history.md) | 原生 temporal history：执行顺序、资源、ABI 与支持范围 |
 | [architecture/lmxxf-recording-lifecycle.md](architecture/lmxxf-recording-lifecycle.md) | 录制租约、实际提交凭证、重放与异步回收 |
+| [architecture/nr-flicker-diagnostics.md](architecture/nr-flicker-diagnostics.md) | NR 闪烁一轮采集：统一诊断开关、处理覆盖统计、日志文件和开销边界 |
 | [architecture/nr-inline-recording.md](architecture/nr-inline-recording.md) | 实验性内联执行：查询、增强布局、有限等待与双队列回收 |
 | [architecture/nr-capture-proof-deferral.md](architecture/nr-capture-proof-deferral.md) | GPU-armed输入核验暂缓：性能证据、风险、保留补丁、无效方案与研究止步线 |
 | [lmxxf-inline-slots.md](lmxxf-inline-slots.md) | lmxxf inline 1–5 槽、即时切换、离线一致性及相对 split 的同会话性能 |
@@ -24,6 +25,9 @@
 | [lmxxf-037-consumer-review.md](lmxxf-037-consumer-review.md) | 0.37 消费者重审：实际宏、验证范围、pinned bridge 和暂缓项 |
 | [lmxxf-039-consumer-review.md](lmxxf-039-consumer-review.md) | 0.39 完整上游审阅：实际生成配方、配置差异、验证范围和暂缓项 |
 | [lmxxf-041-consumer-review.md](lmxxf-041-consumer-review.md) | 0.41：预测三层、肤色保护、76模块、布局优化与本地验证 |
+| [lmxxf-044-consumer-review.md](lmxxf-044-consumer-review.md) | 0.44：Small31、decoder/down W16、菜单与资产接入、实际验证及暂缓 |
+| [lmxxf-044-hotfix-consumer-review.md](lmxxf-044-hotfix-consumer-review.md) | 0.44后续7提交：冷上传/producer等待、菜单策略及F9消费边界 |
+| [lmxxf-small-model.md](lmxxf-small-model.md) | lmxxf Small菜单选择、离线模型转换和回退说明 |
 | [backends/lmxxf.md](backends/lmxxf.md) | lmxxf 后端专页 |
 | [games/](games/) | 各游戏的兼容说明、已修复案例和排查入口 |
 | [2026-10-12-review-verification.md](2026-10-12-review-verification.md) | 17 项外部意见核实、失败回收与发布门禁修复、验证边界 |

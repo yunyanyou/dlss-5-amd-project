@@ -366,6 +366,9 @@ DLSS5_NETWORK_FREE_RES=true
 DLSS5_FAST_NUMERIC=true
 ; Requested network passes per frame: 1..3, default 1. More style and extra frame buffers. See third-pass prediction below.
 ; Adaptive ViT reuse is disabled with 2/3 passes. GPU network timing includes all passes.
+; Original or Small model. Small runs once; Original pass preference is retained.
+; 0 = Original (default), 1 = Small (requires native-game-tiled-assets/small)
+LmxxfNetworkModel=0
 DLSS5_MULTI_PASS=1
 ; Only at 3 passes: true runs two real network passes then predicts the third locally (lossy, default true).
 ; false runs three real passes. No effect at 1/2 passes. Changing this rebuilds the network.
@@ -702,6 +705,13 @@ foreach ($name in @('dlssnr-int4-weights.exe', 'dlssnr-int4.sha256')) {
 Copy-Item -LiteralPath (Join-Path $root 'tools/install/mochizuki-int4.ps1') -Destination $stage
 Copy-Item -LiteralPath (Join-Path $root 'tools/install/mochizuki-model.py') -Destination $stage
 Copy-Item -LiteralPath (Join-Path $root 'tools/install/mochizuki-python.ps1') -Destination $stage
+foreach ($name in @('lmxxf-model.py','lmxxf-small-manifest.json','lmxxf-small.ps1')) {
+    Copy-Item -LiteralPath (Join-Path $root "tools/install/$name") -Destination $stage
+}
+foreach ($name in @('lmxxf-small-model.md','lmxxf-044-consumer-review.md')) {
+    Copy-Item -LiteralPath (Join-Path $root "docs/$name") -Destination (Join-Path $stage 'docs')
+}
+
 $mzDoc = [IO.File]::ReadAllText((Join-Path $root 'docs/mochizuki.md'))
 $mzDoc = $mzDoc.Replace('../third_party/mochizuki/UPSTREAM.md', '../Licenses/Mochizuki_SOURCES.md')
 [IO.File]::WriteAllText((Join-Path $stage 'docs/mochizuki.md'), $mzDoc, [Text.UTF8Encoding]::new($false))
@@ -709,8 +719,13 @@ $mzDoc = $mzDoc.Replace('../third_party/mochizuki/UPSTREAM.md', '../Licenses/Moc
 @echo off
 setlocal
 set "SOURCE=%~1"
+set "MODELS=%~2"
 if not defined SOURCE set "SOURCE=%~dp0nvngx_dlssnr.dll"
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0mochizuki-python.ps1" -Source "%SOURCE%" -Output "%~dp0dlssnr-amd/dlssnr.bin"
+if defined MODELS (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0mochizuki-python.ps1" -Source "%SOURCE%" -Output "%~dp0dlssnr-amd/dlssnr.bin" -Models "%MODELS%"
+) else (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0mochizuki-python.ps1" -Source "%SOURCE%" -Output "%~dp0dlssnr-amd/dlssnr.bin"
+)
 set "RC=%ERRORLEVEL%"
 pause
 exit /b %RC%
@@ -753,12 +768,29 @@ $installerSrc = Join-Path $root 'tools/install-amd-presr.ps1'
 if (!(Test-Path $installerSrc)) { throw "Missing $installerSrc" }
 Copy-Item $installerSrc (Join-Path $stage 'Setup.ps1') -Force
 Copy-Item -LiteralPath (Join-Path $root 'tools/lmxxf-module-package.ps1') -Destination $stage -Force
+& (Join-Path $root 'tools/build/build-launcher.ps1') -OutDir (Join-Path $root 'exports/launcher')
+$launcherExe = Join-Path $root 'exports/launcher/OptScalerNR.Launcher.exe'
+if (!(Test-Path -LiteralPath $launcherExe)) { throw "Launcher EXE was not produced" }
+Copy-Item -LiteralPath $launcherExe -Destination (Join-Path $stage 'OptScalerNR.Launcher.exe') -Force
+Copy-Item -LiteralPath (Join-Path $root 'tools/install/launcher-worker.ps1') -Destination $stage -Force
+Copy-Item -LiteralPath (Join-Path $root 'tools/install/proxy-probe.ps1') -Destination $stage -Force
+Copy-Item -LiteralPath (Join-Path $root 'tools/install/library-scan.ps1') -Destination $stage -Force
+Copy-Item -LiteralPath (Join-Path $root 'tools/install/install-capabilities.ps1') -Destination $stage -Force
 (@'
 @echo off
 setlocal
 title OptScaler(NR) @VERSION@ - Setup
-rem No args: Setup.ps1 opens a folder picker and proxy menu.
+rem No args: open OptScalerNR.Launcher.exe. Args keep the CLI Setup.ps1 contract.
 rem Optional: Setup.bat "D:\GameFolder" [dxgi.dll]
+if "%~1"=="" (
+  if exist "%~dp0OptScalerNR.Launcher.exe" (
+    start "" "%~dp0OptScalerNR.Launcher.exe"
+    exit /b 0
+  )
+  echo Complete package required: OptScalerNR.Launcher.exe is missing. Unzip the full package again.
+  pause
+  exit /b 1
+)
 if "%~2"=="" (
   powershell -NoProfile -ExecutionPolicy Bypass -STA -File "%~dp0Setup.ps1" -GameDir "%~1" -NoPause
 ) else (
@@ -805,7 +837,7 @@ if (Test-Path -LiteralPath $versionFile -PathType Leaf) {
 # danielblnc pass（dlssnr_amd_pass*.dll）必须不在包内 —— README 明写「包里没有 danielblnc pass」。
 # Keep this filename-only and case-insensitive: the same expression validates the
 # staged tree and every entry in the finished archive.
-$forbidden = '(?i)^(nvngx.*\.dll|dlssnr_amd_pass.*\.dll|dlssnr_on_amd_weights\.bin|dlssnr\.bin|version\.dll|dlssnr_on_amd_setup\.exe|.*\.generated\.hip|.*\.hsaco\.s)$'
+$forbidden = '(?i)^(nvngx.*\.dll|dlssnr_amd_pass.*\.dll|dlssnr_on_amd_weights\.bin|dlssnr(?:-int4|-small)?\.bin|version\.dll|dlssnr_on_amd_setup\.exe|.*\.generated\.hip|.*\.hsaco\.s)$'
 $badAll = Get-ChildItem -LiteralPath $stage -Recurse -File -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -match $forbidden }
 if ($badAll) {
@@ -820,7 +852,9 @@ if ($LocalTest) {
         "Local test package $Version. Full release tests were not run for this package. Pending game validation and release validation.`n",
         [Text.UTF8Encoding]::new($false))
 }
-if (Test-Path (Join-Path $stage 'dlssnr-amd/dlssnr.bin')) { throw 'User model must never be packaged.' }
+foreach ($model in @('dlssnr.bin', 'dlssnr-small.bin', 'dlssnr-int4.bin')) {
+    if (Test-Path (Join-Path $stage "dlssnr-amd/$model")) { throw 'User model must never be packaged.' }
+}
 if (Test-Path (Join-Path $stage 'dlssnr-amd/pipeline.cache')) { throw 'Pipeline cache must never be packaged.' }
 if (Test-Path (Join-Path $stage 'dlssnr-amd/aco-cache')) { throw 'ACO driver cache must never be packaged.' }
 # Source identity/freshness gates above certify the original build. Only staged copies are signed.
@@ -876,7 +910,7 @@ try {
             finally { $stream.Dispose(); $sha.Dispose() }
             if ($actual -ne $expectedEntries[$relative]) { throw "Archive checksum mismatch: $relative" }
         }
-        foreach ($required in @('OptiScaler.dll', 'LmxxfNrRuntime.dll', 'MochizukiNrRuntime.dll', 'OptiScaler.ini', 'Setup.ps1', 'Setup.bat', 'lmxxf-module-package.ps1') + @($expectedEntries.Keys)) {
+        foreach ($required in @('OptiScaler.dll', 'LmxxfNrRuntime.dll', 'MochizukiNrRuntime.dll', 'OptiScaler.ini', 'Setup.ps1', 'Setup.bat', 'lmxxf-module-package.ps1', 'OptScalerNR.Launcher.exe', 'launcher-worker.ps1', 'proxy-probe.ps1', 'library-scan.ps1', 'install-capabilities.ps1') + @($expectedEntries.Keys)) {
             if (-not $seen.ContainsKey($required)) { throw "Package archive missing required component: $required" }
         }
     } finally {

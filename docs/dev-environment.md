@@ -25,8 +25,13 @@
 | `tools/diag/set-lmxxf-diagnostic.ps1` | 改游戏 ini 的 `LmxxfDiagnostic`（`-GameDir` 必填） |
 | `tools/diag/retirement_stats.py` | 汇总 `AMD_RETIRE_DIAGNOSTICS` 构建输出的 retirement 采集 |
 | `tools/dev/scan-mojibake.py` | 扫描乱码（UTF-8 标点被按 GB18030 解码后写回，典型：U+9225 + `?`） |
+| `tools/mochizuki-sync/generate-model-profile.py` | 从受管张量校验清单生成 runtime 模型身份表；更新后同时维护 source pin 补丁 |
 
 测试按领域分目录，每个领域一个 `run.cmd`，统一入口：
+
+完整安装器回归的 YAML 解析依赖固定在 `tests/install/requirements.txt`，
+`tests/install/run.cmd` 会为本地和 Actions 的同一 Python 准备这些依赖。
+单独运行正文测试前执行 `python -m pip install -r tests/install/requirements.txt`。
 
 ```
 tests\run-all.cmd --tier release|ci|device|gpu|all [--out 目录] [--skip-sync] [--keep-going]
@@ -98,6 +103,8 @@ tests\run-all.cmd --tier release|ci|device|gpu|all [--out 目录] [--skip-sync] 
 - `tools/build/mochizuki-manifest.py`：源码及可分发产物哈希验证。
 - `tools/mochizuki-sync/check.py --upstream <本地官方克隆>`：只读复核固定 SHA、六项接口补丁与 vendor 闭包；工作流见该目录 README。
 - `tools/install/mochizuki-model.py`：仅从用户提供的指定版本 DLL 提取模型。
+- `tools/install/lmxxf-model.py`、`lmxxf-small-manifest.json`、`lmxxf-small.ps1`：离线将已验证Small pack转换成lmxxf布局，93项SHA验证后原子安装；用法见[lmxxf Small](lmxxf-small-model.md)。
+- `tools/dev/generate-lmxxf-small-header.py [--check]`：从固定manifest生成/检查Runtime资产哈希allowlist，不包含模型系数。
 - `tools/install/mochizuki-python.ps1`：Setup 与独立模型工具共用的 Python 3.10+ 探测；缺失或不可用时提示到 Windows 商店搜索 Python 安装。
 - `tests/mochizuki/run.cmd abi|gpu`：无 GPU ABI 与实际 D3D12/Vulkan 生命周期回归。
 

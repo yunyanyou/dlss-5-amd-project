@@ -463,6 +463,7 @@ bool Config::Reload(std::filesystem::path iniPath)
             NrConvenience.set_from_config(readInt("DlssNr", "NrConvenience"));
             NrTimingEnabled.set_from_config(readBool(CfgKey::kSection, CfgKey::NrTimingEnabled));
             NrTimingLog.set_from_config(readBool(CfgKey::kSection, CfgKey::NrTimingLog));
+            NrFlickerDiag.set_from_config(readBool(CfgKey::kSection, CfgKey::NrFlickerDiag));
             NrFrameDiag.set_from_config(readBool(CfgKey::kSection, CfgKey::NrFrameDiag));
             NrGameWaitDiag.set_from_config(readBool(CfgKey::kSection, CfgKey::NrGameWaitDiag));
             NrPersonPartition.set_from_config(readBool(CfgKey::kSection, CfgKey::NrPersonPartition));
@@ -492,6 +493,7 @@ bool Config::Reload(std::filesystem::path iniPath)
             MochizukiClassicScaler.set_from_config(readUInt(CfgKey::kSection, CfgKey::MochizukiClassicScaler));
             MochizukiCompactTransfer.set_from_config(readBool(CfgKey::kSection, CfgKey::MochizukiCompactTransfer));
             MochizukiAcoMode.set_from_config(readBool(CfgKey::kSection, CfgKey::MochizukiAcoMode));
+            MochizukiNetworkModel.set_from_config(readUInt(CfgKey::kSection, CfgKey::MochizukiNetworkModel));
             MochizukiInt4Mixed.set_from_config(readBool(CfgKey::kSection, CfgKey::MochizukiInt4Mixed));
             MochizukiRenoDX.set_from_config(readBool(CfgKey::kSection, CfgKey::MochizukiRenoDX));
             MochizukiNoiseEveryFrame.set_from_config(readBool(CfgKey::kSection, CfgKey::MochizukiNoiseEveryFrame));
@@ -707,6 +709,10 @@ bool Config::Reload(std::filesystem::path iniPath)
                 CfgKey::PutEnvAlias(CfgKey::NetworkFreeRes, LmxxfNetworkFreeRes.value_or_default());
                 CfgKey::PutEnvAlias(CfgKey::FastNumeric, LmxxfFastNumeric.value_or_default());
                 auto passes = readUInt(CfgKey::kSection, CfgKey::MultiPass).value_or(1);
+                const auto networkModel = readUInt(CfgKey::kSection, CfgKey::LmxxfNetworkModel).value_or(0);
+                LmxxfNetworkModel.set_from_config(networkModel <= 1 ? networkModel : 0);
+                CfgKey::PutEnvString(CfgKey::LmxxfNetworkModel,
+                                    std::to_string(LmxxfNetworkModel.value_or_default()).c_str());
                 if (passes < 1 || passes > 3) {
                     LOG_WARN("DlssNr.{} must be 1..3; using 1", CfgKey::MultiPass);
                     passes = 1;
@@ -1889,6 +1895,7 @@ bool Config::SaveIni()
     ini.SetValue("DlssNr", "NrConvenience", GetIntValue(Instance()->NrConvenience.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::NrTimingEnabled, GetBoolValue(Instance()->NrTimingEnabled.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::NrTimingLog, GetBoolValue(Instance()->NrTimingLog.value_for_config()).c_str());
+    ini.SetValue(CfgKey::kSection, CfgKey::NrFlickerDiag, GetBoolValue(Instance()->NrFlickerDiag.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::NrFrameDiag, GetBoolValue(Instance()->NrFrameDiag.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::NrGameWaitDiag, GetBoolValue(Instance()->NrGameWaitDiag.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::NrPersonPartition, GetBoolValue(Instance()->NrPersonPartition.value_for_config()).c_str());
@@ -1926,6 +1933,7 @@ bool Config::SaveIni()
     ini.SetValue(CfgKey::kSection, CfgKey::MochizukiClassicScaler, GetIntValue(Instance()->MochizukiClassicScaler.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::MochizukiCompactTransfer, GetBoolValue(Instance()->MochizukiCompactTransfer.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::MochizukiAcoMode, GetBoolValue(Instance()->MochizukiAcoMode.value_for_config()).c_str());
+    ini.SetValue(CfgKey::kSection, CfgKey::MochizukiNetworkModel, GetIntValue(Instance()->MochizukiNetworkModel.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::MochizukiInt4Mixed, GetBoolValue(Instance()->MochizukiInt4Mixed.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::MochizukiRenoDX, GetBoolValue(Instance()->MochizukiRenoDX.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::MochizukiNoiseEveryFrame, GetBoolValue(Instance()->MochizukiNoiseEveryFrame.value_for_config()).c_str());
@@ -2059,6 +2067,7 @@ bool Config::SaveIni()
     ini.SetValue(CfgKey::kSection, CfgKey::NetworkFreeRes, GetBoolValue(Instance()->LmxxfNetworkFreeRes.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::FastNumeric, GetBoolValue(Instance()->LmxxfFastNumeric.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::MultiPass, std::to_string(Instance()->LmxxfMultiPass.value_or_default()).c_str());
+    ini.SetValue(CfgKey::kSection, CfgKey::LmxxfNetworkModel, std::to_string(Instance()->LmxxfNetworkModel.value_or_default()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::MultiPassPredict, GetBoolValue(Instance()->LmxxfMultiPassPredict.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::MultiPassSkinProtect, GetBoolValue(Instance()->LmxxfMultiPassSkinProtect.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::MultiPassSkipBlocks, Instance()->LmxxfMultiPassSkipBlocks.value_or_default().c_str());
