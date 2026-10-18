@@ -796,11 +796,12 @@ bool XeFG_Dx12::Dispatch()
         const auto resolved = FrameGeneration::ResolveInterpolation(request);
         const bool dynamic = config->FGXeFGDynamicMFG.value_or_default();
 
-        // Dynamic MFG takes over the multiplier, so its ceiling is the Frame Gen slider
-        // alone: the NR static override only applies while Dynamic MFG is off. Letting
-        // the override cap the controller pinned it at the override value and it could
-        // never climb to a higher multiplier to reach the target.
-        int maxTargetCount = dynamic ? request.baseline : resolved.target;
+        // Dynamic MFG owns the multiplier while it is on: it may use everything the
+        // provider reports (XeFG\MaxInterpolatedFrames) instead of being capped by the
+        // static Frame Gen slider or the NR override. Those two only pick the fixed
+        // multiplier while Dynamic MFG is off, so a 4X slider no longer pins the
+        // controller at 4X when the target needs more.
+        int maxTargetCount = dynamic ? (std::max)(1, request.maximum) : resolved.target;
         maxTargetCount = std::clamp(maxTargetCount, 1, (std::max)(1, request.maximum));
 
         if (dynamic && maxTargetCount > 1)
