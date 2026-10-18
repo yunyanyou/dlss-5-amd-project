@@ -794,12 +794,16 @@ bool XeFG_Dx12::Dispatch()
         request.enabled = config->FGEnabled.value_or_default() && state.activeFgInput != FGInput::ForceXeLL;
         request.nrRunning = request.nrOverride > 0 && request.enabled && DlssNr::IsActiveForFrameGeneration();
         const auto resolved = FrameGeneration::ResolveInterpolation(request);
-        int maxTargetCount = resolved.target;
+        const bool dynamic = config->FGXeFGDynamicMFG.value_or_default();
 
-        // Dynamic MFG: the configured Frame Gen / NR override setting is the ceiling, and the count follows the real frame rate
-        const bool dynamic = config->FGXeFGDynamicMFG.value_or_default() && maxTargetCount > 1;
+        // Dynamic MFG takes over the multiplier, so its ceiling is the Frame Gen slider
+        // alone: the NR static override only applies while Dynamic MFG is off. Letting
+        // the override cap the controller pinned it at the override value and it could
+        // never climb to a higher multiplier to reach the target.
+        int maxTargetCount = dynamic ? request.baseline : resolved.target;
+        maxTargetCount = std::clamp(maxTargetCount, 1, (std::max)(1, request.maximum));
 
-        if (dynamic)
+        if (dynamic && maxTargetCount > 1)
         {
             const auto now = Util::MillisecondsNow();
             const auto target = DynamicTargetFps(now);
