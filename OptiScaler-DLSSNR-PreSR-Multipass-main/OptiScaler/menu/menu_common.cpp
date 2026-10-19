@@ -7454,7 +7454,7 @@ void MenuCommon::RenderMainMenuSideBar(RenderMenuContext& ctx)
             selectedTab = i;
         ImGui::PopStyleColor(3);
         if (ImGui::IsItemHovered())
-            MenuUi::SetTooltip("%s", kTabName[i]);
+            MenuUi::SetTooltip("%s", MenuLocale::Translate(kTabName[i]));
     }
 }
 

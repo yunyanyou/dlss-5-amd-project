@@ -312,7 +312,7 @@ static bool MochizukiIntegerControl(const char* label, std::string_view key, int
 
         const char* currentLabel = current == 1 ? "310.9.16 (new)" : "310.8.0 (original)";
         bool changed = false;
-        if (ImGui::BeginCombo(label, currentLabel))
+        if (MenuUi::BeginCombo(label, currentLabel))
         {
             ImGui::BeginDisabled(!hasOriginal);
             if (MenuUi::Selectable("310.8.0 (original)", current == 0))
@@ -909,7 +909,7 @@ void RenderMenu(Config* config, float menuResScale)
                     networkModel = 0;
 
                 const char* currentModel = networkModel == 1 ? "Small (310.9.16, 31 blocks)" : "Original (71 blocks)";
-                if (ImGui::BeginCombo("Network model##lmxxf", currentModel))
+                if (MenuUi::BeginCombo("Network model##lmxxf", currentModel))
                 {
                     ImGui::BeginDisabled(!hasOriginal);
                     if (MenuUi::Selectable("Original (71 blocks)", networkModel == 0))
