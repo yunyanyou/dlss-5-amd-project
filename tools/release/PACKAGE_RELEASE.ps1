@@ -779,7 +779,6 @@ Copy-Item -LiteralPath (Join-Path $root 'tools/install/xess-compat.ps1') -Destin
 Copy-Item -LiteralPath (Join-Path $root 'tools/install/proxy-probe.ps1') -Destination $stage -Force
 Copy-Item -LiteralPath (Join-Path $root 'tools/install/library-scan.ps1') -Destination $stage -Force
 Copy-Item -LiteralPath (Join-Path $root 'tools/install/install-capabilities.ps1') -Destination $stage -Force
-Copy-Item -LiteralPath (Join-Path $root 'tools/install-lite.ps1') -Destination $stage -Force
 (@'
 @echo off
 setlocal

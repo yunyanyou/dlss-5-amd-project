@@ -345,7 +345,20 @@ if ($req.action -ne 'uninstall') {
     $lmxxfSelected = if ($hasRequestedBackends) { @($req.backends) -contains 'lmxxf' } else { $backend -eq 'lmxxf' -or (($backend -in @('auto','all','')) -and $lmxxfAvailable) }
     if ($lmxxfSelected) {
         $modelChoice = if ($dec) { [string]$dec.lmxxfModels } else { '' }
-        if (-not $modelChoice) { $script:needed += @{ id='lmxxfModels'; prompt='Select lmxxf Original, Small, or both models.'; options=@('both','small','original') } }
+        if (-not $modelChoice) {
+            # Offer only the model sets this package actually ships. Listing both and
+            # failing after the choice is how a Small-only package still showed Original.
+            $pkgWeights = Join-Path $script:packageRoot 'native-game-tiled-assets'
+            $pkgOriginal = (Test-Path -LiteralPath (Join-Path $pkgWeights 'block0-ffn.f16')) -or
+                           (Test-Path -LiteralPath (Join-Path $pkgWeights 'block0-ffn.f32'))
+            $pkgSmall = Test-Path -LiteralPath (Join-Path $pkgWeights 'small\model-manifest.json')
+            $pkgOptions = @()
+            if ($pkgOriginal -and $pkgSmall) { $pkgOptions = @('both', 'small', 'original') }
+            elseif ($pkgSmall) { $pkgOptions = @('small') }
+            elseif ($pkgOriginal) { $pkgOptions = @('original') }
+            if ($pkgOptions.Count -eq 0) { Fail-Result 'failed' 'Package has no lmxxf weights under native-game-tiled-assets.' 1 }
+            $script:needed += @{ id='lmxxfModels'; prompt='Select the lmxxf model set to install (only the sets present in this package are listed).'; options=$pkgOptions }
+        }
         elseif ($modelChoice -notin @('both','small','original')) { Fail-Result 'failed' 'Invalid lmxxf models choice.' 1 }
     }
     $mochiAvailable = @($script:backends | Where-Object { $_.id -eq 'mochizuki' -and $_.runtimeState -eq 'ready' }).Count -gt 0
@@ -355,10 +368,19 @@ if ($req.action -ne 'uninstall') {
     if ($mochiSelected) {
         $modelChoice = if ($dec) { [string]$dec.mochizukiModels } else { '' }
         if (-not $modelChoice) {
+            # Same rule as lmxxf: offer only the model files this package carries.
+            $mochiDir = Join-Path $script:packageRoot 'dlssnr-amd'
+            $hasMochiOriginal = Test-Path -LiteralPath (Join-Path $mochiDir 'dlssnr.bin') -PathType Leaf
+            $hasMochiSmall = Test-Path -LiteralPath (Join-Path $mochiDir 'dlssnr-small.bin') -PathType Leaf
+            $mochiOptions = @()
+            if ($hasMochiOriginal -and $hasMochiSmall) { $mochiOptions = @('both', 'small', 'original') }
+            elseif ($hasMochiSmall) { $mochiOptions = @('small') }
+            elseif ($hasMochiOriginal) { $mochiOptions = @('original') }
+            if ($mochiOptions.Count -eq 0) { Fail-Result 'failed' 'Package has no Mochizuki models under dlssnr-amd.' 1 }
             $script:needed += @{
                 id = 'mochizukiModels'
-                prompt = 'Select Mochizuki models explicitly. The new model requires nvngx_dlssnr.dll 310.9.16.0; Original uses older weights.'
-                options = @('both','small','original')
+                prompt = 'Select the Mochizuki model set to install (only the sets present in this package are listed).'
+                options = $mochiOptions
             }
         } elseif ($modelChoice -notin @('both','small','original')) {
             Fail-Result 'failed' 'Invalid Mochizuki models choice.' 1

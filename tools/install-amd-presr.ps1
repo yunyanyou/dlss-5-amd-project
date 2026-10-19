@@ -1253,8 +1253,27 @@ if ($installLmxxf) {
     }
     if (-not $lmxxfSelectedModels) {
         if (-not $NonInteractive) {
-            Write-Host 'Select lmxxf models: 1 = Both, 2 = Small (310.9.16), 3 = Original'
-            do { $choice = Read-Host 'Choice'; $lmxxfSelectedModels = switch ($choice) { '1' {'both'} '2' {'small'} '3' {'original'} } } while (-not $lmxxfSelectedModels)
+            # List only the model sets that were actually detected, so a Small-only
+            # package cannot be answered with Original and then fail after the fact.
+            $modelMenu = @()
+            if ($lmxxfWeights -and $lmxxfSmallWeights) {
+                Write-Host 'Select lmxxf models: 1 = Both, 2 = Small (310.9.16), 3 = Original'
+                $modelMenu = @('both', 'small', 'original')
+            } elseif ($lmxxfSmallWeights) {
+                Write-Host 'Select lmxxf models: 1 = Small (310.9.16)'
+                $modelMenu = @('small')
+            } elseif ($lmxxfWeights) {
+                Write-Host 'Select lmxxf models: 1 = Original'
+                $modelMenu = @('original')
+            }
+            if ($modelMenu.Count -eq 0) { Fail 'No lmxxf model weights were detected. Supply complete Original or Small weights.' }
+            do {
+                $choice = Read-Host 'Choice'
+                $pick = 0
+                if ([int]::TryParse($choice, [ref]$pick) -and $pick -ge 1 -and $pick -le $modelMenu.Count) {
+                    $lmxxfSelectedModels = $modelMenu[$pick - 1]
+                }
+            } while (-not $lmxxfSelectedModels)
             $lmxxfModelsExplicit = $true
         } elseif ($lmxxfWeights -and ($lmxxfSmallWeights -or $lmxxfSmallPack -or $lmxxfSourceDll)) { $lmxxfSelectedModels = 'both' }
         elseif ($lmxxfSmallWeights -or $lmxxfSmallPack -or $lmxxfSourceDll) { $lmxxfSelectedModels = 'small' }
@@ -1706,7 +1725,12 @@ function Install-One([string]$src, [string]$rel) {
                 Move-Item -LiteralPath $dest -Destination $aside -Force -ErrorAction Stop
                 Write-Host "Backed up mismatched or invalid model: $dest -> $aside" -ForegroundColor Yellow
             } elseif ($isWeight) {
-                return
+                # Present is not the same as current: a stale or truncated weight file
+                # used to be kept silently, so an upgrade left old tensors in place.
+                # Skip only when the existing file already matches the incoming size.
+                $sameSize = $false
+                try { $sameSize = (Get-Item -LiteralPath $dest).Length -eq (Get-Item -LiteralPath $src).Length } catch { }
+                if ($sameSize) { return }
             }
         }
         $ddir = Split-Path -Parent $dest
