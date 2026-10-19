@@ -18,8 +18,34 @@ inline bool NonemptyFile(const std::filesystem::path& path) {
     return std::filesystem::is_regular_file(path, ec) && std::filesystem::file_size(path, ec) > 0 && !ec;
 }
 inline bool HasLmxxfWeightMarker(const std::filesystem::path& path) {
-    return NonemptyFile(path / L"block0-ffn.f16") || NonemptyFile(path / L"block0-ffn.f32");
+    // A Small-only install keeps every tensor under small\ plus its manifest. The
+    // runtime's FindWeightsDir already accepts that layout, so this pre-check must
+    // accept it too or it reports missing weights for an install that would work.
+    return NonemptyFile(path / L"block0-ffn.f16") || NonemptyFile(path / L"block0-ffn.f32") ||
+           NonemptyFile(path / L"small" / L"model-manifest.json");
 }
+inline bool LmxxfHasOriginalWeights(const std::filesystem::path& dir) {
+    return NonemptyFile(dir / L"block0-ffn.f16") || NonemptyFile(dir / L"block0-ffn.f32");
+}
+inline bool LmxxfHasSmallWeights(const std::filesystem::path& dir) {
+    return NonemptyFile(dir / L"small" / L"model-manifest.json");
+}
+// Resolves the weights folder next to this DLL, so the menu can offer only the models
+// that are actually installed instead of listing both and failing on the missing one.
+inline std::filesystem::path LmxxfWeightsDir() {
+    wchar_t path[MAX_PATH] {};
+    HMODULE mod = nullptr;
+    GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                       reinterpret_cast<LPCWSTR>(&HasLmxxfWeightMarker), &mod);
+    if (!mod || !GetModuleFileNameW(mod, path, MAX_PATH))
+        return {};
+    std::filesystem::path dir(path);
+    dir = dir.parent_path();
+    for (const auto* name : {L"native-game-tiled-assets", L"lmxxf-weights"})
+        if (HasLmxxfWeightMarker(dir / name)) return dir / name;
+    return {};
+}
+
 // Match the host's local-folder, hint and external-environment search order.
 // A marker locates weights; it does not certify the full model's integrity.
 inline std::filesystem::path FindLmxxfWeights(const std::filesystem::path& dir) {

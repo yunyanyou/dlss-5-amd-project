@@ -9,6 +9,7 @@
 #include "amd/AmdBridge.h"
 #include "backend/Selector.h"
 #include "backend/LmxxfBackend.h"
+#include "backend/InstallStatus.h"
 #include "submission/SubmissionHooks.h"
 #include "DlssNrFeature_Vk.h"
 
@@ -866,14 +867,42 @@ void RenderMenu(Config* config, float menuResScale)
                        "\nINI: [DlssNr] RunBeforeSR=true / false. Save Settings to keep the selection.");
             if (isLmxxf)
             {
+                const auto weightsDir = Backend::LmxxfWeightsDir();
+                const bool hasOriginal = Backend::LmxxfHasOriginalWeights(weightsDir);
+                const bool hasSmall = Backend::LmxxfHasSmallWeights(weightsDir);
+
                 int networkModel = std::clamp(int(config->LmxxfNetworkModel.value_or_default()), 0, 1);
-                if (MenuUi::Combo("Network model##lmxxf", &networkModel, "Original (71 blocks)\0Small (310.9.16, 31 blocks)\0")) {
-                    config->LmxxfNetworkModel = uint32_t(networkModel);
-                    CfgKey::PutEnvString(CfgKey::LmxxfNetworkModel, std::to_string(networkModel).c_str());
-                    AmdBridge::InvalidateHistory();
+                // Keep the stored choice only while that model is actually installed.
+                if (networkModel == 0 && !hasOriginal && hasSmall)
+                    networkModel = 1;
+                else if (networkModel == 1 && !hasSmall && hasOriginal)
+                    networkModel = 0;
+
+                const char* currentModel = networkModel == 1 ? "Small (310.9.16, 31 blocks)" : "Original (71 blocks)";
+                if (ImGui::BeginCombo("Network model##lmxxf", currentModel))
+                {
+                    ImGui::BeginDisabled(!hasOriginal);
+                    if (MenuUi::Selectable("Original (71 blocks)", networkModel == 0))
+                    {
+                        config->LmxxfNetworkModel = 0;
+                        CfgKey::PutEnvString(CfgKey::LmxxfNetworkModel, "0");
+                        AmdBridge::InvalidateHistory();
+                    }
+                    ImGui::EndDisabled();
+                    ImGui::BeginDisabled(!hasSmall);
+                    if (MenuUi::Selectable("Small (310.9.16, 31 blocks)", networkModel == 1))
+                    {
+                        config->LmxxfNetworkModel = 1;
+                        CfgKey::PutEnvString(CfgKey::LmxxfNetworkModel, "1");
+                        AmdBridge::InvalidateHistory();
+                    }
+                    ImGui::EndDisabled();
+                    ImGui::EndCombo();
                 }
+                if (!hasOriginal || !hasSmall)
+                    MenuUi::TextWrapped("Only the installed model is selectable. Install the missing model set to enable the other entry.");
                 HelpMarker("Small uses a different trained model and one network pass. Original retains your 1-3 pass preference."
-                           "\nRequires matching small weights in native-game-tiled-assets/small. Missing assets or incompatible options use Original with a status message."
+                           "\nEach entry is enabled only when its weights are present in native-game-tiled-assets."
                            "\nINI: LmxxfNetworkModel (0 Original, 1 Small). Changing models rebuilds the network next frame.");
             }
             if (kind == Backend::Kind::Mochizuki)
