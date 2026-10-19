@@ -27,7 +27,7 @@ param(
     # Empty = open a folder picker (double-click Setup.bat).
     [string]$GameDir = '',
     # dinput8 is NOT a valid proxy for this OptiScaler build (no DirectInput8Create export).
-    [ValidateSet('dxgi.dll','winmm.dll','d3d12.dll','winhttp.dll','wininet.dll','dbghelp.dll')]
+    [ValidateSet('dxgi.dll','winmm.dll','d3d12.dll','winhttp.dll','wininet.dll','dbghelp.dll','version.dll')]
     [string]$Proxy = 'dxgi.dll',
     [string]$Root,
     [string]$AuthorDll,
@@ -630,7 +630,8 @@ if (-not $NonInteractive -and -not $PSBoundParameters.ContainsKey('Proxy')) {
         'd3d12.dll',
         'winhttp.dll',
         'wininet.dll',
-        'dbghelp.dll'
+        'dbghelp.dll',
+        'version.dll'
     )
     $pi = Ask-Choice 'Which proxy DLL should OptiScaler install as?' $proxyOptions
     $Proxy = ($proxyOptions[$pi - 1] -split '\s+')[0]
@@ -760,10 +761,17 @@ foreach ($candidate in $lmxxfCandidates) {
 
 # --- detect danielblnc components ---
 $setup   = Join-Path $Root 'dlssnr_on_amd_setup.exe'
-$nv      = Find-FirstFile @(
+$modelSourceCandidates = @(
     (Join-Path $Root 'nvngx_dlssnr.dll'),
     (Join-Path $game 'nvngx_dlssnr.dll')
 )
+if ($launcherDecisions -and $launcherDecisions.modelSourceDll) {
+    $chosenModelSource = [string]$launcherDecisions.modelSourceDll
+    if (-not [IO.Path]::IsPathRooted($chosenModelSource) -or -not (Test-Path -LiteralPath $chosenModelSource -PathType Leaf)) { Fail 'Selected model source DLL no longer exists. Select nvngx_dlssnr.dll again.' }
+    $chosenModelSource = Assert-LmxxfUnlinkedPath $chosenModelSource
+    $modelSourceCandidates = @($chosenModelSource) + $modelSourceCandidates
+}
+$nv = Find-FirstFile $modelSourceCandidates
 $weights = Find-FirstFile @(
     (Join-Path $Root 'dlssnr_on_amd_weights.bin'),
     (Join-Path $game 'dlssnr_on_amd_weights.bin')
@@ -1030,7 +1038,7 @@ if ($installMochizuki) {
 }
 
 if ($installMochizuki) {
-    foreach ($candidate in @((Join-Path $Root 'nvngx_dlssnr.dll'), (Join-Path $game 'nvngx_dlssnr.dll'))) {
+    foreach ($candidate in $modelSourceCandidates) {
         if (Test-Path -LiteralPath $candidate -PathType Leaf) {
             $hash = Get-Sha256 $candidate
             if ($hash -ieq $mochizukiNewNvSha) { $mochizukiNv = $candidate; break }
@@ -1056,7 +1064,7 @@ if ($installMochizuki) {
                 '  Fix: move this file aside, run Mochizuki-Model.bat, then run Setup again.')
         }
     }
-    foreach ($candidate in @((Join-Path $Root 'nvngx_dlssnr.dll'), (Join-Path $game 'nvngx_dlssnr.dll'))) {
+    foreach ($candidate in $modelSourceCandidates) {
         if ($canMochizuki -and (Test-Path -LiteralPath $candidate -PathType Leaf) -and
             $candidate -ne $mochizukiNv -and -not $mochizukiNv) {
             Add-WeightProblem 'mochizuki' $false @(
@@ -1239,7 +1247,7 @@ if ($installLmxxf) {
     }
     $lmxxfSourceDll = $null
     if (-not $lmxxfSmallWeights -and -not $lmxxfSmallPack) {
-        foreach ($candidate in @((Join-Path $Root 'nvngx_dlssnr.dll'),(Join-Path $game 'nvngx_dlssnr.dll'))) {
+        foreach ($candidate in $modelSourceCandidates) {
             if ((Test-Path -LiteralPath $candidate -PathType Leaf) -and (Get-Sha256 $candidate) -eq $mochizukiNewNvSha) { $lmxxfSourceDll = $candidate; break }
         }
     }
@@ -1362,8 +1370,8 @@ if ($installDaniel) {
     $gameHasNv = Test-Path -LiteralPath (Join-Path $game 'nvngx_dlssnr.dll') -PathType Leaf
     $gameHasW  = Test-Path -LiteralPath (Join-Path $game 'dlssnr_on_amd_weights.bin') -PathType Leaf
     if (-not $gameHasNv -and -not $gameHasW) {
-        $srcNv = Join-Path $Root 'nvngx_dlssnr.dll'
-        if (Test-Path -LiteralPath $srcNv -PathType Leaf) {
+        $srcNv = $nv
+        if ($srcNv -and (Test-Path -LiteralPath $srcNv -PathType Leaf)) {
             Copy-Item -LiteralPath $srcNv -Destination (Join-Path $game 'nvngx_dlssnr.dll') -Force
             Write-Host 'Copied nvngx_dlssnr.dll into the game folder (danielblnc runtime expects it there).' -ForegroundColor Green
             $nv = Join-Path $game 'nvngx_dlssnr.dll'

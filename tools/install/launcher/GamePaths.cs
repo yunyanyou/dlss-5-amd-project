@@ -38,7 +38,7 @@ namespace OptScalerNR.Launcher
             return mapped ?? path;
         }
 
-        public static string PickExe(bool isZh = false)
+        public static string PickExe(bool isZh = false, string initialDirectory = null)
         {
             try
             {
@@ -50,7 +50,14 @@ namespace OptScalerNR.Launcher
                 dlg.DereferenceLinks = false;
                 dlg.AddExtension = false;
                 dlg.ValidateNames = false;
-                if (Directory.Exists(@"C:\XboxGames"))
+                if (!string.IsNullOrEmpty(initialDirectory) && Directory.Exists(initialDirectory))
+                {
+                    dlg.InitialDirectory = initialDirectory;
+                    // Override the shell's remembered location for this specific operation.
+                    dlg.FileName = Path.Combine(initialDirectory, "*.exe");
+                    dlg.RestoreDirectory = true;
+                }
+                else if (Directory.Exists(@"C:\XboxGames"))
                     dlg.InitialDirectory = @"C:\XboxGames";
                 if (dlg.ShowDialog() != true) return null;
                 var fn = dlg.FileName;
@@ -117,11 +124,11 @@ namespace OptScalerNR.Launcher
 
     public static class PeProbe
     {
-        static readonly string[] CandidateDlls = { "dxgi.dll", "d3d12.dll", "winmm.dll", "winhttp.dll", "wininet.dll", "dbghelp.dll" };
+        static readonly string[] CandidateDlls = ProxyRecommendations.ProxyNames;
 
         public static string QuickRecommend(string exePath)
         {
-            if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath)) return "dxgi.dll";
+            if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath)) return null;
             try
             {
                 var dir = Path.GetDirectoryName(exePath);
@@ -153,7 +160,7 @@ namespace OptScalerNR.Launcher
                 }
             }
             catch { }
-            return "dxgi.dll";
+            return null;
         }
 
         static HashSet<string> ReadImports(string exePath)

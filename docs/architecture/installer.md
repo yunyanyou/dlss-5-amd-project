@@ -74,6 +74,38 @@ Xbox 游戏优先读取 `Content/MicrosoftGame.Config` 中存在的 PC 游戏 EX
 旧缓存没有此标记时，辅助程序或失效路径可自动纠正；来源不明但仍有效的游戏程序保守保留。
 所选项迁移后刷新详情并重新检查代理推荐，不沿用旧 EXE 的检测结果。
 
+“更换 EXE”始终从当前游戏 EXE 所在目录打开。左侧游戏条目的右键菜单提供“从列表移除”，
+只移除对应库条目；右键其他游戏不会切换当前详情或启动其自动检查。
+不卸载或删除游戏文件；移除记录按 ID/EXE 保存在 GUI 设置中，自动刷新与重启不重新加入。
+主动“添加游戏”选择同一路径可重新加入。旧缓存仍按游戏 ID/EXE 去重，安装失败不添加条目。
+
+“添加文件夹”和拖入目录允许先保存没有 EXE 的游戏，使用稳定条目 ID，根目录与所选 EXE 分开保存。
+未选择 EXE 时不能安装，可编辑信息、打开目录、移除或扫描启动程序。
+“编辑信息”的显示名称、PNG/JPEG 封面独立于游戏身份；封面保存受控副本到
+`%LOCALAPPDATA%/OptScalerNR/Launcher/user-assets/`，不依赖原图片位置。
+“扫描启动程序”后台读取 PE 的直接/延迟导入及有界本地依赖，不执行 EXE，不跟随目录链接。
+扫描限时 10 秒、深度 8、最多 256 个 EXE 和 10000 个目录；到限展示部分结果。
+用户在结果弹窗确认程序，未识别 API 的候选通过“显示全部 EXE”查看；仅允许选择 x64。
+图形 API 证据用于排序，不保证程序身份或注入成功。确认后保留原条目的 ID、根目录和自定义信息。
+
+代理支持 `dxgi.dll`、`winmm.dll`、`d3d12.dll`、`winhttp.dll`、`wininet.dll`、`dbghelp.dll`、`version.dll`。
+推荐依次采用用户手选、精确游戏规则、已安装项目代理及 PE 导入候选；无证据时要求人工选择。
+手选按游戏保存，可点击“使用推荐”清除该覆盖。游戏规则来自审阅后的
+`assets/compatibility/proxy-profiles.json`，内嵌于启动器并随包提供，保留 Wiki 来源和版本限制。
+启动立即采用本地资料，后台一次请求共享 10 秒总期限，载荷上限 256 KiB；失败保留旧资料。
+有效缓存位于 `%LOCALAPPDATA%/OptScalerNR/Launcher/compatibility/`，不会因重新打开启动器清空。
+维护入口和资料更新规则见 [推荐资料说明](../../assets/compatibility/README.md)。
+上游 Wiki 记录不等同于本 fork 的 NR 实机验证。所有自建弹窗使用共享深色主题，系统选择器保留系统实现。
+
+用户勾选的 Mochizuki/lmxxf 缺少模型且无提取来源时，GUI 在安装前弹出本地
+`nvngx_dlssnr.dll` 选择框，重新检查所选来源后再继续模型选择。来源路径经 DecisionJson
+传给安装器，离线提取直接读取所选文件；不要求用户手动剪切 DLL，也不把来源缺失当成
+运行库安装成功。Small 仍需受支持的 310.9.16 来源，完整 Original 可直接复用。
+
+GUI 的 worker 进程标准输出和错误分别保存为 `worker.stdout.log` / `worker.stderr.log`，
+包含脚本解析和启动错误。安装脚本的标准输出、错误都会合入事件日志；写操作失败时
+显示错误与日志路径，worker 提前退出仍能通过“打开完整日志”定位原始错误。
+
 ### 用户 ASI 插件
 
 安装后检查解析出的插件目录，包括本次复制和原有保留的用户 ASI。
@@ -120,6 +152,42 @@ daniel runtime 白名单覆盖 0.3.0 / 0.3.1 / 0.3.2 / 0.3.3 / 0.4.0 / 0.4.1 / 0
 | Y（推荐） | 新包校验通过、需要复用的来源文件先保存后，自动调用**新包**的卸载器，成功后继续安装。权重和已有备份保留，OptiScaler 设置重置。卸载失败则停止安装 |
 | N | 覆盖安装。旧的扁平模块目录也能升级（见下） |
 | `-NonInteractive` | 默认覆盖；显式加 `-UninstallExisting` 才先卸载 |
+
+## XeSS 兼容检查、修复与恢复
+
+`Setup.bat` 启动的现有 GUI 在选择游戏后自动对比 EXE 同目录与所选安装包
+`OptiScaler/` 内的四个 XeSS DLL，显示版本和内容差异；无版本信息时仍按 SHA256
+区分文件。版本不同或缺失不等于已确认故障，不自动替换游戏 DLL。
+
+游戏出现 XeSS 不可用、插帧倍率受限或启动异常时，在游戏详情点击“兼容修复”：
+预览具体文件，显式勾选 XeSS 超分（DX12/Vulkan）、XeSS 超分（DX11）或 XeSS 插帧。
+插帧固定将 `libxess_fg.dll` 与 `libxell.dll` 配套处理。包内配套文件缺失或不是 x64 PE
+时拒绝该组；检查只读元数据，不执行 DLL。修复不需要重新选择 NR 后端、模型或代理。
+日志仅显示最近文件中相关的历史记录，不据此自动宣称查明本次原因。
+
+关闭游戏后点“备份并尝试修复”，先完整保存原件及 SHA256，再暂存新文件，持独占文件
+句柄校验并移走目标，最后以不覆盖现有文件的移动放入新文件。并发更新的新文件不会被
+替换；中途退出留下的受管移动记录可用于恢复。内层 DLL 和用户 INI 保留。文件占用或路径带链接
+时停止。失败时尝试回滚；中断或回滚未完成的记录仍可从同一 GUI 恢复。
+
+“恢复游戏原文件”仅恢复这次修复记录的文件，并移除该次新增的文件。开始恢复前检查
+全部备份与当前文件；若游戏更新或用户修改了其中任一文件，停止恢复，保留当前文件
+和备份，不以旧文件覆盖新文件。只有当前文件与修复时/修复前哈希匹配时才恢复。
+恢复操作校验预览指纹及修复记录身份，拒绝操作预览之后出现的另一批修复文件。
+若游戏更新导致无法恢复，可在恢复窗口选择“保留当前文件并结束修复”：不修改任何 DLL，
+归档旧记录并保留全部备份，然后允许再次修复。备份和记录位于游戏目录 `OptiScaler-compat-backup/`，
+已恢复的旧备份也保留；卸载不会删除这些备份，也不会自动撤销独立的兼容修复。
+卸载后仍可通过完整安装包的 GUI 选择游戏并恢复。
+
+宿主 Ins 菜单的“兼容性”和“状态”页面显示 OptiScaler 实际使用的 XeSS DLL 完整路径
+及文件版本，并指向上述入口。未使用的组件显示未加载，不作为故障判断。
+`[Libraries]` 的 `XeSSPath`、`XeFGPath`、`XeLLPath` 分别绑定独立配置字段；
+库覆盖相对路径与 `OptiDllPath` 一样以游戏 EXE 所在目录为基准，失败日志记录具体路径
+和 Windows 错误。修复后的实际游戏兼容性仍需启动游戏验证。
+
+实现：`tools/install/xess-compat.ps1`，由 `launcher-worker.ps1` 调用并随完整包分发。
+无 GPU 专项：`tests/install/xess-compat.ps1`，已接入安装领域 `run.cmd`；
+路径绑定及相对覆盖路径回归在 `tests/host/test_config_priority.py`。
 
 ## `OptiScaler.ini`
 
@@ -183,5 +251,5 @@ lmxxf/Mochizuki 仅在目标目录或文件不存在时回存，已有内容（�
 
 - **不往 `WindowsApps` 写。** 路径含 `\WindowsApps\` 时安装器拒绝（ACL/TrustedInstaller）。商店版游戏装到可写的 `Content\` 之类目录。
 - 本项目的代理与作者原生的 `version.dll` 注入互斥，不要在同一目录双注入；安装器不在游戏目录留下作者的 `version.dll`，而是复制成 `dlssnr_amd_pass1-3.dll`。
-- 代理默认 `dxgi.dll`，交互时可选 `winmm.dll` / `d3d12.dll` / `winhttp.dll` / `wininet.dll` / `dbghelp.dll`。
+- 命令行代理默认 `dxgi.dll`，交互时可选 `winmm.dll` / `d3d12.dll` / `winhttp.dll` / `wininet.dll` / `dbghelp.dll` / `version.dll`；GUI 按上述证据推荐，无证据不自动选 dxgi。
 - 含中文的 `.ps1` 必须是 UTF-8 BOM + CRLF，否则 Windows PowerShell 5.1 按 GBK 解析（见 [dev-environment.md](../dev-environment.md)）。

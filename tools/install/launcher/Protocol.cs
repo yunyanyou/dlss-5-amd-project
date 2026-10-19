@@ -22,6 +22,7 @@ namespace OptScalerNR.Launcher
         [DataMember(Name = "backends")] public string[] Backends;
         [DataMember(Name = "activeBackend")] public string ActiveBackend;
         [DataMember(Name = "language")] public string Language;
+        [DataMember(Name = "compatibilityFingerprint")] public string CompatibilityFingerprint;
     }
 
     [DataContract]
@@ -34,6 +35,8 @@ namespace OptScalerNR.Launcher
         [DataMember(Name = "lmxxfModels")] public string LmxxfModels;
         [DataMember(Name = "shortFileContinue")] public string ShortFileContinue;
         [DataMember(Name = "foreignProxy")] public Dictionary<string, string> ForeignProxy;
+        [DataMember(Name = "xessGroups")] public string[] XessGroups;
+        [DataMember(Name = "modelSourceDll")] public string ModelSourceDll;
     }
 
     [DataContract]
@@ -56,6 +59,36 @@ namespace OptScalerNR.Launcher
         [DataMember(Name = "games")] public GameInfo[] Games;
         [DataMember(Name = "backends")] public BackendInfo[] Backends;
         [DataMember(Name = "packageRoot")] public string PackageRoot;
+        [DataMember(Name = "compatibility")] public XessCompatibility Compatibility;
+    }
+
+    [DataContract]
+    public sealed class XessCompatibility
+    {
+        [DataMember(Name = "restoreFiles")] public string[] RestoreFiles;
+        [DataMember(Name = "groups")] public XessGroup[] Groups;
+        [DataMember(Name = "active")] public bool Active;
+        [DataMember(Name = "fingerprint")] public string Fingerprint;
+        [DataMember(Name = "evidence")] public string[] Evidence;
+        [DataMember(Name = "error")] public string Error;
+    }
+
+    [DataContract]
+    public sealed class XessGroup
+    {
+        [DataMember(Name = "id")] public string Id;
+        [DataMember(Name = "ready")] public bool Ready;
+        [DataMember(Name = "different")] public bool Different;
+        [DataMember(Name = "files")] public XessFile[] Files;
+    }
+
+    [DataContract]
+    public sealed class XessFile
+    {
+        [DataMember(Name = "name")] public string Name;
+        [DataMember(Name = "gameVersion")] public string GameVersion;
+        [DataMember(Name = "packageVersion")] public string PackageVersion;
+        [DataMember(Name = "state")] public string State;
     }
 
     [DataContract]
@@ -83,7 +116,15 @@ namespace OptScalerNR.Launcher
         [DataMember(Name = "installed")] public bool Installed;
         [DataMember(Name = "cover")] public string Cover;
         [DataMember(Name = "hero")] public string Hero;
+        [DataMember(Name = "root", EmitDefaultValue = false)] public string Root;
+        [DataMember(Name = "customName", EmitDefaultValue = false)] public string CustomName;
+        [DataMember(Name = "customCover", EmitDefaultValue = false)] public string CustomCover;
         [DataMember(Name = "exeOverride", EmitDefaultValue = false)] public bool? ExeOverride;
+        public string DisplayName { get { return string.IsNullOrWhiteSpace(CustomName) ? Name : CustomName; } }
+        public string DisplayCover { get { return !string.IsNullOrEmpty(CustomCover) && File.Exists(CustomCover) ? CustomCover : Cover; } }
+        public string DisplayHero { get { return !string.IsNullOrEmpty(CustomCover) && File.Exists(CustomCover) ? CustomCover : Hero; } }
+        public string RootDirectory { get { try { return !string.IsNullOrEmpty(Root) ? Root : !string.IsNullOrEmpty(Exe) ? Path.GetDirectoryName(Exe) : null; } catch { return null; } } }
+        public bool HasExecutable { get { return !string.IsNullOrEmpty(Exe) && GamePaths.CanUse(Exe); } }
     }
 
     [DataContract]

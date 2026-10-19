@@ -60,6 +60,9 @@ inline PFN_ExecuteCommandLists o_ExecuteCommandLists = nullptr;
 
 inline bool IsArmed() { return g_armed.load(std::memory_order_acquire); }
 inline bool ExpandEnabled() { return g_expandEnabled.load(std::memory_order_acquire); }
+// Caller must install the queue submission hook before exposing any owned proxy.
+// Unlike ArmCreate, this does not intercept creation of unrelated game lists.
+inline void EnableExpansion() { g_expandEnabled.store(true, std::memory_order_release); }
 inline bool ProxyWrapEnabled() { return g_proxyWrap.load(std::memory_order_acquire); }
 inline void SetProxyWrap(bool on) { g_proxyWrap.store(on, std::memory_order_release); }
 inline void SetEarlyExeWrap(bool on) { g_earlyExeWrap.store(on, std::memory_order_release); }
@@ -199,7 +202,9 @@ inline HRESULT WINAPI hkCreateCommandList(ID3D12Device *device, UINT nodeMask, D
     if (!IsArmed() || !ShouldWrapCreate(_ReturnAddress()) || !g_wrapOpenLists.load(std::memory_order_acquire) ||
         g_suppressProxyWrap || type != D3D12_COMMAND_LIST_TYPE_DIRECT || !out)
     {
-        if (type == D3D12_COMMAND_LIST_TYPE_DIRECT && IsArmed())
+        // Proxy producers/continuations deliberately request native lists. They
+        // are covered by the owning proxy, so they are not missing game wrappers.
+        if (type == D3D12_COMMAND_LIST_TYPE_DIRECT && IsArmed() && !g_suppressProxyWrap)
             NoteUnwrappedDirect(_ReturnAddress(), IsArmed(), ShouldWrapCreate(_ReturnAddress()),
                                 g_wrapOpenLists.load(std::memory_order_acquire), "CreateCommandList");
         return o_CreateCommandList(device, nodeMask, type, alloc, initial, riid, out);
@@ -223,7 +228,7 @@ inline HRESULT WINAPI hkCreateCommandList1(ID3D12Device *device, UINT nodeMask, 
     if (!IsArmed() || !ShouldWrapCreate(_ReturnAddress()) || g_suppressProxyWrap ||
         type != D3D12_COMMAND_LIST_TYPE_DIRECT || !o_CreateCommandList1)
     {
-        if (type == D3D12_COMMAND_LIST_TYPE_DIRECT && IsArmed())
+        if (type == D3D12_COMMAND_LIST_TYPE_DIRECT && IsArmed() && !g_suppressProxyWrap)
             NoteUnwrappedDirect(_ReturnAddress(), IsArmed(), ShouldWrapCreate(_ReturnAddress()),
                                 g_wrapOpenLists.load(std::memory_order_acquire), "CreateCommandList1");
         return o_CreateCommandList1 ? o_CreateCommandList1(device, nodeMask, type, flags, riid, out)

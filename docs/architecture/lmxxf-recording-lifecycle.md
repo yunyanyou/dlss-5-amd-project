@@ -27,6 +27,58 @@ silently certify it. Cross-queue replay waits for the previous consumer fence be
 submitting its producer. UINT64_MAX is not normal completion; confirmed device removal
 has a separate teardown path.
 
+## Missing recording proxy: menu recovery guidance
+
+`recording proxy unavailable`, lmxxf's `same-frame boundary unavailable`, and
+`recording proxy coverage too low` mean NR cannot use the offered command lists.
+The menu preserves the original status and shows a compact hint with **Open compatibility
+options**, which expands and scrolls to **Compatibility & Scheduling**. Early wrapping
+and enhanced-barrier permission appear together there, without a duplicate Input control.
+If early wrapping is off, it suggests **Early command-list wrap → force on**, followed
+by **Save Settings** and a game restart. If already enabled, it asks for logs after a
+full restart instead of recommending an equivalent forced override.
+This changes `LmxxfEarlyExeWrap`; it is shared by lmxxf and Mochizuki. It is an opt-in
+attempt, not a guaranteed fix. Startup failures require restoring the previous INI
+value. If the error persists after restarting, collect `OptiScaler*.log` and
+`OptiScaler.ini` to identify the list's creator and startup hook coverage before
+widening interception to other modules.
+
+Early EXE auto rules include Unreal, Forza, `ACMirage.exe` and `007FirstLight.exe`;
+the latter two use exact, case-insensitive file names. Explicit true/false still wins.
+Aniimo's UnityPlayer rule remains separate. This is a targeted startup coverage fix
+based on missing-proxy reports, not validation of NR image quality or every game build.
+Any-module auto wrapping and enhanced-barrier auto permission remain Forza-only;
+missing recording proxies alone do not justify broadening either policy.
+
+**Allow enhanced barriers** is the independent `LmxxfAllowEnhancedBarriers` permission.
+It does not create recording proxies. An `enhanced_barrier` / `enhanced_barriers_not_allowed`
+rejection has separate menu guidance; this permission takes effect live, and Save
+Settings persists it. Already-allowed inputs that remain rejected need diagnosis.
+Pending early-wrap preferences show a persistent save/restart notice below their
+controls. Saving does not remove the notice because existing lists are not retroactively
+wrapped; returning both preferences to their initial menu values removes it.
+
+## DX11 companion command lists
+
+The DX11-to-DX12 upscaler companion can create its device through the original
+D3D12 factory, bypassing native-game list creation hooks. When startup submission
+policy requires recording proxies, `IFeature_Dx11wDx12::CreateD3D12Objects` explicitly
+creates its DIRECT lists through `CreateProxiedCommandList`. This policy does not
+depend on NR being enabled, and retains convenience-mode backend switching.
+
+`AmdBridge::EnsureRecordingSubmissionHook` installs queue notification and enables
+proxy expansion before the first companion list is exposed, including feature
+initialization uploads. Both initialization and frame submission use this route;
+normal unsplit lists are unwrapped and split lists retain recording callbacks and
+completion proofs. Allocator reuse still waits for the companion's per-buffer fence.
+Recreated companion lists use the same setup. Hook setup failure rejects companion
+creation rather than submitting a proxy to a native queue without expansion.
+
+This does not enable global creation wrapping or change early EXE/Unity preferences.
+It does not repair retained native-DX12 game lists created before wrapping starts.
+The `DX11 companion: recordingProxy=... submissionExpansion=...` log identifies the
+companion setup; successful game inference still requires runtime and game validation.
+
 ## Replayable resources
 
 Codec, RGB input and RGB output private resources start in NON_PIXEL_SHADER_RESOURCE.

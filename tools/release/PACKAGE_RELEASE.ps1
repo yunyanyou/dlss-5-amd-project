@@ -467,23 +467,23 @@ LmxxfAutoExposure=true
 ; Manual white scale only when Auto exposure is false and there is no game exposure. Default 8.
 LmxxfAutoExposureScale=8
 
-; Allow NR when the command list uses D3D12 enhanced barriers. Leave unset for auto:
+; Allow NR when the command list uses D3D12 enhanced barriers. auto uses these game rules:
 ; on when the EXE name contains "forza" (Forza Horizon 6 needs it for Mochizuki), off otherwise.
 ; Enhanced-barrier layout/access is not fully tracked and a split can cut a SYNC_SPLIT
 ; group across two submits. true opts in; false rejects those lists. Menu changes apply immediately.
-; LmxxfAllowEnhancedBarriers=
+LmxxfAllowEnhancedBarriers=auto
 
-; Early command-list wrap: shared by lmxxf and Mochizuki. Leave unset for auto.
+; Early command-list wrap: shared by lmxxf and Mochizuki. auto uses the game rules below.
 ; Auto: EXE calls in Unreal/Forza; UnityPlayer.dll calls in Aniimo.exe only.
 ; true = EXE plus loaded UnityPlayer.dll callers, including other Unity games.
 ; false = disable both early paths; normal post-swapchain wrapping is unchanged.
 ; Ins > Compatibility & Scheduling > Early command-list wrap. Save and restart.
 ; Other games are unvalidated; forced early wrap can crash (e.g. Yan Yun).
-; LmxxfEarlyExeWrap=
+LmxxfEarlyExeWrap=auto
 ; Early wrap of command lists created by ANY module (Streamline, dxgi proxies, overlays), before the
-; swapchain only. Leave unset for auto: on only when the EXE name contains "forza". Independent of
+; swapchain only. auto: on only when the EXE name contains "forza". Independent of
 ; LmxxfEarlyExeWrap. May crash other games; try true only if the log shows many 'missing recording proxy'.
-; LmxxfEarlyAnyModuleWrap=
+LmxxfEarlyAnyModuleWrap=auto
 
 ; Resolution scale factor for neural rendering model input
 ; 1.0 = native render resolution (e.g. 720p for 4K Super Performance)
@@ -772,7 +772,10 @@ Copy-Item -LiteralPath (Join-Path $root 'tools/lmxxf-module-package.ps1') -Desti
 $launcherExe = Join-Path $root 'exports/launcher/OptScalerNR.Launcher.exe'
 if (!(Test-Path -LiteralPath $launcherExe)) { throw "Launcher EXE was not produced" }
 Copy-Item -LiteralPath $launcherExe -Destination (Join-Path $stage 'OptScalerNR.Launcher.exe') -Force
+Copy-Item -LiteralPath (Join-Path $root 'assets/compatibility/proxy-profiles.json') -Destination $stage -Force
+Copy-Item -LiteralPath (Join-Path $root 'assets/compatibility/README.md') -Destination (Join-Path $stage 'Licenses/OptiScaler-wiki-profiles.md') -Force
 Copy-Item -LiteralPath (Join-Path $root 'tools/install/launcher-worker.ps1') -Destination $stage -Force
+Copy-Item -LiteralPath (Join-Path $root 'tools/install/xess-compat.ps1') -Destination $stage -Force
 Copy-Item -LiteralPath (Join-Path $root 'tools/install/proxy-probe.ps1') -Destination $stage -Force
 Copy-Item -LiteralPath (Join-Path $root 'tools/install/library-scan.ps1') -Destination $stage -Force
 Copy-Item -LiteralPath (Join-Path $root 'tools/install/install-capabilities.ps1') -Destination $stage -Force
@@ -910,7 +913,7 @@ try {
             finally { $stream.Dispose(); $sha.Dispose() }
             if ($actual -ne $expectedEntries[$relative]) { throw "Archive checksum mismatch: $relative" }
         }
-        foreach ($required in @('OptiScaler.dll', 'LmxxfNrRuntime.dll', 'MochizukiNrRuntime.dll', 'OptiScaler.ini', 'Setup.ps1', 'Setup.bat', 'lmxxf-module-package.ps1', 'OptScalerNR.Launcher.exe', 'launcher-worker.ps1', 'proxy-probe.ps1', 'library-scan.ps1', 'install-capabilities.ps1') + @($expectedEntries.Keys)) {
+        foreach ($required in @('OptiScaler.dll', 'LmxxfNrRuntime.dll', 'MochizukiNrRuntime.dll', 'OptiScaler.ini', 'Setup.ps1', 'Setup.bat', 'lmxxf-module-package.ps1', 'OptScalerNR.Launcher.exe', 'launcher-worker.ps1', 'proxy-probe.ps1', 'library-scan.ps1', 'install-capabilities.ps1', 'xess-compat.ps1', 'proxy-profiles.json', 'Licenses/OptiScaler-wiki-profiles.md') + @($expectedEntries.Keys)) {
             if (-not $seen.ContainsKey($required)) { throw "Package archive missing required component: $required" }
         }
     } finally {

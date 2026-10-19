@@ -11,6 +11,7 @@
 #include <misc/IdentifyGpu.h>
 
 #include <SimpleIni.h>
+#include <cctype>
 
 static CSimpleIniA ini;
 
@@ -1413,8 +1414,8 @@ bool Config::Reload(std::filesystem::path iniPath)
             FfxVkPath.set_from_config(readWString("Libraries", "FfxVkPath"));
 
             XeSSLibrary.set_from_config(readWString("Libraries", "XeSSPath"));
-            XeSSLibrary.set_from_config(readWString("Libraries", "XeFGPath"));
-            XeSSLibrary.set_from_config(readWString("Libraries", "XeLLPath"));
+            XeFGLibrary.set_from_config(readWString("Libraries", "XeFGPath"));
+            XeLLLibrary.set_from_config(readWString("Libraries", "XeLLPath"));
             XeSSDx11Library.set_from_config(readWString("Libraries", "XeSSDx11Path"));
         }
 
@@ -1496,6 +1497,23 @@ bool Config::ExeIsForza()
         return name.find(L"forza") != std::wstring::npos;
     }();
     return forza;
+}
+
+bool Config::EarlyExeWrapAuto()
+{
+    const auto& state = State::Instance();
+    std::string name = state.gameExe;
+    if (const auto slash = name.find_last_of("\\/"); slash != std::string::npos)
+        name.erase(0, slash + 1);
+    for (char& c : name)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return state.gameEngine == GameEngineType::Unreal || (state.gameQuirks & GameQuirk::ForceUnrealEngine) ||
+           name.find("forza") != std::string::npos || name == "acmirage.exe" || name == "007firstlight.exe";
+}
+
+bool Config::EarlyExeWrapEffective()
+{
+    return LmxxfEarlyExeWrap.has_value() ? *LmxxfEarlyExeWrap : EarlyExeWrapAuto();
 }
 
 bool Config::AllowEnhancedBarriersEffective()
@@ -2102,10 +2120,8 @@ bool Config::SaveIni()
                  GetBoolValue(Instance()->LmxxfAutoExposure.value_for_config()).c_str());
     ini.SetValue("DlssNr", "LmxxfAutoExposureScale",
                  GetFloatValue(Instance()->LmxxfAutoExposureScale.value_for_config()).c_str());
-    if (auto eb = Instance()->LmxxfAllowEnhancedBarriers.value_for_config(); eb.has_value())
-        ini.SetValue("DlssNr", "LmxxfAllowEnhancedBarriers", GetBoolValue(eb).c_str());
-    else
-        ini.Delete("DlssNr", "LmxxfAllowEnhancedBarriers");
+    ini.SetValue("DlssNr", "LmxxfAllowEnhancedBarriers",
+                 GetBoolValue(Instance()->LmxxfAllowEnhancedBarriers.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::LmxxfInlineSlots, GetIntValue(Instance()->LmxxfInlineSlots.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::NrCaptureBackoff, GetIntValue(Instance()->NrCaptureBackoff.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::NrInlineReuse, GetBoolValue(Instance()->NrInlineReuse.value_for_config()).c_str());
@@ -2122,10 +2138,10 @@ bool Config::SaveIni()
     ini.SetValue(CfgKey::kSection, CfgKey::NrAdaptiveWaitBudget, GetBoolValue(Instance()->NrAdaptiveWaitBudget.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::NrInline,
                  GetBoolValue(Instance()->NrInline.value_for_config()).c_str());
-    if (auto earlyWrap = Instance()->LmxxfEarlyExeWrap.value_for_config(); earlyWrap.has_value())
-        ini.SetValue("DlssNr", "LmxxfEarlyExeWrap", GetBoolValue(earlyWrap).c_str());
-    if (auto anyWrap = Instance()->LmxxfEarlyAnyModuleWrap.value_for_config(); anyWrap.has_value())
-        ini.SetValue("DlssNr", "LmxxfEarlyAnyModuleWrap", GetBoolValue(anyWrap).c_str());
+    ini.SetValue("DlssNr", "LmxxfEarlyExeWrap",
+                 GetBoolValue(Instance()->LmxxfEarlyExeWrap.value_for_config()).c_str());
+    ini.SetValue("DlssNr", "LmxxfEarlyAnyModuleWrap",
+                 GetBoolValue(Instance()->LmxxfEarlyAnyModuleWrap.value_for_config()).c_str());
     ini.SetValue("DlssNr", "AmdGraphicsUnsafe", GetIntValue(Instance()->AmdGraphicsUnsafe.value_for_config()).c_str());
     ini.SetValue("AmdRtgi", "Enabled", GetBoolValue(Instance()->AmdRtgiEnabled.value_for_config()).c_str());
     ini.SetValue("AmdRtgi", "Quality", GetIntValue(Instance()->AmdRtgiQuality.value_for_config()).c_str());
