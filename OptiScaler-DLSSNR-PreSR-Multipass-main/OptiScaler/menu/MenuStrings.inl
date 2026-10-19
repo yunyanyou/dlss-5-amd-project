@@ -1049,6 +1049,7 @@
 {"Model enlargement", "模型放大"},
 {"Network model", "网络模型"},
 {"Image & Textures", "图像与纹理"},
+{"Select the model to run. Changes rebuild the network in the background.\nEach entry is enabled only when its model file is present under dlssnr-amd.\nINT4 mixed is available only with 310.8.0 and active ACO; its saved preference is retained.\nINI: [DlssNr] MochizukiNetworkModel=0 (original) / 1 (new). Save Settings to keep the selection.", "选择要运行的模型。更改后会在后台重建网络。\n每项仅在其模型文件存在于 dlssnr-amd 下时才启用。\nINT4 混合模式仅在 310.8.0 且 ACO 活跃时可用；其保存的偏好会保留。\nINI: [DlssNr] MochizukiNetworkModel=0（原版）/ 1（新版）。保存设置以保留选择。"},
 {"310.8.0 (original)", "310.8.0（原始模型）"},
 {"310.9.16 (new)", "310.9.16（新模型）"},
 {"Select the model to run. Changes rebuild the network in the background.\n310.9.16 requires dlssnr-small.bin; without it the original model runs.\nINT4 mixed is available only with 310.8.0 and active ACO; its saved preference is retained.\nINI: [DlssNr] MochizukiNetworkModel=0 (original) / 1 (new). Save Settings to keep the selection.", "选择运行的模型。更改后在后台重建网络。\n310.9.16 需要 dlssnr-small.bin；缺失时运行原始模型。\nINT4 混合模式需要 310.8.0 和已生效的 ACO；其设置会保留。\nINI：[DlssNr] MochizukiNetworkModel=0（原始）/ 1（新）。保存设置以保留选择。"},
