@@ -7419,11 +7419,13 @@ void MenuCommon::RenderKeybindSettings(RenderMenuContext& ctx)
     }
 }
 
-// Legacy (0.5.x / neural style) main-menu layout kept on purpose.
-// Fixed six-entry sidebar (NR / UP / FG / IMG / UI / ADV) with the page beside it,
-// instead of the newer navigation/card presentation.
-static constexpr const char* kTabShort[] = { "NR", "UP", "FG", "IMG", "UI", "ADV" };
-static constexpr const char* kTabName[] = { "Neural", "Upscaling", "Frame Gen", "Image", "Interface", "Advanced" };
+// Legacy (0.5.x / neural style) main-menu layout kept on purpose: a short-label
+// button sidebar with the page beside it, instead of the newer card presentation.
+// Page set follows upstream MenuNavigation::Page (NR .. Status) so it keeps growing
+// with it; only the presentation stays compact.
+static constexpr const char* kTabShort[] = { "NR", "UP", "FG", "LAT", "IMG", "CMP", "UI", "ADV" };
+static constexpr const char* kTabName[] = { "Neural Rendering", "Upscaling", "Frame Generation", "Latency & FPS",
+                                            "Image & Textures", "Compatibility", "Interface", "Help / Status" };
 static int selectedTab = 0;
 
 static float MainMenuSideBarWidth()
@@ -7486,10 +7488,13 @@ void MenuCommon::RenderMainMenuTabs(RenderMenuContext& ctx)
         RenderActiveUpscalerSettings(ctx);
         break;
 
-    case 2: // Frame generation, latency and pacing
+    case 2: // Frame generation
         RenderFrameGenerationSelection(ctx);
         RenderFrameGenerationRuntimeSettings(ctx);
         RenderFsrCommonSettings(ctx);
+        break;
+
+    case 3: // Latency and pacing
         RenderFramerateSettings(ctx);
         RenderVsyncSettings(ctx);
 #ifdef LOW_LATENCY_INPUTS
@@ -7499,29 +7504,32 @@ void MenuCommon::RenderMainMenuTabs(RenderMenuContext& ctx)
 #endif
         break;
 
-    case 3: // Image and textures
+    case 4: // Image and textures
         RenderActiveImageSettings(ctx);
         RenderApiAndTextureSettings(ctx);
         RenderMagnifierSettings(ctx);
         break;
 
-    case 4: // Interface
+    case 5: // Compatibility
+        RenderXeSSLibraryStatus(ctx);
+        RenderInitializationSettings(ctx);
+        RenderAdvancedSettings(ctx);
+        RenderQuirksSettings(ctx);
+        break;
+
+    case 6: // Interface
         RenderThemeSettings(ctx);
         RenderFpsOverlaySettings(ctx);
         RenderKeybindSettings(ctx);
         break;
 
-    default: // Advanced, with the detected-environment summary
+    default: // Help / Status, with the detected-environment summary
         MenuUi::TextWrapped("GPU: %s", ctx.primaryGpu->name.c_str());
         MenuUi::Text("API: %s", std::string(magic_enum::enum_name(ctx.state.api)).c_str());
         if (ctx.currentFeature && ctx.currentFeature->IsInited())
             MenuUi::Text("Upscaler: %s", ctx.currentFeature->Name().c_str());
         RenderUpscalerStateMessage(ctx);
         RenderUpscalerInputsSettings(ctx);
-        RenderXeSSLibraryStatus(ctx);
-        RenderInitializationSettings(ctx);
-        RenderAdvancedSettings(ctx);
-        RenderQuirksSettings(ctx);
         RenderLoggingSettings(ctx);
         if (ctx.state.nvngxIniDetected)
             MenuUi::TextWrapped("nvngx.ini detected: use OptiScaler.ini and remove the old config.");
