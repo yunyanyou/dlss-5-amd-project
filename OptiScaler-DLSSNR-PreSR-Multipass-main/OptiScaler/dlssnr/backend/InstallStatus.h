@@ -13,6 +13,25 @@ inline bool HasMochizukiSelectedModel(const std::filesystem::path& dir, uint32_t
     return std::filesystem::is_regular_file(dir / (model == 0 ? L"dlssnr-amd/dlssnr.bin"
                                                             : L"dlssnr-amd/dlssnr-small.bin"), ec);
 }
+inline std::filesystem::path ModuleDirectory() {
+    wchar_t path[MAX_PATH] {};
+    HMODULE mod = nullptr;
+    GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                       reinterpret_cast<LPCWSTR>(&HasMochizukiSelectedModel), &mod);
+    if (!mod || !GetModuleFileNameW(mod, path, MAX_PATH))
+        return {};
+    return std::filesystem::path(path).parent_path();
+}
+// True when the model file this backend would load is actually installed, so the menu
+// can offer only the models that exist and hide options that need a specific one.
+inline bool MochizukiModelInstalled(uint32_t model) {
+    const auto dir = ModuleDirectory();
+    if (dir.empty())
+        return false;
+    std::error_code ec;
+    const auto file = dir / (model == 0 ? L"dlssnr-amd/dlssnr.bin" : L"dlssnr-amd/dlssnr-small.bin");
+    return std::filesystem::is_regular_file(file, ec) && std::filesystem::file_size(file, ec) > 0 && !ec;
+}
 inline bool NonemptyFile(const std::filesystem::path& path) {
     std::error_code ec;
     return std::filesystem::is_regular_file(path, ec) && std::filesystem::file_size(path, ec) > 0 && !ec;

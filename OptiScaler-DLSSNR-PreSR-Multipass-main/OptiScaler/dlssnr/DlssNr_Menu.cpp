@@ -299,11 +299,41 @@ static bool RebuildSlider(const char* label, float* value, float low, float high
 static bool MochizukiIntegerControl(const char* label, std::string_view key, int* value, int low, int high)
 {
     if (key == CfgKey::MochizukiNetworkModel) {
-        static const char* models[] = {"310.8.0 (original)", "310.9.16 (new)"};
-        *value = std::clamp(*value, 0, 1);
-        const bool changed = MenuUi::Combo(label, value, models, 2);
+        const bool hasOriginal = Backend::MochizukiModelInstalled(0);
+        const bool hasSmall = Backend::MochizukiModelInstalled(1);
+
+        int current = std::clamp(*value, 0, 1);
+        // Keep the stored choice only while that model is actually installed.
+        if (current == 0 && !hasOriginal && hasSmall)
+            current = 1;
+        else if (current == 1 && !hasSmall && hasOriginal)
+            current = 0;
+        *value = current;
+
+        const char* currentLabel = current == 1 ? "310.9.16 (new)" : "310.8.0 (original)";
+        bool changed = false;
+        if (ImGui::BeginCombo(label, currentLabel))
+        {
+            ImGui::BeginDisabled(!hasOriginal);
+            if (MenuUi::Selectable("310.8.0 (original)", current == 0))
+            {
+                *value = 0;
+                changed = true;
+            }
+            ImGui::EndDisabled();
+            ImGui::BeginDisabled(!hasSmall);
+            if (MenuUi::Selectable("310.9.16 (new)", current == 1))
+            {
+                *value = 1;
+                changed = true;
+            }
+            ImGui::EndDisabled();
+            ImGui::EndCombo();
+        }
+        if (!hasOriginal || !hasSmall)
+            MenuUi::TextWrapped("Only the installed model is selectable. Install the missing model set to enable the other entry.");
         HelpMarker("Select the model to run. Changes rebuild the network in the background."
-                   "\n310.9.16 requires dlssnr-small.bin; without it the original model runs."
+                   "\nEach entry is enabled only when its model file is present under dlssnr-amd."
                    "\nINT4 mixed is available only with 310.8.0 and active ACO; its saved preference is retained."
                    "\nINI: [DlssNr] MochizukiNetworkModel=0 (original) / 1 (new). Save Settings to keep the selection.");
         return changed;
@@ -935,13 +965,23 @@ void RenderMenu(Config* config, float menuResScale)
                 if (choice.shown != choice.session)
                     MenuUi::TextColored(ImVec4(1.f, 0.f, 0.f, 1.f),
                                         "Save Settings, then restart the game.");
-                bool int4 = config->MochizukiInt4Mixed.value_or_default();
-                if (MenuUi::Checkbox("INT4 mixed (ACO)", &int4))
+                // INT4 records and weights describe the 310.8.0 model only, so the toggle
+                // is hidden while the new model is selected instead of silently doing
+                // nothing.
+                if (model == 0)
                 {
-                    config->MochizukiInt4Mixed = int4;
-                    AmdBridge::InvalidateHistory();
+                    bool int4 = config->MochizukiInt4Mixed.value_or_default();
+                    if (MenuUi::Checkbox("INT4 mixed (ACO)", &int4))
+                    {
+                        config->MochizukiInt4Mixed = int4;
+                        AmdBridge::InvalidateHistory();
+                    }
+                    HelpMarker("Ctrl+F11 switches the INT4 request. INT4 requires the 310.8.0 model and active ACO; model and ACO preferences are retained. Save Settings to keep the selection.");
                 }
-                HelpMarker("Ctrl+F11 switches the INT4 request. INT4 requires the 310.8.0 model and active ACO; model and ACO preferences are retained. Save Settings to keep the selection.");
+                else
+                {
+                    MenuUi::TextDisabled("INT4 mixed is available only with the 310.8.0 (original) model.");
+                }
             }
             ImGui::PushID(static_cast<int>(kind));
             static PipelineUi::Section pages[3] {PipelineUi::Section::Model, PipelineUi::Section::Model, PipelineUi::Section::Model};
