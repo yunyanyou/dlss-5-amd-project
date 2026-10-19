@@ -60,11 +60,18 @@ if (-not (Test-Path -LiteralPath $GameDir -PathType Container)) { Die "GameDir n
 $GameDir = (Resolve-Path -LiteralPath $GameDir).Path
 
 if ([string]::IsNullOrWhiteSpace($Source)) {
-    $base = 'F:\hssm\amd-nr'
-    $candidates = Get-ChildItem -LiteralPath $base -Directory -Filter 'OptScaler-NR-*' -ErrorAction SilentlyContinue |
-        Sort-Object LastWriteTime -Descending
-    if (-not $candidates) { Die "No OptScaler-NR-* package under $base; pass -Source." }
-    $Source = $candidates[0].FullName
+    # Prefer the folder this script ships in when it is itself a package, so running
+    # it from a release folder installs that release rather than whatever happens to
+    # be newest on the build machine.
+    if (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'OptiScaler.dll')) {
+        $Source = $PSScriptRoot
+    } else {
+        $base = 'F:\hssm\amd-nr'
+        $candidates = Get-ChildItem -LiteralPath $base -Directory -Filter 'OptScaler-NR-*' -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending
+        if (-not $candidates) { Die "No OptScaler-NR-* package under $base; pass -Source." }
+        $Source = $candidates[0].FullName
+    }
 }
 if (-not (Test-Path -LiteralPath $Source -PathType Container)) { Die "Source not found: $Source" }
 $Source = (Resolve-Path -LiteralPath $Source).Path
