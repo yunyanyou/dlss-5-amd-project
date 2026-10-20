@@ -884,7 +884,12 @@ bool XeFG_Dx12::Dispatch()
             if (_generationOff)
                 SetGenerationOff(false);
 
-            _nrMultiplier.Reset(_framesToInterpolate);
+            // Reset from what the provider actually has, not the bookkeeping copy:
+            // a rejected dynamic step leaves the two out of sync.
+            const int liveApplied = _nrMultiplier.Snapshot().applied;
+            _nrMultiplier.Reset(liveApplied >= 0 ? liveApplied : _framesToInterpolate);
+            if (liveApplied >= 0)
+                _framesToInterpolate = liveApplied;
             _dynamicActive = false;
             UpdateInterpolationCount();
         }

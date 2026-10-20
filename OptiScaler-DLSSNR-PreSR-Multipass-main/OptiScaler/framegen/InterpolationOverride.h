@@ -78,7 +78,11 @@ class InterpolationOverride
         next.failed = status.requiresReinitialization || (!changed && status.failed);
         next.requiresReinitialization = status.requiresReinitialization;
         status = next;
-        if (!changed)
+        // Dynamic MFG moves the provider through ApplyDynamic without touching
+        // `attempted`, so the same request may no longer describe what is live.
+        // Re-apply when the recorded value drifted; a success re-syncs target and
+        // applied, so this cannot loop.
+        if (!changed && (status.applied == status.target || status.failed))
             return false;
         attempted = request;
         if (status.requiresReinitialization || !request.enabled || !request.liveSupported ||
