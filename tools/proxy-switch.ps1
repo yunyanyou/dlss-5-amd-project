@@ -348,7 +348,6 @@ function Get-Marks([string] $n) {
     if ($advice.ContainsKey($key)) {
         $a = $advice[$key]
         if ($a.ContainsKey('wiki') -and $a.wiki -eq 'preferred') { $marks += '推荐' }
-        elseif ($a.ContainsKey('wiki') -and $a.wiki -eq 'alternative') { $marks += '备选' }
         if ($a.ContainsKey('reason') -and ([string]$a.reason) -like 'existing*') { $marks += '已安装' }
         elseif ($a.ContainsKey('imported') -and $a.imported) { $marks += '游戏导入' }
     }
