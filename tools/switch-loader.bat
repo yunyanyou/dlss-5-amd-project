@@ -2,25 +2,25 @@
 setlocal
 cd /d "%~dp0"
 
-rem Double-click: show a menu. With arguments: pass them to the PowerShell script.
+rem 双击运行进入菜单；带参数时直接透传给 PowerShell 脚本。
 
 if not "%~1"=="" goto passthrough
 
 :menu
 echo.
-echo  OptiScaler loader switch
+echo  OptiScaler 加载器切换
 echo  ------------------------
-echo   1. winmm.dll    (most games)
+echo   1. winmm.dll    （大多数游戏）
 echo   2. dxgi.dll
 echo   3. d3d12.dll
 echo   4. d3d11.dll
 echo   5. version.dll
 echo   6. opengl32.dll
-echo   0. show current loader
-echo   9. cancel
+echo   0. 查看当前加载器
+echo   9. 取消
 echo.
 set "LOADER="
-set /p "CHOICE=Choose: "
+set /p "CHOICE=请选择: "
 if "%CHOICE%"=="1" set "LOADER=winmm"
 if "%CHOICE%"=="2" set "LOADER=dxgi"
 if "%CHOICE%"=="3" set "LOADER=d3d12"
@@ -44,5 +44,5 @@ goto menu
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0switch-loader.ps1" %*
 
 :done
-rem Keep the window open only when double-clicked (no arguments).
+rem 仅在双击（无参数）时暂停，命令行调用不留阻塞。
 if "%~1"=="" pause
