@@ -405,7 +405,7 @@ function Show-State {
     Step "目录：$Dir"
     if ($present.Count -eq 0) { Info '没有任何候选 DLL' }
     foreach ($p in $present) {
-        Info ("{0}.dll  {1} MB{2}{3}" -f $p.Name, $p.MB, $(if ($p.Bytes -gt 20MB) { '  <- 当前宿主' } else { '' }), (Get-Marks $p.Name))
+        Info ("{0}.dll  {1} MB{2}{3}" -f $p.Name, $p.MB, $(if ($p.Bytes -gt 20MB) { '  <- 当前注入' } else { '' }), (Get-Marks $p.Name))
     }
     Show-Advice
 }
