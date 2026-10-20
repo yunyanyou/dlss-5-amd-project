@@ -4229,12 +4229,14 @@ void MenuCommon::RenderFrameGenerationRuntimeSettings(RenderMenuContext& ctx)
             bool dynamicMfg = config->FGXeFGDynamicMFG.value_or_default();
             if (MenuUi::Checkbox("Dynamic MFG##xefg", &dynamicMfg))
                 config->FGXeFGDynamicMFG = dynamicMfg;
-            ShowHelpMarker("Picks the multiplier every frame, up to the Frame Gen setting,\n"
-                           "the lowest that reaches the target. It can go above the target,\n"
+            ShowHelpMarker("Picks the multiplier every frame, up to the highest the provider reports\n"
+                           "(XeFG MaxInterpolatedFrames, 8X after the unlock), not the Frame Gen setting.\n"
+                           "It takes the lowest multiplier that reaches the target. It can go above the target,\n"
                            "only the FPS limit or V-Sync caps the presented frame rate.\n"
                            "When the target can't be reached, a higher multiplier is kept\n"
                            "only if it raises the frame rate enough: each generated frame\n"
-                           "costs GPU time.");
+                           "costs GPU time.\n"
+                           "The Frame Gen and NR multipliers only apply while Dynamic MFG is off.");
             ImGui::EndDisabled();
 
             if (maxInterpolationCount <= 1)
