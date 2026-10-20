@@ -32,7 +32,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet('winmm', 'dxgi', 'd3d12', 'd3d11', 'version', 'opengl32')]
+    [ValidateSet('dxgi', 'winmm', 'd3d12', 'winhttp', 'wininet', 'dbghelp', 'version', 'd3d11', 'opengl32')]
     [string] $Name,
     [string] $Dir = '.',
     [string] $Current = '',
@@ -48,7 +48,10 @@ function Info([string] $t) { Write-Host "    $t" }
 function Warn([string] $t) { Write-Host "    ! $t" -ForegroundColor Yellow }
 function Die([string] $t) { Write-Host "ERROR: $t" -ForegroundColor Red; exit 1 }
 
-$candidates = @('winmm', 'dxgi', 'd3d12', 'd3d11', 'version', 'opengl32')
+# Upstream's install-amd-presr.ps1 validates exactly these seven; d3d11/opengl32
+# are extras this script accepts. dinput8 is deliberately absent: this OptiScaler
+# build has no DirectInput8Create export, so the game fails to load it.
+$candidates = @('dxgi', 'winmm', 'd3d12', 'winhttp', 'wininet', 'dbghelp', 'version', 'd3d11', 'opengl32')
 
 # A trailing separator (common when a .bat passes "%~dp0") makes Test-Path reject the
 # path as illegal, so trim it unless only the drive root is left.
