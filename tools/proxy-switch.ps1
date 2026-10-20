@@ -144,15 +144,60 @@ function Find-ProbeScript {
     return $null
 }
 
-function Find-ProfileDoc {
+$profileUrl = 'https://raw.githubusercontent.com/TheAutomatic/dlss-5-amd-project/main/assets/compatibility/proxy-profiles.json'
+$profileCache = Join-Path $env:LOCALAPPDATA 'OptiScalerNR\proxy-profiles.json'
+$script:profileSource = ''
+
+function Read-ProfileJson([string] $path) {
+    try { return (Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { return $null }
+}
+
+# Remote first, like the upstream launcher: the catalogue is maintained upstream, so the
+# local copy is only a fallback for offline runs. A conditional request keeps the common
+# case (unchanged catalogue) at one 304 with almost no payload.
+function Get-ProfileDoc {
+    try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
+    try {
+        $req = [Net.HttpWebRequest]::Create($profileUrl)
+        $req.Timeout = 3000
+        $req.ReadWriteTimeout = 3000
+        $req.UserAgent = 'OptiScaler-proxy-switch/1'
+        if (Test-Path -LiteralPath $profileCache) {
+            $req.IfModifiedSince = (Get-Item -LiteralPath $profileCache).LastWriteTimeUtc
+        }
+        $resp = $req.GetResponse()
+        $reader = New-Object IO.StreamReader($resp.GetResponseStream())
+        $text = $reader.ReadToEnd()
+        $reader.Close()
+        $resp.Close()
+        if ($text) {
+            $dir = Split-Path -Parent $profileCache
+            if ($dir -and -not (Test-Path -LiteralPath $dir)) { [void][IO.Directory]::CreateDirectory($dir) }
+            [IO.File]::WriteAllText($profileCache, $text, (New-Object Text.UTF8Encoding($false)))
+            $doc = $text | ConvertFrom-Json
+            if ($doc) { $script:profileSource = '远程（已更新）'; return $doc }
+        }
+    } catch [Net.WebException] {
+        $we = $_.Exception
+        if ($we.Response -and [int]$we.Response.StatusCode -eq 304 -and (Test-Path -LiteralPath $profileCache)) {
+            $doc = Read-ProfileJson $profileCache
+            if ($doc) { $script:profileSource = '远程（未变化）'; return $doc }
+        }
+    } catch { }
+
+    if (Test-Path -LiteralPath $profileCache) {
+        $doc = Read-ProfileJson $profileCache
+        if ($doc) { $script:profileSource = '本地缓存（离线）'; return $doc }
+    }
     foreach ($p in @((Join-Path $PSScriptRoot 'proxy-profiles.json'),
                      (Join-Path $PSScriptRoot 'assets\compatibility\proxy-profiles.json'),
-                     (Join-Path $PSScriptRoot '..\assets\compatibility\proxy-profiles.json'),
-                     'F:\hssm\amd-nr\dlss-5-amd-project\assets\compatibility\proxy-profiles.json')) {
+                     (Join-Path $PSScriptRoot '..\assets\compatibility\proxy-profiles.json'))) {
         if (Test-Path -LiteralPath $p -PathType Leaf) {
-            try { return (Get-Content -LiteralPath $p -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { }
+            $doc = Read-ProfileJson $p
+            if ($doc) { $script:profileSource = '随包文件'; return $doc }
         }
     }
+    $script:profileSource = '不可用'
     return $null
 }
 
@@ -163,8 +208,12 @@ function Find-Profile($doc, [string] $folder) {
     $segments = @($folder.Split([char[]]@('\', '/'), [StringSplitOptions]::RemoveEmptyEntries))
     foreach ($profile in @($doc.profiles)) {
         foreach ($segment in @($profile.pathSegments)) {
+            $needle = [string]$segment
+            # Store launchers append the app id to the folder ("Wuthering Waves(2002137)"),
+            # so containment is required; short segments are skipped to avoid false hits.
+            if ($needle.Length -lt 4) { continue }
             foreach ($actual in $segments) {
-                if ([string]::Equals($actual, [string]$segment, [StringComparison]::OrdinalIgnoreCase)) { return $profile }
+                if ($actual.IndexOf($needle, [StringComparison]::OrdinalIgnoreCase) -ge 0) { return $profile }
             }
         }
     }
@@ -220,7 +269,7 @@ if (-not $NoProbe) {
         }
     }
 
-    $doc = Find-ProfileDoc
+    $doc = Get-ProfileDoc
     $profile = Find-Profile $doc $Dir
     if ($profile) {
         $pref = ([string]$profile.preferred) -replace '\.dll$', ''
@@ -253,7 +302,7 @@ function Show-Advice {
         $alt = @($profile.alternatives) -join ' / '
         Info ("Wiki 档案：{0} → 首选 {1}{2}" -f $profile.id, $profile.preferred, $(if ($alt) { "；备选 $alt" } else { '' }))
     } elseif (-not $NoProbe) {
-        Info 'Wiki 档案：无此游戏记录'
+        Info ("Wiki 档案：无此游戏记录（来源：{0}）" -f $script:profileSource)
     }
     if ($probe) {
         # A size-capped probe simply has no import data; saying so adds noise.
