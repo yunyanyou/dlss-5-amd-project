@@ -246,11 +246,22 @@ function Get-WikiText {
     return $null
 }
 
+function Get-NormalizedName([string] $s) {
+    # Folders and the wiki disagree on spacing and punctuation
+    # ("GhostwireTokyo" vs "Ghostwire: Tokyo"), so compare without them.
+    # Codes: space, tab, colon, hyphen, dot, parens, quotes, acute, right apostrophe.
+    $strip = @(32, 9, 58, 45, 46, 40, 41, 39, 34, 180, 8217) | ForEach-Object { [char]$_ }
+    $t = $s.ToLowerInvariant()
+    foreach ($ch in $strip) { $t = $t.Replace([string]$ch, '') }
+    return $t
+}
+
 function Get-WikiEntry($text, [string] $folder) {
     if (-not $text) { return $null }
     # Launcher folder names carry the app id ("Wuthering Waves(2002137)").
     $names = @($folder.Split([char[]]@('\', '/'), [StringSplitOptions]::RemoveEmptyEntries) |
         ForEach-Object { $_ -replace '\s*\(\d+\)\s*$', '' } |
+        ForEach-Object { Get-NormalizedName $_ } |
         Where-Object { $_.Length -ge 4 })
     $rxLink = '\[([^\]]+)\]\([^)]*\)'
     $rxDll = '(?i)\b(dxgi|winmm|d3d12|winhttp|wininet|dbghelp|version|d3d11|opengl32)\.dll\b'
@@ -260,16 +271,17 @@ function Get-WikiEntry($text, [string] $folder) {
         if ($cells.Count -lt 2) { continue }
         $rawName = $cells[0].Trim()
         $name = if ($rawName -match $rxLink) { $Matches[1].Trim() } else { $rawName }
-        if ($name.Length -lt 4) { continue }
+        $nameNorm = Get-NormalizedName $name
+        if ($nameNorm.Length -lt 4) { continue }
         if ($cells[1].Trim() -notmatch '✅') { continue }
         $hit = $false
         foreach ($n in $names) {
-            if ($n.IndexOf($name, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
-                $name.IndexOf($n, [StringComparison]::OrdinalIgnoreCase) -ge 0) { $hit = $true; break }
+            if ($n.Contains($nameNorm) -or $nameNorm.Contains($n)) { $hit = $true; break }
         }
         if (-not $hit) { continue }
         $dlls = @([regex]::Matches($line, $rxDll) | ForEach-Object { $_.Groups[1].Value.ToLower() + '.dll' } | Select-Object -Unique)
-        if ($dlls.Count -eq 0) { continue }
+        # Keep the entry even without a DLL: "listed but no proxy recorded" is more
+        # useful than "no record at all".
         return [pscustomobject]@{ name = $name; proxies = $dlls }
     }
     return $null
@@ -338,7 +350,7 @@ if (-not $NoProbe) {
     } else {
         # No curated profile: fall back to the wiki compatibility table.
         $wikiHit = Get-WikiEntry (Get-WikiText) $Dir
-        if ($wikiHit) { $recommended = [string]$wikiHit.proxies[0] }
+        if ($wikiHit -and @($wikiHit.proxies).Count -gt 0) { $recommended = [string]$wikiHit.proxies[0] }
     }
 }
 
@@ -361,7 +373,11 @@ function Show-Advice {
         $alt = @($profile.alternatives) -join ' / '
         Info ("Wiki 档案：{0} → 首选 {1}{2}" -f $profile.id, $profile.preferred, $(if ($alt) { "；备选 $alt" } else { '' }))
     } elseif ($wikiHit) {
-        Info ("Wiki 兼容列表：{0} → {1}" -f $wikiHit.name, ($wikiHit.proxies -join ' / '))
+        if (@($wikiHit.proxies).Count -gt 0) {
+            Info ("Wiki 兼容列表：{0} → {1}" -f $wikiHit.name, ($wikiHit.proxies -join ' / '))
+        } else {
+            Info ("Wiki 兼容列表：{0}（未注明 DLL，可任选尝试）" -f $wikiHit.name)
+        }
     } elseif (-not $NoProbe) {
         Info ("Wiki 档案：无此游戏记录（来源：{0}）" -f $script:profileSource)
     }
