@@ -17,10 +17,6 @@ echo   4. winhttp.dll
 echo   5. wininet.dll
 echo   6. dbghelp.dll
 echo   7. version.dll
-echo   8. d3d11.dll     非上游默认列表
-echo   9. opengl32.dll  非上游默认列表
-echo   0. 查看当前加载器
-echo   q. 取消
 echo.
 echo  不要使用 dinput8.dll：此版本没有对应导出，游戏会加载失败。
 echo.
@@ -33,20 +29,10 @@ if /i "%CHOICE%"=="4" set "LOADER=winhttp"
 if /i "%CHOICE%"=="5" set "LOADER=wininet"
 if /i "%CHOICE%"=="6" set "LOADER=dbghelp"
 if /i "%CHOICE%"=="7" set "LOADER=version"
-if /i "%CHOICE%"=="8" set "LOADER=d3d11"
-if /i "%CHOICE%"=="9" set "LOADER=opengl32"
-if "%CHOICE%"=="0" goto show
-if /i "%CHOICE%"=="q" exit /b
 if not defined LOADER goto menu
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0switch-loader.ps1" -Name %LOADER% -Dir "%~dp0."
 goto done
-
-:show
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0switch-loader.ps1" -Name winmm -Dir "%~dp0." -List
-echo.
-pause
-goto menu
 
 :passthrough
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0switch-loader.ps1" %*
