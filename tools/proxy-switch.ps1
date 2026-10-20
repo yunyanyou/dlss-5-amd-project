@@ -280,7 +280,6 @@ function Invoke-Switch([string] $targetName) {
         Step "已改名：$loaderName.dll -> $targetName.dll"
     }
     Info '重启游戏生效。同一目录只能有一个加载器。'
-    Info '本脚本不触碰权重目录（dlssnr-amd / native-game-tiled-assets）。'
 }
 
 if ($Interactive) {
