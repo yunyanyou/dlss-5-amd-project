@@ -70,7 +70,11 @@ try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 function Step([string] $t) { Write-Host "==> $t" -ForegroundColor Cyan }
 function Info([string] $t) { Write-Host "    $t" }
 function Warn([string] $t) { Write-Host "    ! $t" -ForegroundColor Yellow }
-function Die([string] $t) { Write-Host "错误：$t" -ForegroundColor Red; exit 1 }
+function Die([string] $t) {
+    Write-Host "错误：$t" -ForegroundColor Red
+    if ($Interactive) { Wait-Key }
+    exit 1
+}
 
 # Upstream's install-amd-presr.ps1 validates exactly these seven; d3d11/opengl32
 # are extras this script accepts. dinput8 is deliberately absent: this OptiScaler
@@ -90,6 +94,28 @@ function Resolve-GameExe([string] $folder) {
         Where-Object { $_.Name -notmatch '(?i)unins|setup|launcher|crash|report|update|helper' } |
         Sort-Object Length -Descending |
         Select-Object -First 1
+}
+
+function Select-GameExe([string] $folder) {
+    try {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+        $dlg = New-Object System.Windows.Forms.OpenFileDialog
+        $dlg.Title = '选择游戏主程序（EXE）'
+        $dlg.Filter = '可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*'
+        $dlg.CheckFileExists = $true
+        if (Test-Path -LiteralPath $folder) { $dlg.InitialDirectory = $folder }
+        if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { return $dlg.FileName }
+    } catch {
+        Warn ('无法打开文件选择框：' + $_.Exception.Message)
+    }
+    return $null
+}
+
+function Wait-Key {
+    Write-Host ''
+    Write-Host '请按任意键继续...' -NoNewline
+    try { $null = [Console]::ReadKey($true) } catch { }
+    Write-Host ''
 }
 
 function Find-ProbeScript {
@@ -142,6 +168,8 @@ if (-not $NoProbe) {
         $found = Resolve-GameExe $Dir
         if ($found) { $found.FullName } else { $null }
     }
+    # No obvious game EXE: ask for one, like the upstream launcher does.
+    if (-not $gameExePath -and $Interactive) { $gameExePath = Select-GameExe $Dir }
     if ($gameExePath -and (Test-Path -LiteralPath $gameExePath -PathType Leaf)) {
         $exeInfo = Get-Item -LiteralPath $gameExePath
         $probeScript = Find-ProbeScript
@@ -291,10 +319,11 @@ if ($Interactive) {
     }
     Write-Host ''
     $choice = Read-Host '请选择（直接回车取消）'
-    if ([string]::IsNullOrWhiteSpace($choice)) { Info '已取消。'; exit 0 }
+    if ([string]::IsNullOrWhiteSpace($choice)) { Info '已取消。'; Wait-Key; exit 0 }
     $pick = 0
     if (-not [int]::TryParse($choice.Trim(), [ref]$pick) -or $pick -lt 1 -or $pick -gt 7) { Die "无效选择：$choice" }
     Invoke-Switch $candidates[$pick - 1]
+    Wait-Key
     exit 0
 }
 
