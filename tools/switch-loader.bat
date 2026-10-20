@@ -31,11 +31,11 @@ if "%CHOICE%"=="0" goto show
 if "%CHOICE%"=="9" exit /b
 if not defined LOADER goto menu
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0switch-loader.ps1" -Name %LOADER% -Dir "%~dp0"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0switch-loader.ps1" -Name %LOADER% -Dir "%~dp0."
 goto done
 
 :show
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0switch-loader.ps1" -Name winmm -Dir "%~dp0" -List
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0switch-loader.ps1" -Name winmm -Dir "%~dp0." -List
 echo.
 pause
 goto menu

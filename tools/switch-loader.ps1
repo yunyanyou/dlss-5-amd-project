@@ -50,6 +50,9 @@ function Die([string] $t) { Write-Host "ERROR: $t" -ForegroundColor Red; exit 1 
 
 $candidates = @('winmm', 'dxgi', 'd3d12', 'd3d11', 'version', 'opengl32')
 
+# A trailing separator (common when a .bat passes "%~dp0") makes Test-Path reject the
+# path as illegal, so trim it unless only the drive root is left.
+if ($Dir.Length -gt 3) { $Dir = $Dir.TrimEnd('\', '/') }
 if (-not (Test-Path -LiteralPath $Dir -PathType Container)) { Die "Folder not found: $Dir" }
 $Dir = (Resolve-Path -LiteralPath $Dir).Path
 
