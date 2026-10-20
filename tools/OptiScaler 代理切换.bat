@@ -8,13 +8,13 @@ rem With arguments: pass them straight through.
 
 if not "%~1"=="" goto passthrough
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0switch-loader.ps1" -Interactive -Dir "%~dp0."
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0proxy-switch.ps1" -Interactive -Dir "%~dp0."
 echo.
 pause
 exit /b
 
 :passthrough
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0switch-loader.ps1" %*
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0proxy-switch.ps1" %*
 
 :done
 rem Keep the window open only when double-clicked (no arguments).
