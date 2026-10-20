@@ -192,7 +192,8 @@ function Get-Marks([string] $n) {
         $a = $advice[$key]
         if ($a.ContainsKey('wiki') -and $a.wiki -eq 'preferred') { $marks += '推荐' }
         elseif ($a.ContainsKey('wiki') -and $a.wiki -eq 'alternative') { $marks += '备选' }
-        if ($a.ContainsKey('imported') -and $a.imported) { $marks += '游戏导入' }
+        if ($a.ContainsKey('reason') -and ([string]$a.reason) -like 'existing*') { $marks += '已安装' }
+        elseif ($a.ContainsKey('imported') -and $a.imported) { $marks += '游戏导入' }
     }
     if ($marks.Count -eq 0) { return '' }
     return '  [' + ($marks -join '][') + ']'
@@ -203,15 +204,13 @@ function Show-Advice {
     if ($profile) {
         $alt = @($profile.alternatives) -join ' / '
         Info ("Wiki 档案：{0} → 首选 {1}{2}" -f $profile.id, $profile.preferred, $(if ($alt) { "；备选 $alt" } else { '' }))
-        if ($profile.notesZh) { Info ("  " + $profile.notesZh) }
     } elseif (-not $NoProbe) {
         Info 'Wiki 档案：无此游戏记录'
     }
     if ($probe) {
+        # A size-capped probe simply has no import data; saying so adds noise.
         $capped = $probe.pe -and $probe.pe.error -eq 'size-cap'
-        if ($capped) {
-            Warn ('PE 探测：{0} 超过探测的 8 MB 上限，已跳过导入表（以 Wiki 档案为准）' -f $exeInfo.Name)
-        } else {
+        if (-not $capped) {
             $imported = @($probe.candidates | ForEach-Object { [string]$_.name }) -join ', '
             if ($imported) { Info ("PE 探测：游戏导入 {0}" -f $imported) }
             else { Info 'PE 探测：未看到候选名被导入（可用任意名字尝试）' }
