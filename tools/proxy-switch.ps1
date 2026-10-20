@@ -89,10 +89,26 @@ $Dir = (Resolve-Path -LiteralPath $Dir).Path
 
 # ---------------------------------------------------------------- probing
 
+# Mirrors tools/install/library-scan.ps1: upstream's three exclusion groups plus its
+# shipping-name ranking, so a large editor/tool EXE cannot win over the game build.
+$exeExcludeStart = '(?i)^(setup|install|unins|crash|unitycrash|vc_redist|dxsetup|easyanticheat|eac_|battleye|beclient|beservice|unrealcef|webview|cefsubprocess|shadercompile|bugsplat|crs-|redprelauncher|larilauncher|2klauncher).*\.exe$'
+$exeExcludeEnd = '(?i)(prelauncher|launcher|crashreport|crashhandler|crs-handler|errorreporter|updater|patcher|uninstaller|benchmark|dedicatedserver)\.exe$'
+$exeExcludeName = '(?i)^(gamelaunchhelper|person-worker|activationui|cleanup|touchup|config)\.exe$'
+
+function Get-ExeRank([string] $name) {
+    if ($name -match '(?i)WinGDK-Shipping\.exe$') { return 0 }
+    if ($name -match '(?i)-Win64-Shipping\.exe$') { return 1 }
+    if ($name -match '(?i)Shipping\.exe$') { return 2 }
+    return 3
+}
+
 function Resolve-GameExe([string] $folder) {
     Get-ChildItem -LiteralPath $folder -Filter *.exe -File -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -notmatch '(?i)unins|setup|launcher|crash|report|update|helper' } |
-        Sort-Object Length -Descending |
+        Where-Object {
+            $n = $_.Name
+            ($n -notmatch $exeExcludeStart) -and ($n -notmatch $exeExcludeEnd) -and ($n -notmatch $exeExcludeName)
+        } |
+        Sort-Object @{ Expression = { Get-ExeRank $_.Name } }, @{ Expression = { $_.Length }; Descending = $true } |
         Select-Object -First 1
 }
 
