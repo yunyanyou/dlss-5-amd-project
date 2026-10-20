@@ -165,9 +165,13 @@ if (-not $NoProbe) {
             if ($probe) {
                 foreach ($c in @($probe.candidates)) {
                     $n = ([string]$c.name) -replace '\.dll$', ''
-                    if ($n) { $advice[$n] = @{ imported = $true; reason = [string]$c.reason } }
+                    $reason = [string]$c.reason
+                    if ($n) { $advice[$n] = @{ imported = $true; reason = $reason } }
+                    # Only a real import counts as a recommendation. "existing project
+                    # proxy" just means this folder already has a loader; it says nothing
+                    # about which name the game accepts.
+                    if (-not $recommended -and $reason -like 'imported*') { $recommended = $n + '.dll' }
                 }
-                if ($probe.recommend) { $recommended = [string]$probe.recommend }
             }
         }
     }
