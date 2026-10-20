@@ -220,9 +220,65 @@ function Find-Profile($doc, [string] $folder) {
     return $null
 }
 
+# The profile catalogue only covers a handful of games, while the OptiScaler wiki
+# lists every tested one. The wiki is an asciidoc table: cache it for a week and
+# pull the proxy names out of the note column when no profile matched.
+$wikiUrl = 'https://raw.githubusercontent.com/wiki/optiscaler/OptiScaler/Compatibility-List.md'
+$wikiCache = Join-Path $env:LOCALAPPDATA 'OptiScalerNR\compatibility-list.md'
+$wikiMaxAgeDays = 7
+
+function Get-WikiText {
+    if (Test-Path -LiteralPath $wikiCache) {
+        if (((Get-Date) - (Get-Item -LiteralPath $wikiCache).LastWriteTime).TotalDays -lt $wikiMaxAgeDays) {
+            return (Get-Content -LiteralPath $wikiCache -Raw -Encoding UTF8)
+        }
+    }
+    try {
+        $text = (Invoke-WebRequest -Uri $wikiUrl -UseBasicParsing -TimeoutSec 10).Content
+        if ($text) {
+            $dir = Split-Path -Parent $wikiCache
+            if ($dir -and -not (Test-Path -LiteralPath $dir)) { [void][IO.Directory]::CreateDirectory($dir) }
+            [IO.File]::WriteAllText($wikiCache, $text, (New-Object Text.UTF8Encoding($false)))
+            return $text
+        }
+    } catch { }
+    if (Test-Path -LiteralPath $wikiCache) { return (Get-Content -LiteralPath $wikiCache -Raw -Encoding UTF8) }
+    return $null
+}
+
+function Get-WikiEntry($text, [string] $folder) {
+    if (-not $text) { return $null }
+    # Launcher folder names carry the app id ("Wuthering Waves(2002137)").
+    $names = @($folder.Split([char[]]@('\', '/'), [StringSplitOptions]::RemoveEmptyEntries) |
+        ForEach-Object { $_ -replace '\s*\(\d+\)\s*$', '' } |
+        Where-Object { $_.Length -ge 4 })
+    $rxLink = '\[([^\]]+)\]\([^)]*\)'
+    $rxDll = '(?i)\b(dxgi|winmm|d3d12|winhttp|wininet|dbghelp|version|d3d11|opengl32)\.dll\b'
+    foreach ($line in ($text -split "`n")) {
+        if ($line -notmatch '^\s*\|') { continue }
+        $cells = $line.Trim().Trim('|').Split('|')
+        if ($cells.Count -lt 2) { continue }
+        $rawName = $cells[0].Trim()
+        $name = if ($rawName -match $rxLink) { $Matches[1].Trim() } else { $rawName }
+        if ($name.Length -lt 4) { continue }
+        if ($cells[1].Trim() -notmatch '✅') { continue }
+        $hit = $false
+        foreach ($n in $names) {
+            if ($n.IndexOf($name, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+                $name.IndexOf($n, [StringComparison]::OrdinalIgnoreCase) -ge 0) { $hit = $true; break }
+        }
+        if (-not $hit) { continue }
+        $dlls = @([regex]::Matches($line, $rxDll) | ForEach-Object { $_.Groups[1].Value.ToLower() + '.dll' } | Select-Object -Unique)
+        if ($dlls.Count -eq 0) { continue }
+        return [pscustomobject]@{ name = $name; proxies = $dlls }
+    }
+    return $null
+}
+
 $advice = @{}
 $recommended = $null
 $profile = $null
+$wikiHit = $null
 $probe = $null
 $exeInfo = $null
 
@@ -279,6 +335,10 @@ if (-not $NoProbe) {
             if ($advice.ContainsKey($a)) { $advice[$a].wiki = 'alternative' } else { $advice[$a] = @{ wiki = 'alternative' } }
         }
         $recommended = [string]$profile.preferred
+    } else {
+        # No curated profile: fall back to the wiki compatibility table.
+        $wikiHit = Get-WikiEntry (Get-WikiText) $Dir
+        if ($wikiHit) { $recommended = [string]$wikiHit.proxies[0] }
     }
 }
 
@@ -301,6 +361,8 @@ function Show-Advice {
     if ($profile) {
         $alt = @($profile.alternatives) -join ' / '
         Info ("Wiki 档案：{0} → 首选 {1}{2}" -f $profile.id, $profile.preferred, $(if ($alt) { "；备选 $alt" } else { '' }))
+    } elseif ($wikiHit) {
+        Info ("Wiki 兼容列表：{0} → {1}" -f $wikiHit.name, ($wikiHit.proxies -join ' / '))
     } elseif (-not $NoProbe) {
         Info ("Wiki 档案：无此游戏记录（来源：{0}）" -f $script:profileSource)
     }
