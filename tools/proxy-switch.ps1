@@ -64,6 +64,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 Set-StrictMode -Version Latest
 try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
 
@@ -145,50 +146,24 @@ function Find-ProbeScript {
 }
 
 $profileUrl = 'https://raw.githubusercontent.com/TheAutomatic/dlss-5-amd-project/main/assets/compatibility/proxy-profiles.json'
-$profileCache = Join-Path $env:LOCALAPPDATA 'OptiScalerNR\proxy-profiles.json'
 $script:profileSource = ''
 
 function Read-ProfileJson([string] $path) {
     try { return (Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { return $null }
 }
 
-# Remote first, like the upstream launcher: the catalogue is maintained upstream, so the
-# local copy is only a fallback for offline runs. A conditional request keeps the common
-# case (unchanged catalogue) at one 304 with almost no payload.
+# Remote only: nothing is written to disk, so the tool stays self-contained and never
+# leaves state on the machine. When the network is unavailable the bundled copy is used.
 function Get-ProfileDoc {
     try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
     try {
-        $req = [Net.HttpWebRequest]::Create($profileUrl)
-        $req.Timeout = 3000
-        $req.ReadWriteTimeout = 3000
-        $req.UserAgent = 'OptiScaler-proxy-switch/1'
-        if (Test-Path -LiteralPath $profileCache) {
-            $req.IfModifiedSince = (Get-Item -LiteralPath $profileCache).LastWriteTimeUtc
-        }
-        $resp = $req.GetResponse()
-        $reader = New-Object IO.StreamReader($resp.GetResponseStream())
-        $text = $reader.ReadToEnd()
-        $reader.Close()
-        $resp.Close()
+        $text = (Invoke-WebRequest -Uri $profileUrl -UseBasicParsing -TimeoutSec 5).Content
         if ($text) {
-            $dir = Split-Path -Parent $profileCache
-            if ($dir -and -not (Test-Path -LiteralPath $dir)) { [void][IO.Directory]::CreateDirectory($dir) }
-            [IO.File]::WriteAllText($profileCache, $text, (New-Object Text.UTF8Encoding($false)))
             $doc = $text | ConvertFrom-Json
-            if ($doc) { $script:profileSource = '远程（已更新）'; return $doc }
-        }
-    } catch [Net.WebException] {
-        $we = $_.Exception
-        if ($we.Response -and [int]$we.Response.StatusCode -eq 304 -and (Test-Path -LiteralPath $profileCache)) {
-            $doc = Read-ProfileJson $profileCache
-            if ($doc) { $script:profileSource = '远程（未变化）'; return $doc }
+            if ($doc) { $script:profileSource = '远程'; return $doc }
         }
     } catch { }
 
-    if (Test-Path -LiteralPath $profileCache) {
-        $doc = Read-ProfileJson $profileCache
-        if ($doc) { $script:profileSource = '本地缓存（离线）'; return $doc }
-    }
     foreach ($p in @((Join-Path $PSScriptRoot 'proxy-profiles.json'),
                      (Join-Path $PSScriptRoot 'assets\compatibility\proxy-profiles.json'),
                      (Join-Path $PSScriptRoot '..\assets\compatibility\proxy-profiles.json'))) {
@@ -224,26 +199,9 @@ function Find-Profile($doc, [string] $folder) {
 # lists every tested one. The wiki is an asciidoc table: cache it for a week and
 # pull the proxy names out of the note column when no profile matched.
 $wikiUrl = 'https://raw.githubusercontent.com/wiki/optiscaler/OptiScaler/Compatibility-List.md'
-$wikiCache = Join-Path $env:LOCALAPPDATA 'OptiScalerNR\compatibility-list.md'
-$wikiMaxAgeDays = 7
 
 function Get-WikiText {
-    if (Test-Path -LiteralPath $wikiCache) {
-        if (((Get-Date) - (Get-Item -LiteralPath $wikiCache).LastWriteTime).TotalDays -lt $wikiMaxAgeDays) {
-            return (Get-Content -LiteralPath $wikiCache -Raw -Encoding UTF8)
-        }
-    }
-    try {
-        $text = (Invoke-WebRequest -Uri $wikiUrl -UseBasicParsing -TimeoutSec 10).Content
-        if ($text) {
-            $dir = Split-Path -Parent $wikiCache
-            if ($dir -and -not (Test-Path -LiteralPath $dir)) { [void][IO.Directory]::CreateDirectory($dir) }
-            [IO.File]::WriteAllText($wikiCache, $text, (New-Object Text.UTF8Encoding($false)))
-            return $text
-        }
-    } catch { }
-    if (Test-Path -LiteralPath $wikiCache) { return (Get-Content -LiteralPath $wikiCache -Raw -Encoding UTF8) }
-    return $null
+    try { return (Invoke-WebRequest -Uri $wikiUrl -UseBasicParsing -TimeoutSec 10).Content } catch { return $null }
 }
 
 function Get-NormalizedName([string] $s) {
@@ -291,26 +249,9 @@ function Get-WikiEntry($text, [string] $folder) {
 # returns true and OptiScaler then disables Dxgi/Vulkan spoofing itself. The table is
 # documentation only, so this is an advisory check, not a guarantee.
 $optiUrl = 'https://raw.githubusercontent.com/optiscaler/OptiPatcher/main/GameSupport.md'
-$optiCache = Join-Path $env:LOCALAPPDATA 'OptiScalerNR\optipatcher-games.md'
-$optiMaxAgeDays = 7
 
 function Get-OptiText {
-    if (Test-Path -LiteralPath $optiCache) {
-        if (((Get-Date) - (Get-Item -LiteralPath $optiCache).LastWriteTime).TotalDays -lt $optiMaxAgeDays) {
-            return (Get-Content -LiteralPath $optiCache -Raw -Encoding UTF8)
-        }
-    }
-    try {
-        $text = (Invoke-WebRequest -Uri $optiUrl -UseBasicParsing -TimeoutSec 10).Content
-        if ($text) {
-            $dir = Split-Path -Parent $optiCache
-            if ($dir -and -not (Test-Path -LiteralPath $dir)) { [void][IO.Directory]::CreateDirectory($dir) }
-            [IO.File]::WriteAllText($optiCache, $text, (New-Object Text.UTF8Encoding($false)))
-            return $text
-        }
-    } catch { }
-    if (Test-Path -LiteralPath $optiCache) { return (Get-Content -LiteralPath $optiCache -Raw -Encoding UTF8) }
-    return $null
+    try { return (Invoke-WebRequest -Uri $optiUrl -UseBasicParsing -TimeoutSec 10).Content } catch { return $null }
 }
 
 function Get-OptiSupport($text, [string] $folder) {
