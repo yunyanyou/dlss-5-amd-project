@@ -902,11 +902,22 @@ void RenderMenu(Config* config, float menuResScale)
                 const bool hasSmall = Backend::LmxxfHasSmallWeights(weightsDir);
 
                 int networkModel = std::clamp(int(config->LmxxfNetworkModel.value_or_default()), 0, 1);
-                // Keep the stored choice only while that model is actually installed.
+                // Persist the correction: the runtime reads the config value, not the
+                // display copy, so a Small-only install must not stay on Original.
                 if (networkModel == 0 && !hasOriginal && hasSmall)
+                {
                     networkModel = 1;
+                    config->LmxxfNetworkModel = 1;
+                    CfgKey::PutEnvString(CfgKey::LmxxfNetworkModel, "1");
+                    AmdBridge::InvalidateHistory();
+                }
                 else if (networkModel == 1 && !hasSmall && hasOriginal)
+                {
                     networkModel = 0;
+                    config->LmxxfNetworkModel = 0;
+                    CfgKey::PutEnvString(CfgKey::LmxxfNetworkModel, "0");
+                    AmdBridge::InvalidateHistory();
+                }
 
                 const char* currentModel = networkModel == 1 ? "Small (310.9.16, 31 blocks)" : "Original (71 blocks)";
                 if (MenuUi::BeginCombo("Network model##lmxxf", currentModel))

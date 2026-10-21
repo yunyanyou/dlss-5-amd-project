@@ -367,8 +367,8 @@ DLSS5_FAST_NUMERIC=true
 ; Requested network passes per frame: 1..3, default 1. More style and extra frame buffers. See third-pass prediction below.
 ; Adaptive ViT reuse is disabled with 2/3 passes. GPU network timing includes all passes.
 ; Original or Small model. Small runs once; Original pass preference is retained.
-; 0 = Original (default), 1 = Small (requires native-game-tiled-assets/small)
-LmxxfNetworkModel=0
+; 0 = Original, 1 = Small (requires native-game-tiled-assets/small). This package ships Small.
+LmxxfNetworkModel=1
 DLSS5_MULTI_PASS=1
 ; Only at 3 passes: true runs two real network passes then predicts the third locally (lossy, default true).
 ; false runs three real passes. No effect at 1/2 passes. Changing this rebuilds the network.
