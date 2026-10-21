@@ -286,7 +286,12 @@ $wikiHit = $null
 $probe = $null
 $exeInfo = $null
 
+$busyShown = $false
 if (-not $NoProbe) {
+    if (-not [Console]::IsOutputRedirected) {
+        Write-Host '  正在获取 Wiki 与支持列表...' -NoNewline -ForegroundColor DarkGray
+        $busyShown = $true
+    }
     # Not $exePath: proxy-probe.ps1 declares param($ExePath), and PowerShell names
     # are case-insensitive, so dot-sourcing would blank this variable.
     $gameExePath = if ($Exe) { $Exe } else {
@@ -346,6 +351,7 @@ if (-not $NoProbe) {
         $optiSupport = Get-OptiSupport (Get-OptiText) $Dir
     }
 }
+if ($busyShown) { Write-Host ("`r" + (' ' * 40) + "`r") -NoNewline }
 
 function Get-Marks([string] $n) {
     $marks = @()
