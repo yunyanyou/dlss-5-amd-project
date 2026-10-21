@@ -287,8 +287,59 @@ function Get-WikiEntry($text, [string] $folder) {
     return $null
 }
 
+# OptiPatcher support list. Upstream decides at runtime: the plugin's PatchResult()
+# returns true and OptiScaler then disables Dxgi/Vulkan spoofing itself. The table is
+# documentation only, so this is an advisory check, not a guarantee.
+$optiUrl = 'https://raw.githubusercontent.com/optiscaler/OptiPatcher/main/GameSupport.md'
+$optiCache = Join-Path $env:LOCALAPPDATA 'OptiScalerNR\optipatcher-games.md'
+$optiMaxAgeDays = 7
+
+function Get-OptiText {
+    if (Test-Path -LiteralPath $optiCache) {
+        if (((Get-Date) - (Get-Item -LiteralPath $optiCache).LastWriteTime).TotalDays -lt $optiMaxAgeDays) {
+            return (Get-Content -LiteralPath $optiCache -Raw -Encoding UTF8)
+        }
+    }
+    try {
+        $text = (Invoke-WebRequest -Uri $optiUrl -UseBasicParsing -TimeoutSec 10).Content
+        if ($text) {
+            $dir = Split-Path -Parent $optiCache
+            if ($dir -and -not (Test-Path -LiteralPath $dir)) { [void][IO.Directory]::CreateDirectory($dir) }
+            [IO.File]::WriteAllText($optiCache, $text, (New-Object Text.UTF8Encoding($false)))
+            return $text
+        }
+    } catch { }
+    if (Test-Path -LiteralPath $optiCache) { return (Get-Content -LiteralPath $optiCache -Raw -Encoding UTF8) }
+    return $null
+}
+
+function Get-OptiSupport($text, [string] $folder) {
+    if (-not $text) { return $null }
+    $names = @($folder.Split([char[]]@('\', '/'), [StringSplitOptions]::RemoveEmptyEntries) |
+        ForEach-Object { $_ -replace '\s*\(\d+\)\s*$', '' } |
+        ForEach-Object { Get-NormalizedName $_ } |
+        Where-Object { $_.Length -ge 4 })
+    foreach ($line in ($text -split "`n")) {
+        if ($line -notmatch '^\s*\|') { continue }
+        $cells = $line.Trim().Trim('|').Split('|')
+        if ($cells.Count -lt 4) { continue }
+        $name = $cells[0].Trim()
+        if ($name -match '^\s*Game\s*$' -or $name -match '^[-:\s]+$') { continue }
+        $nameNorm = Get-NormalizedName $name
+        if ($nameNorm.Length -lt 4) { continue }
+        $hit = $false
+        foreach ($n in $names) {
+            if ($n.Contains($nameNorm) -or $nameNorm.Contains($n)) { $hit = $true; break }
+        }
+        if (-not $hit) { continue }
+        return [pscustomobject]@{ name = $name; dlss = $cells[1].Trim(); fg = $cells[2].Trim() }
+    }
+    return $null
+}
+
 $advice = @{}
 $recommended = $null
+$optiSupport = $null
 $profile = $null
 $wikiHit = $null
 $probe = $null
@@ -351,6 +402,7 @@ if (-not $NoProbe) {
         # No curated profile: fall back to the wiki compatibility table.
         $wikiHit = Get-WikiEntry (Get-WikiText) $Dir
         if ($wikiHit -and @($wikiHit.proxies).Count -gt 0) { $recommended = [string]$wikiHit.proxies[0] }
+        $optiSupport = Get-OptiSupport (Get-OptiText) $Dir
     }
 }
 
@@ -390,6 +442,20 @@ function Show-Advice {
             else { Info 'PE 探测：未看到候选名被导入（可用任意名字尝试）' }
         }
         foreach ($c in @($probe.conflicts)) { Warn ("同名 DLL 冲突：{0}（{1}）" -f $c.name, $c.detail) }
+    }
+    # The DLL lives in the game folder (flat package) or in OptiScaler\ (official layout).
+    $optiAsi = @((Join-Path $Dir 'plugins\OptiPatcher.asi'),
+                 (Join-Path $Dir 'OptiScaler\plugins\OptiPatcher.asi')) |
+        Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    if ($optiAsi) {
+        Info ("OptiPatcher：已安装（{0}）" -f $optiAsi.Substring($Dir.Length).TrimStart('\'))
+    } else {
+        Info 'OptiPatcher：未安装（plugins\OptiPatcher.asi 缺失）'
+    }
+    if ($optiSupport) {
+        Info ("支持列表：{0} → DLSS {1} / DLSS-FG {2}（生效后会自动关闭 spoofing）" -f $optiSupport.name, $optiSupport.dlss, $optiSupport.fg)
+    } elseif (-not $NoProbe) {
+        Info '支持列表：未收录（不支持时仍走 spoofing）'
     }
     if ($recommended) { Info ("推荐：{0}" -f $recommended) -ForegroundColor Green }
 }
