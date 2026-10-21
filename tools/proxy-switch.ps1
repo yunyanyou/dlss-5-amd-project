@@ -395,7 +395,7 @@ function Show-Advice {
     if ($optiSupport) {
         Info ("OptiPatcher：{0}，支持 DLSS {1} / DLSS-FG {2}" -f $optiState, $optiSupport.dlss, $optiSupport.fg)
     } elseif (-not $NoProbe) {
-        Info ("OptiPatcher：{0}，未收录" -f $optiState)
+        Info ("OptiPatcher：{0}，未收录此游戏" -f $optiState)
     } else {
         Info ("OptiPatcher：{0}" -f $optiState)
     }
