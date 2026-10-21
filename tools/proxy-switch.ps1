@@ -391,15 +391,13 @@ function Show-Advice {
     $optiAsi = @((Join-Path $Dir 'plugins\OptiPatcher.asi'),
                  (Join-Path $Dir 'OptiScaler\plugins\OptiPatcher.asi')) |
         Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-    if ($optiAsi) {
-        Info 'OptiPatcher：已安装'
-    } else {
-        Info 'OptiPatcher：未安装'
-    }
+    $optiState = if ($optiAsi) { '已安装' } else { '未安装' }
     if ($optiSupport) {
-        Info ("支持列表：{0} → DLSS {1} / DLSS-FG {2}（生效后会自动关闭 spoofing）" -f $optiSupport.name, $optiSupport.dlss, $optiSupport.fg)
+        Info ("OptiPatcher：{0}，支持 DLSS {1} / DLSS-FG {2}" -f $optiState, $optiSupport.dlss, $optiSupport.fg)
     } elseif (-not $NoProbe) {
-        Info '支持列表：未收录'
+        Info ("OptiPatcher：{0}，未收录" -f $optiState)
+    } else {
+        Info ("OptiPatcher：{0}" -f $optiState)
     }
     if ($recommended) { Info ("推荐：{0}" -f $recommended) -ForegroundColor Green }
 }
