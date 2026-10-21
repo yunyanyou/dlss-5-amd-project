@@ -286,11 +286,9 @@ $wikiHit = $null
 $probe = $null
 $exeInfo = $null
 
-$busyShown = $false
 if (-not $NoProbe) {
     if (-not [Console]::IsOutputRedirected) {
-        Write-Host '  正在获取 Wiki 与支持列表...' -NoNewline -ForegroundColor DarkGray
-        $busyShown = $true
+        Write-Host '  正在获取 Wiki 与支持列表...' -ForegroundColor DarkGray
     }
     # Not $exePath: proxy-probe.ps1 declares param($ExePath), and PowerShell names
     # are case-insensitive, so dot-sourcing would blank this variable.
@@ -351,7 +349,6 @@ if (-not $NoProbe) {
         $optiSupport = Get-OptiSupport (Get-OptiText) $Dir
     }
 }
-if ($busyShown) { Write-Host ("`r" + (' ' * 40) + "`r") -NoNewline }
 
 function Get-Marks([string] $n) {
     $marks = @()
@@ -378,7 +375,7 @@ function Show-Advice {
             Info ("Wiki 兼容列表：{0}（未注明 DLL，可任选尝试）" -f $wikiHit.name)
         }
     } elseif (-not $NoProbe) {
-        Info ("Wiki 档案：无此游戏记录（来源：{0}）" -f $script:profileSource)
+        Info 'Wiki 档案：无此游戏记录'
     }
     if ($probe) {
         # A size-capped probe simply has no import data; saying so adds noise.
@@ -395,14 +392,14 @@ function Show-Advice {
                  (Join-Path $Dir 'OptiScaler\plugins\OptiPatcher.asi')) |
         Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
     if ($optiAsi) {
-        Info ("OptiPatcher：已安装（{0}）" -f $optiAsi.Substring($Dir.Length).TrimStart('\'))
+        Info 'OptiPatcher：已安装'
     } else {
-        Info 'OptiPatcher：未安装（plugins\OptiPatcher.asi 缺失）'
+        Info 'OptiPatcher：未安装'
     }
     if ($optiSupport) {
         Info ("支持列表：{0} → DLSS {1} / DLSS-FG {2}（生效后会自动关闭 spoofing）" -f $optiSupport.name, $optiSupport.dlss, $optiSupport.fg)
     } elseif (-not $NoProbe) {
-        Info '支持列表：未收录（不支持时仍走 spoofing）'
+        Info '支持列表：未收录'
     }
     if ($recommended) { Info ("推荐：{0}" -f $recommended) -ForegroundColor Green }
 }
