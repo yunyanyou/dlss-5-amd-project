@@ -355,7 +355,12 @@ static bool MochizukiFloatControl(const char* label, std::string_view key, float
         *value = percent / 100.f;
         return true;
     }
-    return MenuUi::SliderFloat(label, value, low, high, "%.2f");
+    const bool changed = MenuUi::SliderFloat(label, value, low, high, "%.2f");
+    if (key == CfgKey::MochizukiRenoStyleHighlightGuard)
+        HelpMarker("The most the model may darken a highlight, in stops: lower holds highlights more (0.25 is strong), 2 changes nothing and 0 is off. HDR games on the Display codec only (Codec Auto picks it for most), and only where the model darkens bright areas, as the Natural and Cinematic styles do. This is not Max ratio, the native route's ratio limit.");
+    else if (key == CfgKey::MochizukiMaxRatio)
+        HelpMarker("Native route highlight ratio limit (MaxRatio), not the RenoDX Highlight guard in stops.");
+    return changed;
 }
 
 
@@ -573,9 +578,7 @@ static void RenderEarlyCommandListWrap(Config* config)
     if (config->LmxxfEarlyExeWrap.value_for_config() != CompatibilityMenuBaseline(config).earlyExe)
         RenderNrCompatibilityNotice("Save Settings and restart the game to apply early wrapping.");
     // Independent sub-item: any-module early wrap (LmxxfEarlyAnyModuleWrap).
-    std::string exeLower = State::Instance().gameExe;
-    for (char& c : exeLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    const bool autoAny = exeLower.find("forza") != std::string::npos;
+    const bool autoAny = GetNrGamePolicy(State::Instance().gameExe).earlyAnyModuleWrap;
     const char* anyNames[] = {autoAny ? "auto (current: on)" : "auto (current: off)", "force on", "force off"};
     int anyIndex = config->LmxxfEarlyAnyModuleWrap.has_value() ? (*config->LmxxfEarlyAnyModuleWrap ? 1 : 2) : 0;
     ImGui::Indent();
@@ -613,6 +616,39 @@ static void RenderRecordingCompatibilitySettings(Config* config)
                "\nAuto: on for Forza (exe name contains \"forza\"), off otherwise. Applies immediately."
                "\nINI: LmxxfAllowEnhancedBarriers.");
     RenderEnhancedBarrierSaveNotice(config);
+}
+
+static void RenderMochizukiTiming()
+{
+    const auto timing = AmdBridge::MochizukiTimingDetails();
+    const auto now = GetTickCount64();
+    if (!timing.gpu_samples)
+        MenuUi::TextWrapped(timing.renodx_effective ? "RenoDX network callbacks: N/A (waiting)" : "NR cost: N/A (waiting)");
+    else if (now < timing.gpu_tick || now - timing.gpu_tick > 2000)
+        MenuUi::TextWrapped(timing.renodx_effective ? "RenoDX network callbacks: N/A (stale)" : "NR cost: N/A (stale)");
+    else if (!std::isfinite(timing.gpu_ms_network_mean) || timing.gpu_ms_network_mean < 0 ||
+             !std::isfinite(timing.gpu_ms_other_mean) || timing.gpu_ms_other_mean < 0 ||
+             !std::isfinite(timing.gpu_ms_mean) || timing.gpu_ms_mean < 0)
+        MenuUi::TextWrapped(timing.renodx_effective ? "RenoDX network callbacks: N/A" : "NR cost: N/A");
+    else
+    {
+        if (timing.gpu_ms_network_mean > 0)
+            MenuUi::TextWrapped(timing.renodx_effective ? "RenoDX network callbacks: %.2f ms (%.0f FPS)" : "NR cost: %.2f ms (%.0f FPS)",
+                timing.gpu_ms_network_mean, 1000.0 / timing.gpu_ms_network_mean);
+        else
+            MenuUi::TextWrapped(timing.renodx_effective ? "RenoDX network callbacks: %.2f ms (FPS N/A: no network work)" : "NR cost: %.2f ms (FPS N/A: no network work)",
+                timing.gpu_ms_network_mean);
+        if (timing.gpu_ms_mean > 0)
+            MenuUi::TextWrapped(timing.renodx_effective ?
+                "RenoDX processing: %.2f ms | Total: %.2f ms (%.0f FPS)" :
+                "OptiScaler route: %.2f ms | Total: %.2f ms (%.0f FPS)",
+                timing.gpu_ms_other_mean, timing.gpu_ms_mean, 1000.0 / timing.gpu_ms_mean);
+        else
+            MenuUi::TextWrapped(timing.renodx_effective ?
+                "RenoDX processing: %.2f ms | Total: %.2f ms (FPS N/A)" :
+                "OptiScaler route: %.2f ms | Total: %.2f ms (FPS N/A)", timing.gpu_ms_other_mean, timing.gpu_ms_mean);
+    }
+    HelpMarker("Completed-sample means from the same window. Standard NR cost measures the core network kernel loop, including fused temporal shaders. RenoDX network callbacks sum every record_engine callback, including its core preparation and composition, not just network kernels. Other processing is the total minus that route's measured network scope. Equivalent throughput is 1000 / GPU ms, not game Present FPS. Excludes the D3D12 bridge, host post-processing and whole-frame latency. A zero-network RenoDX stage is a valid sample.");
 }
 
 static void RenderMochizukiMenu(Config* config, PipelineUi::Section page, const std::string& status)
@@ -717,7 +753,7 @@ static void RenderMochizukiMenu(Config* config, PipelineUi::Section page, const 
                 "DRS buckets reduce rebuilds when the render size changes. White point controls linear-input brightness." :
                 "Automatic prebuild capacity grows as needed and is retained on pass reduction. Capacity is not the active pass count. 0 is automatic. An explicit count is at least the active passes.");
             if (g == 7) {
-                MenuUi::TextWrapped("After the network: detail strength (TransferStrength), colour strength (ColourStrength), highlight guard (MaxRatio) and apply model output (Transfer). Apply model off still runs the network; disable NR to save GPU work.");
+                MenuUi::TextWrapped("After the network: detail strength (TransferStrength), colour strength (ColourStrength), highlight ratio limit (MaxRatio) and apply model output (Transfer). Apply model off still runs the network; disable NR to save GPU work.");
                 HelpMarker("Model enlargement applies below 100% model scale. Matched residual is the default. "
                            "Edge-aware costs more GPU time. Classic uses the scaler below (ClassicScaler); Catmull-Rom is its default."
                            "\nReuse output buffer keeps one full-resolution float image when the frame is RGBA32F. Switching rebuilds the network.");
@@ -731,11 +767,8 @@ static void RenderMochizukiMenu(Config* config, PipelineUi::Section page, const 
     if (MenuUi::TreeNode("Diagnostics"))
     {
         MenuUi::TextWrapped("%s", status.c_str());
+        RenderMochizukiTiming();
         const auto timing = AmdBridge::MochizukiTimingDetails();
-        if (timing.gpu_samples && GetTickCount64() - timing.gpu_tick < 2000) {
-            MenuUi::TextWrapped("Vulkan core GPU: %.3f ms | Network: %.3f ms | Other: %.3f ms",
-                timing.gpu_ms_mean, timing.gpu_ms_network_mean, timing.gpu_ms_other_mean);
-        }
         if (timing.inline_path == 1)
             MenuUi::TextWrapped("Inline path: whole chain on compute");
         else if (timing.inline_path == 2)
@@ -749,8 +782,6 @@ static void RenderMochizukiMenu(Config* config, PipelineUi::Section page, const 
         }
         if (timing.int4_requested)
             MenuUi::TextWrapped(timing.int4_effective ? "INT4 mixed active" : "INT4 mixed inactive; select 310.8.0, enable ACO and prepare matching INT4 weights.");
-        if (timing.renodx_effective) MenuUi::TextWrapped("RenoDX processing active; GPU timing shows the network only");
-        MenuUi::TextWrapped("Completed-sample means. Network includes fused temporal shaders; Other covers core input, history copies and composition. Bridge copies, shared effects and whole-frame latency are excluded.");
         RenderFlickerDiagnostics(config);
         bool logging = config->NrTimingLog.value_or_default();
         if (MenuUi::Checkbox("Write timing summary to log", &logging)) config->NrTimingLog = logging;
@@ -794,6 +825,8 @@ void RenderMenu(Config* config, float menuResScale)
         bool enabled = config->DlssNrEnabled.value_or_default();
         if (MenuUi::Checkbox("Enable NR", &enabled))
             config->DlssNrEnabled = enabled;
+        ImGui::SameLine(0.0f, 16.0f * menuResScale);
+        MenuCommon::RenderKeybind("Toggle key##DlssNrMenu", 16, config->DlssNrToggleKey);
 
         {
             auto selectedKind = Backend::ActiveKindFromConfig();
@@ -1038,12 +1071,12 @@ void RenderMenu(Config* config, float menuResScale)
             }
             if (State::Instance().currentFeature && State::Instance().currentFeature->GetUpscalerType() == Upscaler::DLSSD)
                 MenuUi::TextWrapped("Native Ray Reconstruction has no supported AMD NR seam. This chart describes the Super Resolution path.");
-            if ((isLmxxf && config->NrTimingEnabled.value_or_default()) || kind == Backend::Kind::Mochizuki) {
-                MenuUi::TextWrapped(kind == Backend::Kind::Mochizuki ? "NR GPU: %s" : "Network GPU: %s",
+            if (kind == Backend::Kind::Mochizuki)
+                RenderMochizukiTiming();
+            else if (isLmxxf && config->NrTimingEnabled.value_or_default()) {
+                MenuUi::TextWrapped("Network GPU: %s",
                     TimingValueText(AmdBridge::Timing(), NR_GPU_NETWORK, GetTickCount64()).c_str());
-                HelpMarker(kind == Backend::Kind::Mochizuki ?
-                    "Mochizuki Vulkan core total, including its input and composition. Excludes bridge copies and shared effects. Timing breakdown is in Diagnostics." :
-                    "Network execution only, not whole NR or frame latency. Detailed timing is in Diagnostics.");
+                HelpMarker("Network execution only, not whole NR or frame latency. Detailed timing is in Diagnostics.");
             }
             MenuUi::SeparatorText(PipelineUi::SectionName(page));
             if ((isLmxxf || kind == Backend::Kind::Mochizuki) && page == PipelineUi::Section::Input) {
@@ -2325,10 +2358,6 @@ void RenderMenu(Config* config, float menuResScale)
         HelpMarker("Relative to RR's OUTPUT resolution: 0.50x at 4K runs NR at 1920x1080."
                    "\nRR itself remains full quality. The NR edit is resized for final composition."
                    "\nPasses 2 and 3 use the same per-pass model profiles as the SR path.");
-
-        // The toggle can be bound to a key, and nobody would think to look for it under Keybinds
-        // unless told. Dimmed, because it is a note rather than a setting.
-        MenuUi::TextDisabled("Can be toggled with a key -- bind it under Keybinds, \"Neural Rendering\".");
 
         bool applyModel = config->DlssNrApplyModel.value_or_default();
         if (MenuUi::Checkbox("Apply the model", &applyModel))

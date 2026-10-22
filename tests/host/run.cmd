@@ -1,6 +1,6 @@
 @echo off
 rem Host-contract tests. Every *.cpp in tests\host belongs to exactly one tier below.
-rem Usage: tests\host\run.cmd [release^|ci^|device^|xefg^|nr-coverage^|all] [out-dir]
+rem Usage: tests\host\run.cmd [release^|ci^|device^|xefg^|nr-coverage^|input-menu^|all] [out-dir]
 rem   ci     : CPU only, no GPU. nr_backend_selector, amd_submission_state, amd_graphics_{snapshot,
 rem            tracker,restore,restore_dx12,invocation,native_hooks}, amd_runtime_host_load (+ its
 rem            generated fixture PE), amd_retirement_diagnostics, and hip_load.ps1 (amd_hip_load +
@@ -21,7 +21,10 @@ call "%REPO%\tests\_lib\msvc-env.cmd" 2>nul || exit /b 1
 rem Repo-rooted includes (#include "OptiScaler-..." / "third_party/..."). The repo root goes at the END of
 rem INCLUDE, not in /I: /I is searched before the SDK/STL dirs, and on a case-insensitive disk
 rem <version> would then resolve to the repo's VERSION file.
-set "INCLUDE=%INCLUDE%;%REPO%"
+rem The product source root and the external SDK roots follow for the same reason: product header
+rem chains (like <misc/GameConfigs.h>, <nvsdk_ngx.h>, <spdlog/spdlog.h>) mirror the vcxproj set.
+set "EXT=%REPO%\OptiScaler-DLSSNR-PreSR-Multipass-main\external"
+set "INCLUDE=%INCLUDE%;%REPO%;%REPO%\OptiScaler-DLSSNR-PreSR-Multipass-main\OptiScaler;%EXT%\nvngx_dlss_sdk;%EXT%\xess\inc\xess;%EXT%\xess\inc\xell;%EXT%\xess\inc\xess_fg;%EXT%\FidelityFX-SDK\ffx-api\include\ffx_api;%EXT%\simpleini;%EXT%\unordered_dense\include;%EXT%\spdlog\include;%EXT%\freetype;%EXT%\streamline;%EXT%\streamline1;%EXT%\nvapi;%EXT%\nlohmann;%EXT%\fakenvapi;%EXT%\magic_enum\include\magic_enum;%EXT%\AntiLag2-SDK;%EXT%\latencyflex;%EXT%\vulkan\include"
 set "INC=%REPO%\OptiScaler-DLSSNR-PreSR-Multipass-main\OptiScaler\include"
 set "DETOURS=%REPO%\OptiScaler-DLSSNR-PreSR-Multipass-main\OptiScaler\library\detours\detours.lib"
 set "CXX=cl /nologo /std:c++20 /EHsc /W4"
@@ -31,8 +34,19 @@ if /i "%TIER%"=="device" goto device
 if /i "%TIER%"=="release" goto release
 if /i "%TIER%"=="xefg" goto Xefg
 if /i "%TIER%"=="nr-coverage" goto NrCoverage
-echo usage: tests\host\run.cmd [release^|ci^|device^|xefg^|nr-coverage^|all] [out-dir]
+if /i "%TIER%"=="input-menu" goto InputMenu
+echo usage: tests\host\run.cmd [release^|ci^|device^|xefg^|nr-coverage^|input-menu^|all] [out-dir]
 exit /b 2
+
+:InputMenu
+for %%T in (directinput_registry input_hook_lifetime input_key_lifetime input_window_lifetime shortcut_keys nr_gpu_history amd_pass_initialization menu_window_layout mochizuki_network_shortcut) do (
+  %CXX% /utf-8 tests\host\%%T.cpp /Fe"%OUT%\%%T.exe" /Fo"%OUT%\%%T.obj" /link user32.lib || goto fail
+  "%OUT%\%%T.exe" || goto fail
+)
+%CXX% /utf-8 /I"%INC%" tests\host\directinput_detours.cpp /Fe"%OUT%\directinput_detours.exe" /Fo"%OUT%\directinput_detours.obj" /link "%DETOURS%" || goto fail
+"%OUT%\directinput_detours.exe" || goto fail
+echo host input-menu: PASS
+exit /b 0
 
 :ci
 call :NrCoverage || goto fail
@@ -66,6 +80,10 @@ call "%REPO%\tests\host\menu-localization.cmd" "%OUT%\menu" || goto fail
 "%OUT%\nr_install_status.exe" || goto fail
 %CXX% /utf-8 tests\host\fg_resource_readiness.cpp /Fe"%OUT%\fg_resource_readiness.exe" /Fo"%OUT%\fg_resource_readiness.obj" || goto fail
 "%OUT%\fg_resource_readiness.exe" || goto fail
+%CXX% /utf-8 /I"tests\host\deferred_shim" tests\host\deferred_release_contract.cpp "%REPO%\OptiScaler-DLSSNR-PreSR-Multipass-main\OptiScaler\misc\DeferredRelease.cpp" /Fe"%OUT%\deferred_release_contract.exe" /Fo"%OUT%"\ || goto fail
+"%OUT%\deferred_release_contract.exe" || goto fail
+%CXX% /utf-8 tests\host\restrack_d3_signature.cpp /Fe"%OUT%\restrack_d3_signature.exe" /Fo"%OUT%\restrack_d3_signature.obj" /link d3d12.lib dxguid.lib || goto fail
+"%OUT%\restrack_d3_signature.exe" "%REPO%\OptiScaler-DLSSNR-PreSR-Multipass-main\OptiScaler\resource_tracking\ResTrack_dx12.cpp" || goto fail
 %CXX% /utf-8 tests\host\nr_performance.cpp /Fe"%OUT%\nr_performance.exe" /Fo"%OUT%\nr_performance.obj" || goto fail
 "%OUT%\nr_performance.exe" || goto fail
 %CXX% /utf-8 tests\host\nr_status_display.cpp /Fe"%OUT%\nr_status_display.exe" /Fo"%OUT%\nr_status_display.obj" || goto fail
@@ -74,6 +92,12 @@ call "%REPO%\tests\host\menu-localization.cmd" "%OUT%\menu" || goto fail
 "%OUT%\upscaler_route_diagnostic.exe" || goto fail
 %CXX% /utf-8 tests\host\menu_window_layout.cpp /Fe"%OUT%\menu_window_layout.exe" /Fo"%OUT%\menu_window_layout.obj" || goto fail
 "%OUT%\menu_window_layout.exe" || goto fail
+for %%T in (directinput_registry input_hook_lifetime input_key_lifetime input_window_lifetime shortcut_keys nr_gpu_history amd_pass_initialization) do (
+  %CXX% /utf-8 tests\host\%%T.cpp /Fe"%OUT%\%%T.exe" /Fo"%OUT%\%%T.obj" /link user32.lib || goto fail
+  "%OUT%\%%T.exe" || goto fail
+)
+%CXX% /utf-8 /I"%INC%" tests\host\directinput_detours.cpp /Fe"%OUT%\directinput_detours.exe" /Fo"%OUT%\directinput_detours.obj" /link "%DETOURS%" || goto fail
+"%OUT%\directinput_detours.exe" || goto fail
 %CXX% /utf-8 tests\host\nr_diagnostic_log.cpp /Fe"%OUT%\nr_diagnostic_log.exe" /Fo"%OUT%\nr_diagnostic_log.obj" || goto fail
 "%OUT%\nr_diagnostic_log.exe" "%OUT%\diagnostic-log" || goto fail
 call :Xefg || goto fail
@@ -103,6 +127,7 @@ mkdir "%OUT%\retirement"
 "%AMD_TEST_PYTHON%" -B -m unittest tests\host\test_retirement_stats.py || goto fail
 powershell -NoProfile -ExecutionPolicy Bypass -File "%REPO%\tests\host\hip_load.ps1" "%OUT%\hip" || goto fail
 "%AMD_TEST_PYTHON%" -B tests\host\test_config_priority.py || goto fail
+"%AMD_TEST_PYTHON%" -B tests\host\test_nr_deferred_release_scope.py || goto fail
 
 call tests\host\person-inference.cmd || goto fail
 call tests\host\person-worker.cmd || goto fail

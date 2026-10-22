@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -20,11 +20,15 @@ using Path = System.IO.Path;
 
 namespace OptScalerNR.Launcher
 {
-    public sealed class GameItemViewModel
+    public sealed class GameItemViewModel : System.ComponentModel.INotifyPropertyChanged
     {
         public GameInfo Info { get; set; }
         public bool IsZh { get; set; }
-        public ImageSource IconSource { get; set; }
+        ImageSource _image;
+        public event System.ComponentModel.PropertyChangedEventHandler PropertyChanged;
+        public ImageSource IconSource { get { return _image; } set { _image = value; if (PropertyChanged != null) foreach (var name in new[] { "DisplayImage", "CoverVisibility", "InitialVisibility", "ImageStretch" }) PropertyChanged(this, new System.ComponentModel.PropertyChangedEventArgs(name)); } }
+        public bool PackageDiffers { get; set; }
+        public string StatusExplanation { get { return PackageDiffers ? (IsZh ? "已安装的 OptScaler NR 与当前选择的安装包不同，不一定是旧版本。可按当前选项更新，无需先卸载。" : "The installed OptScaler NR differs from the package you selected; it is not necessarily older. Update with your current options without uninstalling first.") : ""; } }
 
         public string Name { get { return Info != null ? Info.DisplayName : ""; } }
         public string Initial
@@ -40,19 +44,22 @@ namespace OptScalerNR.Launcher
         {
             get
             {
-                if (Info != null && !Info.HasExecutable) return IsZh ? "◇ 待选择 EXE" : "◇ Select EXE";
+                if (Info != null && !Info.HasExecutable) return IsZh ? "待选 EXE" : "Select EXE";
+                if (Info != null && Info.Installed && PackageDiffers) return IsZh ? "版本不同" : "Version differs";
                 if (Info != null && Info.Installed)
-                    return IsZh ? "● 已安装" : "● Installed";
-                return IsZh ? "○ 未安装" : "○ Not Installed";
+                    return IsZh ? "已安装" : "Installed";
+                return IsZh ? "未安装" : "Not installed";
             }
         }
         public Brush StatusBrush
         {
             get
             {
+                if (Info != null && !Info.HasExecutable) return LauncherTheme.Brush("ThemeMuted");
+                if (PackageDiffers) return LauncherTheme.Brush("ThemeWarning");
                 if (Info != null && Info.Installed)
-                    return (Brush)new BrushConverter().ConvertFromString("#FF4ADE80");
-                return (Brush)new BrushConverter().ConvertFromString("#FF8E95A5");
+                    return LauncherTheme.Brush("ThemeSuccess");
+                return LauncherTheme.Brush("ThemeMuted");
             }
         }
         public string Cover { get { return Info != null ? Info.DisplayCover : null; } }
@@ -65,30 +72,10 @@ namespace OptScalerNR.Launcher
             }
         }
 
-        public ImageSource DisplayImage
-        {
-            get
-            {
-                if (HasCover)
-                {
-                    try
-                    {
-                        var bi = new BitmapImage();
-                        bi.BeginInit();
-                        bi.CacheOption = BitmapCacheOption.OnLoad;
-                        bi.DecodePixelWidth = 84;
-                        bi.UriSource = new Uri(Cover, UriKind.Absolute);
-                        bi.EndInit();
-                        return bi;
-                    }
-                    catch { }
-                }
-                return IconSource;
-            }
-        }
-
-        public Visibility CoverVisibility { get { return (HasCover || IconSource != null) ? Visibility.Visible : Visibility.Collapsed; } }
-        public Visibility InitialVisibility { get { return (HasCover || IconSource != null) ? Visibility.Collapsed : Visibility.Visible; } }
+        public ImageSource DisplayImage { get { return _image; } }
+        public Stretch ImageStretch { get { var bitmap = _image as BitmapSource; return HasCover && bitmap != null && bitmap.PixelHeight > bitmap.PixelWidth * 1.15 ? Stretch.UniformToFill : Stretch.Uniform; } }
+        public Visibility CoverVisibility { get { return _image != null ? Visibility.Visible : Visibility.Collapsed; } }
+        public Visibility InitialVisibility { get { return _image != null ? Visibility.Collapsed : Visibility.Visible; } }
         public string Hero { get { return Info != null ? Info.DisplayHero : null; } }
     }
 
@@ -102,14 +89,14 @@ namespace OptScalerNR.Launcher
         ComboBox _filterCombo, _proxyCombo, _activeCombo, _langCombo;
         ListBox _gameList;
         TextBlock _pageTitle, _countBadge, _heroKicker, _heroTitle, _heroMeta, _heroPath, _heroPosterInitial, _injectText, _injectIcon, _injectRecommendation, _refundWarning;
-        TextBlock _lmxxfReason, _danielReason, _mochiReason, _statusText, _countText;
+        TextBlock _lmxxfReason, _danielReason, _mochiReason, _statusText, _countText, _versionText;
         Border _lmxxfBadge, _danielBadge, _mochiBadge;
         Button _lmxxfActiveBtn, _danielActiveBtn, _mochiActiveBtn;
         Button _compatButton, _restoreCompatButton, _compatHelpButton;
         MenuItem _removeGameMenuItem;
         TextBlock _compatSummary;
         TextBlock _lmxxfActiveLabel, _danielActiveLabel, _mochiActiveLabel;
-        CheckBox _lmxxfCheck, _danielCheck, _mochiCheck, _replaceIni, _scanOnStartup;
+        CheckBox _lmxxfCheck, _danielCheck, _mochiCheck, _replaceIni, _optiPatcherToggle, _scanOnStartup;
         ProgressBar _progress;
         Image _heroPosterImage, _heroBgImage;
         Ellipse _statusLed;
@@ -130,7 +117,7 @@ namespace OptScalerNR.Launcher
         string _recentGameId;
         string _eventStage;
         bool _isScanOnStartup = true;
-        string _packageRoot = "";
+        string _packageRoot = NormalPackageRoot;
         string _pendingAction = "";
         bool _writeBusy;
         bool _updatingBackends;
@@ -146,13 +133,13 @@ namespace OptScalerNR.Launcher
         LauncherResult _lastInspectResult;
         Decisions _decisions = new Decisions();
 
-        static readonly Brush ReadyBrush = (Brush)new BrushConverter().ConvertFromString("#FF4ADE80");
-        static readonly Brush ReadyBorder = (Brush)new BrushConverter().ConvertFromString("#FF22C55E");
-        static readonly Brush ReadyBg = (Brush)new BrushConverter().ConvertFromString("#FF17281F");
-        static readonly Brush MissingBrush = (Brush)new BrushConverter().ConvertFromString("#FF8E95A5");
-        static readonly Brush MissingBorder = (Brush)new BrushConverter().ConvertFromString("#FF282D3A");
-        static readonly Brush MissingBg = (Brush)new BrushConverter().ConvertFromString("#FF1E222E");
-        static readonly Brush WarningBrush = (Brush)new BrushConverter().ConvertFromString("#FFFACC15");
+        static readonly Brush ReadyBrush = LauncherTheme.Brush("ThemeSuccess");
+        static readonly Brush ReadyBorder = LauncherTheme.Brush("ThemeSuccess");
+        static readonly Brush ReadyBg = LauncherTheme.Brush("ThemeSuccessBg");
+        static readonly Brush MissingBrush = LauncherTheme.Brush("ThemeMuted");
+        static readonly Brush MissingBorder = LauncherTheme.Brush("ThemeBorder");
+        static readonly Brush MissingBg = LauncherTheme.Brush("ThemeSubtle");
+        static readonly Brush WarningBrush = LauncherTheme.Brush("ThemeWarning");
 
         public static Window Create(string[] args)
         {
@@ -173,6 +160,8 @@ namespace OptScalerNR.Launcher
         MainController(Window window, string[] args, string settingsDirectory)
         {
             _window = window;
+            _libraryArtwork = new LocalArtwork.Scope(window.Dispatcher);
+            _heroArtwork = new LocalArtwork.Scope(window.Dispatcher);
 
             _minBtn = (Button)window.FindName("MinBtn");
             _maxBtn = (Button)window.FindName("MaxBtn");
@@ -240,23 +229,41 @@ namespace OptScalerNR.Launcher
 
             _activeCombo = (ComboBox)window.FindName("ActiveCombo");
             _replaceIni = (CheckBox)window.FindName("ReplaceIni");
+            _optiPatcherToggle = (CheckBox)window.FindName("OptiPatcherToggle");
+            if (_optiPatcherToggle != null)
+            {
+                _optiPatcherToggle.Checked += (s, e) => RememberOptiPatcherChoice();
+                _optiPatcherToggle.Unchecked += (s, e) => RememberOptiPatcherChoice();
+            }
             _openLogButton = (Button)window.FindName("OpenLogButton");
             _logView = (TextBox)window.FindName("LogView");
             _statusText = (TextBlock)window.FindName("StatusText");
             _statusLed = (Ellipse)window.FindName("StatusLed");
             _countText = (TextBlock)window.FindName("CountText");
+            _versionText = (TextBlock)window.FindName("VersionText");
 
             _langCombo = (ComboBox)window.FindName("LangCombo");
             _scanOnStartup = (CheckBox)window.FindName("ScanOnStartup");
             _refreshButton = (Button)window.FindName("RefreshButton");
             _packageRootBox = (TextBox)window.FindName("PackageRootBox");
             _packageBrowse = (Button)window.FindName("PackageBrowse");
+            var githubBtn = window.FindName("GithubButton") as Button;
+            if (githubBtn != null) githubBtn.Click += (s, e) => OpenUrl("https://github.com/TheAutomatic/dlss-5-amd-project");
+            var bilibiliBtn = window.FindName("BilibiliButton") as Button;
+            if (bilibiliBtn != null) bilibiliBtn.Click += (s, e) => OpenUrl("https://space.bilibili.com/291088");
+            foreach (var name in new[] { "MochizukiAuthorButton", "LmxxfAuthorButton", "DanielAuthorButton" }) {
+                var author = window.FindName(name) as Button;
+                if (author != null) author.Click += (s, e) => OpenUrl((string)((Button)s).ToolTip);
+            }
 
             _settingsDir = settingsDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OptScalerNR", "Launcher");
             _settingsPath = Path.Combine(_settingsDir, "settings.json");
             _libraryPath = Path.Combine(_settingsDir, "library.json");
+            InitPresentation();
+            InitDiagnostics();
             InitLibraryActions();
             InitRecommendations();
+            InitProfiles();
 
             _decisions.ExistingInstall = "overwrite";
             _decisions.ExistingIni = "overwrite";
@@ -291,11 +298,8 @@ namespace OptScalerNR.Launcher
 
             if (_filterCombo != null)
             {
-                _filterCombo.Items.Add("全部");
-                _filterCombo.Items.Add("已安装");
-                _filterCombo.Items.Add("未安装");
-                _filterCombo.SelectedIndex = 0;
-                _filterCombo.SelectionChanged += (s, e) => RefreshGameListView();
+                RefreshLibraryFilters();
+                _filterCombo.SelectionChanged += delegate { if (!_refreshingFilters) RefreshGameListView(); };
             }
 
             if (_searchBox != null)
@@ -341,8 +345,7 @@ namespace OptScalerNR.Launcher
             {
                 _packageRootBox.LostKeyboardFocus += (s, e) =>
                 {
-                    _packageRoot = (_packageRootBox.Text ?? "").Trim();
-                    SaveSettings();
+                    if (_diagnosticMode && CanChangePackageSource()) SetDiagnosticPackageRoot(_packageRootBox.Text);
                 };
             }
 
@@ -378,8 +381,10 @@ namespace OptScalerNR.Launcher
             _window.Loaded += (s, e) => OnFirstShown(args);
 
             LoadSettings();
+            LauncherTheme.Apply(_theme);
             _loadingSettings = false;
             LoadLibraryCache();
+            RefreshPackageComparisons(_packageRoot);
             ShowVersion();
             ApplyLang();
             if (_saveInitialLanguage) SaveSettings();
@@ -515,48 +520,51 @@ namespace OptScalerNR.Launcher
             if (_lmxxfActiveLabel != null)
             {
                 _lmxxfActiveLabel.Visibility = isLmxxf ? Visibility.Visible : Visibility.Collapsed;
-                _lmxxfActiveLabel.Text = isZh ? "★ 当前主后端" : "★ Active Backend";
+                _lmxxfActiveLabel.Text = L("主后端", "Primary");
             }
             if (_lmxxfActiveBtn != null)
             {
                 _lmxxfActiveBtn.Visibility = isLmxxf ? Visibility.Collapsed : Visibility.Visible;
-                _lmxxfActiveBtn.Content = isZh ? "设为主后端" : "Set as Active";
+                _lmxxfActiveBtn.Content = L("设为主后端", "Set primary");
                 _lmxxfActiveBtn.IsEnabled = _lmxxfCheck != null && _lmxxfCheck.IsChecked == true;
             }
 
             if (_danielActiveLabel != null)
             {
                 _danielActiveLabel.Visibility = isDaniel ? Visibility.Visible : Visibility.Collapsed;
-                _danielActiveLabel.Text = isZh ? "★ 当前主后端" : "★ Active Backend";
+                _danielActiveLabel.Text = L("主后端", "Primary");
             }
             if (_danielActiveBtn != null)
             {
                 _danielActiveBtn.Visibility = isDaniel ? Visibility.Collapsed : Visibility.Visible;
-                _danielActiveBtn.Content = isZh ? "设为主后端" : "Set as Active";
+                _danielActiveBtn.Content = L("设为主后端", "Set primary");
                 _danielActiveBtn.IsEnabled = _danielCheck != null && _danielCheck.IsChecked == true;
             }
 
             if (_mochiActiveLabel != null)
             {
                 _mochiActiveLabel.Visibility = isMochi ? Visibility.Visible : Visibility.Collapsed;
-                _mochiActiveLabel.Text = isZh ? "★ 当前主后端" : "★ Active Backend";
+                _mochiActiveLabel.Text = L("主后端", "Primary");
             }
             if (_mochiActiveBtn != null)
             {
                 _mochiActiveBtn.Visibility = isMochi ? Visibility.Collapsed : Visibility.Visible;
-                _mochiActiveBtn.Content = isZh ? "设为主后端" : "Set as Active";
+                _mochiActiveBtn.Content = L("设为主后端", "Set primary");
                 _mochiActiveBtn.IsEnabled = _mochiCheck != null && _mochiCheck.IsChecked == true;
             }
         }
 
+        static void OpenUrl(string url)
+        {
+            try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+            catch { }
+        }
+
         void SwitchTab(bool toSettings)
         {
-            if (_libraryPage != null) _libraryPage.Visibility = toSettings ? Visibility.Collapsed : Visibility.Visible;
+            if (_libraryPage != null) _libraryPage.Visibility = Visibility.Visible;
             if (_settingsPage != null) _settingsPage.Visibility = toSettings ? Visibility.Visible : Visibility.Collapsed;
-            if (_settingsTab != null)
-            {
-                _settingsTab.Content = toSettings ? (_language == "zh" ? "返回游戏库" : "Back to Library") : (_language == "zh" ? "设置" : "Settings");
-            }
+            if (_settingsTab != null) _settingsTab.Content = L("设置", "Settings");
         }
 
         void ToggleLanguage()
@@ -599,6 +607,7 @@ namespace OptScalerNR.Launcher
                 }
             }
 
+            StartHardwareDetection();
             RefreshProfiles();
             if (_isScanOnStartup)
             {
@@ -625,14 +634,35 @@ namespace OptScalerNR.Launcher
         {
             try
             {
-                foreach (var c in new[] {
-                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "VERSION"),
-                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "VERSION") })
+                var roots = new List<string>();
+                try
                 {
-                    if (File.Exists(c))
+                    var asmLoc = typeof(MainController).Assembly.Location;
+                    if (!string.IsNullOrEmpty(asmLoc)) roots.Add(Path.GetDirectoryName(asmLoc));
+                }
+                catch { }
+                if (!string.IsNullOrEmpty(AppDomain.CurrentDomain.BaseDirectory))
+                    roots.Add(AppDomain.CurrentDomain.BaseDirectory);
+
+                foreach (var start in roots)
+                {
+                    var dir = start;
+                    for (int depth = 0; depth < 5 && !string.IsNullOrEmpty(dir); depth++)
                     {
-                        _productVersion = " " + File.ReadAllText(c).Trim();
-                        return;
+                        var candidate = Path.Combine(dir, "VERSION");
+                        if (File.Exists(candidate))
+                        {
+                            var raw = File.ReadAllText(candidate).Trim();
+                            if (!string.IsNullOrEmpty(raw))
+                            {
+                                _productVersion = " " + raw;
+                                if (_versionText != null)
+                                    _versionText.Text = "OptScaler NR v" + raw.TrimStart('v', 'V');
+                                ((TextBlock)_window.FindName("VersionTag")).Text = raw.TrimStart('v', 'V');
+                            }
+                            return;
+                        }
+                        dir = Path.GetDirectoryName(dir.TrimEnd('\\', '/'));
                     }
                 }
             }
@@ -678,21 +708,19 @@ namespace OptScalerNR.Launcher
                 var isZh = _language == "zh";
                 _window.Language = XmlLanguage.GetLanguage(isZh ? "zh-CN" : "en-US");
                 if (_window != null)
-                    _window.Title = "OptScaler NR" + _productVersion + (isZh ? " - 本软件免费，如付费购买请立即退款！" : " - Free software; if purchased, request a refund immediately!");
+                    _window.Title = "OptScaler NR" + _productVersion + (isZh ? " - 本软件免费，如付费购买请立即退款！" : " - Free software — refund if paid!");
                 if (_refundWarning != null)
-                    _refundWarning.Text = isZh ? "本软件免费，如付费购买请立即退款！" : "Free software; if purchased, request a refund immediately!";
+                    _refundWarning.Text = isZh ? "本软件免费，如付费购买请立即退款！" : "Free software — refund if paid!";
                 if (_pageTitle != null) _pageTitle.Text = isZh ? "游戏库" : "Library";
                 if (_langToggle != null) _langToggle.Content = isZh ? "🌐 English" : "🌐 Chinese";
                 if (_libraryTab != null) _libraryTab.Content = isZh ? "游戏库" : "Library";
-                if (_settingsTab != null)
-                    _settingsTab.Content = _settingsPage != null && _settingsPage.Visibility == Visibility.Visible
-                        ? L("返回游戏库", "Back to Library") : L("设置", "Settings");
-                if (_addButton != null) _addButton.Content = isZh ? "+ 添加游戏" : "+ Add Game";
+                if (_settingsTab != null) _settingsTab.Content = L("设置", "Settings");
+                if (_addButton != null) _addButton.Content = L("添加游戏 EXE…", "Add game EXE…");
                 if (_openFolderButton != null) _openFolderButton.Content = isZh ? "打开目录" : "Open Folder";
                 if (_uninstallButton != null) _uninstallButton.Content = isZh ? "卸载" : "Uninstall";
                 if (_removeGameMenuItem != null) _removeGameMenuItem.Header = L("从列表移除", "Remove from list");
-                if (_compatButton != null) _compatButton.Content = L("兼容修复", "Compatibility repair");
-                if (_restoreCompatButton != null) _restoreCompatButton.Content = L("恢复游戏原文件", "Restore game files");
+                if (_compatButton != null) _compatButton.Content = L("兼容修复", "Compat Repair");
+                if (_restoreCompatButton != null) _restoreCompatButton.Content = L("恢复原文件", "Restore Files");
                 if (_compatHelpButton != null) _compatHelpButton.ToolTip = L("一般在什么情况下需要使用兼容修复？", "When should you use Compatibility Repair?");
                 UpdateCompatibilitySummary();
                 if (_openLogButton != null) _openLogButton.Content = isZh ? "打开完整日志" : "Open Full Log";
@@ -700,22 +728,30 @@ namespace OptScalerNR.Launcher
                 if (_packageBrowse != null) _packageBrowse.Content = isZh ? "浏览…" : "Browse…";
                 if (_heroKicker != null) _heroKicker.Text = isZh ? "已选游戏" : "Selected Game";
                 if (_replaceIni != null) _replaceIni.Content = isZh ? "覆盖现有 OptiScaler.ini 配置文件 (推荐)" : "Replace existing OptiScaler.ini (recommended)";
+                SetLabel("OptiPatcherToggle", "安装 OptiPatcher（DLSS 伪装增强，按 Wiki 推荐预选）", "Install OptiPatcher (DLSS spoofing enhancement, preselected by Wiki recommendation)");
+                if (_optiPatcherToggle != null) _optiPatcherToggle.ToolTip = L("优先下载最新版本（30 秒时限），失败时回退包内离线副本，并启用 LoadAsiPlugins。", "Downloads the latest version with a 30-second limit, falls back to the bundled offline copy, and enables LoadAsiPlugins.");
                 if (_scanOnStartup != null) _scanOnStartup.Content = isZh ? "启动时自动扫描游戏库" : "Scan game library on startup";
 
-                SetLabel("LocalGamesHeading", "本地游戏", "Local Games");
-                SetLabel("ProxyHeading", "注入代理 (Proxy DLL)", "Injection Proxy (DLL)");
-                SetLabel("BackendsHeading", "后端加速管线", "Backend Engines");
-                SetLabel("LmxxfCheck", "lmxxf · 0.44", "lmxxf · 0.44");
-                SetLabel("DanielCheck", "danielblnc · 0.3.0-0.6.0", "danielblnc · 0.3.0-0.6.0");
-                SetLabel("MochiCheck", "mochizuki0323 · 0.0.7", "mochizuki0323 · 0.0.7");
+                SetLabel("LocalGamesHeading", "游戏库", "Library");
+                SetLabel("ProxyHeading", "注入代理", "Injection proxy");
+                SetLabel("BackendsHeading", "神经渲染后端", "Neural rendering backends");
+                SetLabel("LmxxfCheck", "lmxxf", "lmxxf");
+                SetLabel("DanielCheck", "Daniel", "Daniel");
+                SetLabel("MochiCheck", "mochizuki", "mochizuki");
                 SetLabel("LmxxfDescription", "适合 RX 9000 系列", "For RX 9000 series");
                 SetLabel("DanielDescription", "适合 RX 6000/7000/9000 系列", "For RX 6000/7000/9000 series");
                 SetLabel("MochiDescription", "适合 RX 9000 系列", "For RX 9000 series");
-                SetLabel("DiagnosticsHeading", "配置与诊断", "Configuration & Diagnostics");
+                SetLabel("DiagnosticsHeading", "配置与运行库兼容诊断", "Configuration & Runtime Compatibility");
                 SetLabel("LogHeading", "运行诊断日志", "Diagnostic Log");
                 SetLabel("SettingsHeading", "设置", "Settings");
                 SetLabel("LanguageHeading", "语言", "Language");
                 SetLabel("PackageHeading", "安装包目录", "Package Folder");
+                SetLabel("PackageDesc",
+                    "默认无需填写（自动使用启动器所在目录）；仅在将启动器单独移出完整解压包或源码调试时手动指定。",
+                    "Leave blank by default (uses launcher folder); only set when running outside the extracted package.");
+                SetLabel("CommunityHeading", "关于与社区", "About & Community");
+                SetLabel("GithubButton", "GitHub · 项目主页", "GitHub · Repository");
+                SetLabel("BilibiliButton", "Bilibili · 作者主页", "Bilibili · Channel");
                 if (_selectedGame == null)
                 {
                     SetLabel("HeroTitle", "选择一个游戏以开始", "Select a game to get started");
@@ -728,15 +764,7 @@ namespace OptScalerNR.Launcher
                     _langCombo.SelectedIndex = isZh ? 0 : 1;
                 }
 
-                if (_filterCombo != null && _filterCombo.Items.Count >= 3)
-                {
-                    var idx = _filterCombo.SelectedIndex;
-                    _filterCombo.Items.Clear();
-                    _filterCombo.Items.Add(isZh ? "全部" : "All");
-                    _filterCombo.Items.Add(isZh ? "已安装" : "Installed");
-                    _filterCombo.Items.Add(isZh ? "未安装" : "Not Installed");
-                    _filterCombo.SelectedIndex = idx >= 0 ? idx : 0;
-                }
+                RefreshLibraryFilters();
 
                 if (_proxyCombo != null && _proxyCombo.Items.Count > 0)
                 {
@@ -751,6 +779,8 @@ namespace OptScalerNR.Launcher
                 RefreshLibraryActions();
                 UpdateProxyRecommendation();
                 RefreshStatusLanguage();
+                RefreshPresentationLanguage();
+                RefreshProfilesLanguage();
                 RefreshGameListView();
             }
             finally { _applyingLanguage = false; }
@@ -775,7 +805,7 @@ namespace OptScalerNR.Launcher
             if (_selectedGame != null && !_selectedGame.HasExecutable) {
                 if (_injectText != null) _injectText.Text = L("尚未定位启动程序。可以保留文件夹条目，扫描或选择 EXE 后再安装。", "Executable not selected. Keep this folder entry and find or choose its EXE before installing.");
                 UpdateProxyRecommendation();
-                foreach (var label in new[] { _lmxxfReason, _danielReason, _mochiReason }) if (label != null) label.Text = L("待选择 EXE", "Select EXE first");
+                foreach (var label in new[] { _lmxxfReason, _danielReason, _mochiReason }) if (label != null) { label.Text = L("待选择 EXE", "Select EXE first"); label.Foreground = MissingBrush; }
                 foreach (var badge in new[] { _lmxxfBadge, _danielBadge, _mochiBadge }) if (badge != null) { badge.Background = MissingBg; badge.BorderBrush = MissingBorder; }
                 RefreshBackendHints();
                 return;
@@ -800,10 +830,21 @@ namespace OptScalerNR.Launcher
                 if (result != null && result.Backends != null)
                     foreach (var candidate in result.Backends)
                         if (candidate != null && candidate.Id == id) { capability = candidate; break; }
+                var ready = capability != null && capability.Enabled;
                 var reason = capability != null ? GetReasonText(capability.ReasonCode, capability.Reason, _language == "zh")
                     : failed ? L("检查失败", "Check failed") : L("未检查", "Not checked");
                 var label = id == "lmxxf" ? _lmxxfReason : id == "daniel" ? _danielReason : _mochiReason;
-                if (label != null) label.Text = reason;
+                var badge = id == "lmxxf" ? _lmxxfBadge : id == "daniel" ? _danielBadge : _mochiBadge;
+                if (label != null)
+                {
+                    label.Text = reason;
+                    label.Foreground = ready ? ReadyBrush : MissingBrush;
+                }
+                if (badge != null)
+                {
+                    badge.Background = ready ? ReadyBg : MissingBg;
+                    badge.BorderBrush = ready ? ReadyBorder : MissingBorder;
+                }
             }
             RefreshBackendHints();
             if (!failed) UpdateProxyRecommendation();
@@ -813,29 +854,53 @@ namespace OptScalerNR.Launcher
         {
             var lines = new List<string>();
             if (backend.MissingPackageFiles != null && backend.MissingPackageFiles.Length > 0)
+                lines.Add(L("安装包组件不完整，详见组件详情。", "Package components incomplete; see component details."));
+            var hintSet = new HashSet<string>(backend.Hints ?? new string[0], StringComparer.OrdinalIgnoreCase);
+            if (hintSet.Contains("lmxxf-original") && hintSet.Contains("lmxxf-small"))
             {
-                var files = string.Join(", ", backend.MissingPackageFiles, 0, Math.Min(3, backend.MissingPackageFiles.Length));
-                if (backend.MissingPackageFiles.Length > 3) files += L(" 等 " + backend.MissingPackageFiles.Length + " 项", " (" + backend.MissingPackageFiles.Length + " files)");
-                lines.Add(L("安装包缺少 " + files + "，请重新解压完整安装包。",
-                    "Package file missing: " + files + ". Extract the complete package again."));
+                lines.Add(L("缺少模型：请将 nvngx_dlssnr.dll 放到安装包目录（也支持已解压的 native-game-tiled-assets）。",
+                    "Models missing: place nvngx_dlssnr.dll beside Setup.bat (or supply native-game-tiled-assets)."));
+            }
+            else if (hintSet.Contains("lmxxf-original-preparable") && hintSet.Contains("lmxxf-small-preparable"))
+            {
+                lines.Add(L("已找到模型来源，安装时自动提取。", "Model source found. Selected models will be extracted during installation."));
             }
             foreach (var hint in backend.Hints ?? new string[0])
             {
                 switch (hint)
                 {
-                    case "lmxxf-weights": lines.Add(L("缺少 lmxxf 权重。请将完整的 native-game-tiled-assets 文件夹放到安装包目录。", "lmxxf weights are missing. Place the complete native-game-tiled-assets folder beside Setup.bat.")); break;
-                    case "lmxxf-original": lines.Add(L("缺少 lmxxf Original 权重。请将完整的原始模型权重放入 native-game-tiled-assets。", "lmxxf Original weights are missing. Place the complete Original weights in native-game-tiled-assets.")); break;
-                    case "lmxxf-small": lines.Add(L("缺少 lmxxf Small 权重。请补齐 native-game-tiled-assets\\small，或提供 nvngx_dlssnr.dll 310.9.16。", "lmxxf Small weights are missing. Supply native-game-tiled-assets\\small or nvngx_dlssnr.dll 310.9.16.")); break;
-                    case "lmxxf-small-preparable": lines.Add(L("Small 尚未安装；已找到提取来源。选择安装 Small 时才会提取转换，需要 Python 3.10+。", "Small is not installed; an extraction source was found. It will be extracted and converted only if you select Small, using Python 3.10+.")); break;
-                    case "mochi-source": lines.Add(L("缺少 Mochi 模型。请将 nvngx_dlssnr.dll 放到安装包目录。", "Mochi models are missing. Place nvngx_dlssnr.dll beside Setup.bat.")); break;
-                    case "mochi-preparable": lines.Add(L("已找到模型来源，安装时准备。", "Model source found. Models will be prepared during installation.")); break;
+                    case "lmxxf-weights": lines.Add(L("缺少模型：请将 nvngx_dlssnr.dll 放到安装包目录。", "lmxxf weights are missing. Place nvngx_dlssnr.dll beside Setup.bat.")); break;
+                    case "lmxxf-original":
+                        if (!hintSet.Contains("lmxxf-small"))
+                            lines.Add(L("Original 未安装：放入 nvngx_dlssnr.dll 即可提取。", "Original not installed: place nvngx_dlssnr.dll beside Setup.bat to extract."));
+                        break;
+                    case "lmxxf-original-preparable":
+                        if (!hintSet.Contains("lmxxf-small-preparable"))
+                            lines.Add(L("Original 未安装：选择后将自动提取。", "Original not installed: will be extracted if selected."));
+                        break;
+                    case "lmxxf-small":
+                        if (!hintSet.Contains("lmxxf-original"))
+                            lines.Add(L("Small 未安装：需要 nvngx_dlssnr.dll (310.9.16)。", "Small not installed: requires nvngx_dlssnr.dll (310.9.16)."));
+                        break;
+                    case "lmxxf-small-preparable":
+                        if (!hintSet.Contains("lmxxf-original-preparable"))
+                            lines.Add(L("Small 未安装：选择后将自动提取。", "Small not installed: will be extracted if selected."));
+                        break;
+                    case "mochi-source": lines.Add(L("缺少 Mochi 模型：请将 nvngx_dlssnr.dll 放到安装包目录。", "Mochi models are missing. Place nvngx_dlssnr.dll beside Setup.bat.")); break;
+                    case "mochi-preparable": lines.Add(L("已找到模型来源，安装时自动提取。", "Model source found. Models will be prepared during installation.")); break;
                     case "mochi-versions": lines.Add(L("310.9.16 支持新旧模型；310.8.0 仅支持原始模型。", "310.9.16: both models. 310.8.0: original only.")); break;
-                    case "mochi-unsupported-source": lines.Add(L("此 nvngx_dlssnr.dll 不受支持，请更换版本。", "Unsupported nvngx_dlssnr.dll. Supply a supported version.")); break;
-                    case "daniel-runtime": lines.Add(L("缺少 Daniel 运行库。请将 Daniel 的 version.dll 放到安装包目录。", "Daniel runtime is missing. Place Daniel's version.dll beside Setup.bat.")); break;
-                    case "daniel-weights": lines.Add(L("缺少 Daniel 权重。请放入 dlssnr_on_amd_weights.bin，或补齐模型提取文件。", "Daniel weights are missing. Supply dlssnr_on_amd_weights.bin or the extraction files.")); break;
-                    case "daniel-setup": lines.Add(L("请将 Daniel 的 dlssnr_on_amd_setup.exe 放到安装包目录。", "Place Daniel's dlssnr_on_amd_setup.exe beside Setup.bat.")); break;
-                    case "daniel-source": lines.Add(L("请将受支持的 nvngx_dlssnr.dll 放到安装包目录。", "Place a supported nvngx_dlssnr.dll beside Setup.bat.")); break;
-                    case "daniel-preparable": lines.Add(L("已找到提取文件，安装时准备。", "Extraction files found. Preparation will run during installation.")); break;
+                    case "mochi-unsupported-source": lines.Add(L("此 nvngx_dlssnr.dll 版本不受支持，请更换为 310.9.16 或 310.8.0。", "Unsupported nvngx_dlssnr.dll. Supply 310.9.16 or 310.8.0.")); break;
+                    case "daniel-runtime": lines.Add(L("缺少 Daniel 运行库：请放入 Daniel 的 dlssnr_on_amd_setup.exe 或 version.dll。", "Daniel runtime missing: place Daniel's dlssnr_on_amd_setup.exe or Daniel's version.dll beside Setup.bat.")); break;
+                    case "daniel-weights": lines.Add(L("缺少 Daniel 权重：请放入 nvngx_dlssnr.dll（或 dlssnr_on_amd_weights.bin）。", "Daniel weights missing: place nvngx_dlssnr.dll (or dlssnr_on_amd_weights.bin) beside Setup.bat.")); break;
+                    case "daniel-setup":
+                        if (!hintSet.Contains("daniel-runtime"))
+                            lines.Add(L("请放入 Daniel 的 dlssnr_on_amd_setup.exe 或 version.dll。", "Place Daniel's dlssnr_on_amd_setup.exe or Daniel's version.dll beside Setup.bat."));
+                        break;
+                    case "daniel-source":
+                        if (!hintSet.Contains("daniel-weights"))
+                            lines.Add(L("请将 nvngx_dlssnr.dll 放到安装包目录。", "Place nvngx_dlssnr.dll beside Setup.bat."));
+                        break;
+                    case "daniel-preparable": lines.Add(L("已找到提取文件，安装时自动提取。", "Extraction files found. Preparation will run during installation.")); break;
                 }
             }
             return string.Join(Environment.NewLine, lines.ToArray());
@@ -844,6 +909,7 @@ namespace OptScalerNR.Launcher
         void RefreshBackendHints()
         {
             bool any = false;
+            var details = new List<string>();
             foreach (var id in new[] { "mochizuki", "lmxxf", "daniel" })
             {
                 BackendInfo backend = null;
@@ -851,13 +917,14 @@ namespace OptScalerNR.Launcher
                     foreach (var item in _lastInspectResult.Backends)
                         if (item != null && item.Id == id) { backend = item; break; }
                 var text = backend != null ? BackendHintText(backend) : "";
+                if (backend != null && backend.MissingPackageFiles != null && backend.MissingPackageFiles.Length > 0)
+                    details.Add(id + ": " + string.Join(", ", backend.MissingPackageFiles));
                 var label = _window.FindName(id == "mochizuki" ? "MochiHint" : id == "lmxxf" ? "LmxxfHint" : "DanielHint") as TextBlock;
                 if (label != null)
                 {
                     label.Text = text;
                     label.Visibility = string.IsNullOrEmpty(text) ? Visibility.Collapsed : Visibility.Visible;
-                    label.ToolTip = backend != null && backend.MissingPackageFiles != null && backend.MissingPackageFiles.Length > 3
-                        ? string.Join(Environment.NewLine, backend.MissingPackageFiles) : null;
+                    label.ToolTip = null;
                 }
                 any |= !string.IsNullOrEmpty(text);
             }
@@ -868,6 +935,11 @@ namespace OptScalerNR.Launcher
                 pathLabel.Text = L("安装包目录：", "Package folder: ") + (path ?? "");
                 pathLabel.Visibility = any && !string.IsNullOrEmpty(path) ? Visibility.Visible : Visibility.Collapsed;
             }
+            var detailText = (TextBlock)_window.FindName("BackendDetailsText");
+            detailText.Text = string.Join(Environment.NewLine, details.ToArray());
+            ((Expander)_window.FindName("BackendDetails")).Visibility = details.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            ((Expander)_window.FindName("BackendDetails")).Header = L("组件详情", "Component details");
+            SetLabel("BackendDetailsHeading", "安装包中缺少的组件", "Missing package components");
         }
 
         void RefreshStatusLanguage()
@@ -880,6 +952,7 @@ namespace OptScalerNR.Launcher
             }
             switch (_statusText.Text)
             {
+                case "": _statusText.Text = L("就绪", "Ready"); break;
                 case "就绪": case "Ready": _statusText.Text = L("就绪", "Ready"); break;
                 case "正在扫描游戏库…": case "Scanning library…": _statusText.Text = L("正在扫描游戏库…", "Scanning library…"); break;
                 case "游戏库已更新": case "Library updated": _statusText.Text = L("游戏库已更新", "Library updated"); break;
@@ -895,6 +968,8 @@ namespace OptScalerNR.Launcher
                 case "正在应用更改…": case "Applying changes…": _statusText.Text = StageText("install"); break;
                 case "目标文件夹已被另一个安装进程锁定。": case "Target folder is locked by another launcher.":
                     _statusText.Text = L("目标文件夹已被另一个安装进程锁定。", "Target folder is locked by another launcher."); break;
+                case "正在从 OptiScaler 官方 Wiki 同步推荐资料…": case "Syncing recommendations from the official OptiScaler Wiki…":
+                    _statusText.Text = L("正在从 OptiScaler 官方 Wiki 同步推荐资料…", "Syncing recommendations from the official OptiScaler Wiki…"); break;
             }
         }
 
@@ -927,11 +1002,14 @@ namespace OptScalerNR.Launcher
                 || string.Equals(rec.Language, "en", StringComparison.OrdinalIgnoreCase));
             _saveInitialLanguage = !hasSavedLanguage;
             _language = hasSavedLanguage ? rec.Language.ToLowerInvariant() : ResolveLanguage(null, CultureInfo.CurrentUICulture);
+            _theme = LauncherTheme.Normalize(rec == null ? null : rec.Theme);
             if (rec != null)
             {
                 _recentGameId = rec.RecentGameId;
                 if (rec.ProxyChoices != null)
                     foreach (var pair in rec.ProxyChoices) if (ProxyRecommendations.Supports(pair.Value)) _proxyChoices[pair.Key] = pair.Value;
+                if (rec.OptiPatcherByGame != null)
+                    foreach (var pair in rec.OptiPatcherByGame) _optiPatcherByGame[pair.Key] = pair.Value;
                 if (rec.HiddenGames != null)
                     foreach (var pair in rec.HiddenGames) _hiddenGames[pair.Key] = pair.Value;
                 if (rec.BackendChoices != null)
@@ -942,8 +1020,8 @@ namespace OptScalerNR.Launcher
                 if (_scanOnStartup != null) _scanOnStartup.IsChecked = _isScanOnStartup;
                 if (!string.IsNullOrEmpty(rec.PackageRoot))
                 {
-                    _packageRoot = rec.PackageRoot;
-                    if (_packageRootBox != null) _packageRootBox.Text = _packageRoot;
+                    _diagnosticPackageRoot = rec.PackageRoot;
+                    if (_packageRootBox != null) _packageRootBox.Text = _diagnosticPackageRoot;
                 }
             }
         }
@@ -957,12 +1035,14 @@ namespace OptScalerNR.Launcher
                 var set = new GuiSettings
                 {
                     Language = _language,
+                    Theme = _theme,
                     ScanOnStartup = _isScanOnStartup,
-                    PackageRoot = _packageRoot,
+                    PackageRoot = _diagnosticPackageRoot,
                     RecentGameId = _selectedGame != null ? _selectedGame.Id : _recentGameId,
                     BackendChoices = _backendChoices,
                     HiddenGames = _hiddenGames,
-                    ProxyChoices = _proxyChoices
+                    ProxyChoices = _proxyChoices,
+                    OptiPatcherByGame = _optiPatcherByGame
                 };
                 JsonUtil.WriteFile(_settingsPath, set);
             }
@@ -1016,8 +1096,10 @@ namespace OptScalerNR.Launcher
         sealed class GuiSettings
         {
             [System.Runtime.Serialization.DataMember] public Dictionary<string, string> ProxyChoices;
+            [System.Runtime.Serialization.DataMember(Name = "optiPatcherByGame")] public Dictionary<string, bool> OptiPatcherByGame;
             [System.Runtime.Serialization.DataMember] public Dictionary<string, string> HiddenGames;
             [System.Runtime.Serialization.DataMember] public string Language;
+            [System.Runtime.Serialization.DataMember] public string Theme;
             [System.Runtime.Serialization.DataMember] public bool ScanOnStartup = true;
             [System.Runtime.Serialization.DataMember] public string PackageRoot;
             [System.Runtime.Serialization.DataMember] public string RecentGameId;
@@ -1087,24 +1169,15 @@ namespace OptScalerNR.Launcher
         {
             get
             {
-                var baseDir = AppDomain.CurrentDomain.BaseDirectory;
-                if (!string.IsNullOrEmpty(_packageRoot))
-                {
-                    var custom = Path.Combine(_packageRoot, "launcher-worker.ps1");
-                    if (File.Exists(custom)) return custom;
-                }
-                var packaged = Path.Combine(baseDir, "launcher-worker.ps1");
-                var fromTree = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "tools", "install", "launcher-worker.ps1"));
-                var mock = Path.Combine(baseDir, "mock-worker.ps1");
-                if (File.Exists(packaged)) return packaged;
-                if (File.Exists(fromTree)) return fromTree;
-                if (File.Exists(mock)) return mock;
-                throw new FileNotFoundException(L("缺少 launcher-worker.ps1，请重新解压完整安装包。", "Complete package required: launcher-worker.ps1 is missing."));
+                var worker = Path.Combine(_packageRoot, "launcher-worker.ps1");
+                if (File.Exists(worker)) return worker;
+                throw new FileNotFoundException(L("请从完整解压的安装包启动 Setup.bat。若需指定其他安装包，请先确认开启诊断模式。", "Run Setup.bat from the complete extracted package. Enable diagnostic mode explicitly to select another package."));
             }
         }
 
         void BrowsePackageRoot()
         {
+            if (!_diagnosticMode || !CanChangePackageSource()) return;
             var dlg = new OpenFileDialog
             {
                 Title = L("选择完整安装包目录（选择 Setup.ps1 或 OptiScaler.dll）", "Select package folder (pick Setup.ps1 or OptiScaler.dll)"),
@@ -1113,10 +1186,7 @@ namespace OptScalerNR.Launcher
             };
             if (dlg.ShowDialog(_window) == true)
             {
-                _packageRoot = Path.GetDirectoryName(dlg.FileName);
-                if (_packageRootBox != null) _packageRootBox.Text = _packageRoot;
-                SaveSettings();
-                if (_selectedGame != null) InspectGame(_selectedGame);
+                SetDiagnosticPackageRoot(Path.GetDirectoryName(dlg.FileName));
             }
         }
 
@@ -1276,49 +1346,64 @@ namespace OptScalerNR.Launcher
             }
         }
 
-        static ImageSource GetOrExtractIcon(GameInfo g)
+        bool _refreshingFilters;
+        string _libraryFilter = "all";
+        void RefreshLibraryFilters()
         {
-            if (g == null || string.IsNullOrEmpty(g.Exe)) return null;
-            if (!string.IsNullOrEmpty(g.DisplayCover) && File.Exists(g.DisplayCover)) return null;
-            try
-            {
-                if (File.Exists(g.Exe))
-                {
-                    using (var ico = System.Drawing.Icon.ExtractAssociatedIcon(g.Exe))
-                    {
-                        if (ico != null)
-                        {
-                            return Imaging.CreateBitmapSourceFromHIcon(
-                                ico.Handle,
-                                Int32Rect.Empty,
-                                BitmapSizeOptions.FromEmptyOptions());
-                        }
-                    }
-                }
+            if (_filterCombo == null || _refreshingFilters) return;
+            var selected = _filterCombo.SelectedItem as ComboBoxItem;
+            if (selected != null) _libraryFilter = (string)selected.Tag;
+            _refreshingFilters = true;
+            try {
+                _filterCombo.Items.Clear();
+                Action<string, string> add = delegate(string id, string label) { var item = new ComboBoxItem { Tag = id, Content = label }; _filterCombo.Items.Add(item); if (id == _libraryFilter) _filterCombo.SelectedItem = item; };
+                add("all", L("全部", "All")); add("installed", L("已安装", "Installed")); add("uninstalled", L("未安装", "Not installed"));
+                _filterCombo.Items.Add(new Separator { Style = (Style)_window.FindResource("GameContextMenuSeparator"), Width = 74, IsEnabled = false, Focusable = false, IsHitTestVisible = false });
+                var sources = new List<string> { "Steam", "Xbox", "Epic", "Manual" };
+                foreach (var game in _allGames) if (!string.IsNullOrEmpty(game.Source) && !sources.Exists(s => string.Equals(s, game.Source, StringComparison.OrdinalIgnoreCase))) sources.Add(game.Source);
+                foreach (var source in sources) add("source:" + source.ToLowerInvariant(), source);
+                if (_filterCombo.SelectedItem == null) { _libraryFilter = "all"; _filterCombo.SelectedItem = _filterCombo.Items[0]; }
+            } finally { _refreshingFilters = false; }
+        }
+
+        readonly LocalArtwork.Scope _libraryArtwork, _heroArtwork;
+        static IEnumerable<LocalArtwork.Request> LibraryArtworkRequests(IEnumerable<GameItemViewModel> items, int pixels)
+        {
+            foreach (var item in items) {
+                var current = item;
+                yield return new LocalArtwork.Request { Path = current.HasCover ? current.Cover : current.Info.Exe,
+                    Pixels = pixels, Icon = !current.HasCover, Complete = image => current.IconSource = image };
             }
-            catch { }
-            return null;
+        }
+
+        int ArtworkPixels(int dips)
+        {
+            var source = PresentationSource.FromVisual(_window);
+            return (int)Math.Ceiling(dips * (source != null && source.CompositionTarget != null ? source.CompositionTarget.TransformToDevice.M11 : 1));
         }
 
         void RefreshGameListView()
         {
+            RefreshLibraryFilters();
             var query = (_searchBox != null ? _searchBox.Text : "").Trim().ToLowerInvariant();
-            var filterIdx = _filterCombo != null ? _filterCombo.SelectedIndex : 0;
+            var filter = _filterCombo != null ? _filterCombo.SelectedItem as ComboBoxItem : null;
+            var filterId = filter != null ? (string)filter.Tag : _libraryFilter;
             var isZh = _language == "zh";
 
             var list = new List<GameItemViewModel>();
             foreach (var g in _allGames)
             {
-                if (filterIdx == 1 && !g.Installed) continue;
-                if (filterIdx == 2 && g.Installed) continue;
+                if (filterId == "installed" && !g.Installed) continue;
+                if (filterId == "uninstalled" && g.Installed) continue;
+                if (filterId.StartsWith("source:", StringComparison.Ordinal) && !string.Equals(filterId.Substring(7), g.Source, StringComparison.OrdinalIgnoreCase)) continue;
                 if (!string.IsNullOrEmpty(query))
                 {
                     var matchName = (g.DisplayName ?? "").ToLowerInvariant().Contains(query) || (g.Name ?? "").ToLowerInvariant().Contains(query);
                     var matchExe = g.Exe != null && g.Exe.ToLowerInvariant().Contains(query);
                     if (!matchName && !matchExe) continue;
                 }
-                var icon = GetOrExtractIcon(g);
-                list.Add(new GameItemViewModel { Info = g, IsZh = isZh, IconSource = icon });
+                var item = new GameItemViewModel { Info = g, IsZh = isZh, PackageDiffers = PackageDiffers(g) };
+                list.Add(item);
             }
 
             if (_gameList != null)
@@ -1336,6 +1421,7 @@ namespace OptScalerNR.Launcher
                     }
                 }
             }
+            _libraryArtwork.Replace(LibraryArtworkRequests(list, ArtworkPixels(42)));
 
             if (_countBadge != null) _countBadge.Text = list.Count.ToString();
             if (_countText != null)
@@ -1368,7 +1454,9 @@ namespace OptScalerNR.Launcher
             _resumeInstallAction = "";
             if (game == null || _selectedGame == null || !SameLibraryGame(game, _selectedGame)) _decisions.ModelSourceDll = null;
             _selectedGame = game;
+            SelectGameProfiles();
             _lastInspectResult = null;
+            _heroArtwork.Replace(null);
             if (game == null) {
                 _recentGameId = null;
                 if (_heroTitle != null) _heroTitle.Text = L("选择一个游戏以开始", "Select a game to begin");
@@ -1383,86 +1471,56 @@ namespace OptScalerNR.Launcher
             RestoreBackendChoice();
             RefreshInspectionText();
             if (_heroTitle != null) _heroTitle.Text = game.DisplayName;
-            if (_heroMeta != null) _heroMeta.Text = game.Source + " · PC";
+            if (_heroMeta != null) _heroMeta.Text = game.Source;
             if (_heroPath != null) _heroPath.Text = EntryLocation(game);
 
-            if (_heroBgImage != null)
-            {
-                if (!string.IsNullOrEmpty(game.DisplayHero) && File.Exists(game.DisplayHero))
-                {
-                    try
-                    {
-                        var bi = new BitmapImage();
-                        bi.BeginInit();
-                        bi.CacheOption = BitmapCacheOption.OnLoad;
-                        bi.UriSource = new Uri(game.DisplayHero, UriKind.Absolute);
-                        bi.EndInit();
-                        _heroBgImage.Source = bi;
-                    }
-                    catch { _heroBgImage.Source = null; }
-                }
-                else
-                {
-                    _heroBgImage.Source = null;
-                }
+            if (_heroBgImage != null) {
+                _heroBgImage.Source = null;
+                var identity = game;
+                LocalArtwork.Load(_heroArtwork, game.DisplayHero, ArtworkPixels(1000), false, true, delegate(ImageSource image) {
+                    if (ReferenceEquals(_selectedGame, identity)) _heroBgImage.Source = image;
+                });
             }
-
-            if (_heroPosterImage != null && _heroPosterInitial != null)
-            {
-                bool loaded = false;
-                if (!string.IsNullOrEmpty(game.DisplayCover) && File.Exists(game.DisplayCover))
-                {
-                    try
-                    {
-                        var bi = new BitmapImage();
-                        bi.BeginInit();
-                        bi.CacheOption = BitmapCacheOption.OnLoad;
-                        bi.DecodePixelWidth = 180;
-                        bi.UriSource = new Uri(game.DisplayCover, UriKind.Absolute);
-                        bi.EndInit();
-                        _heroPosterImage.Source = bi;
-                        _heroPosterImage.Visibility = Visibility.Visible;
-                        _heroPosterInitial.Visibility = Visibility.Collapsed;
-                        loaded = true;
-                    }
-                    catch { }
-                }
-
-                if (!loaded)
-                {
-                    var icon = GetOrExtractIcon(game);
-                    if (icon != null)
-                    {
-                        _heroPosterImage.Source = icon;
-                        _heroPosterImage.Visibility = Visibility.Visible;
-                        _heroPosterInitial.Visibility = Visibility.Collapsed;
-                        loaded = true;
-                    }
-                }
-
-                if (!loaded)
-                {
-                    _heroPosterImage.Source = null;
-                    _heroPosterImage.Visibility = Visibility.Collapsed;
-                    _heroPosterInitial.Text = string.IsNullOrEmpty(game.DisplayName) ? "?" : game.DisplayName.Substring(0, 1).ToUpperInvariant();
-                    _heroPosterInitial.Visibility = Visibility.Visible;
-                }
-            }
+            // Hidden legacy poster fields remain readable, but never supply the hero background.
+            if (_heroPosterImage != null) _heroPosterImage.Source = null;
 
             UpdatePrimaryButtonState();
             InspectGame(game);
+        }
+
+        void UpdatePrimaryActionText()
+        {
+            if (_primaryButton == null) return;
+            if (_selectedGame == null) {
+                _primaryButton.Content = L("选择一个游戏", "Select a game");
+                _primaryButton.ToolTip = L("选择游戏后设置安装选项。", "Select a game to configure installation.");
+            } else if (!_selectedGame.HasExecutable) {
+                _primaryButton.Content = L("扫描 / 选择启动程序", "Find / choose game EXE");
+                _primaryButton.ToolTip = L("选择此游戏的启动程序，不会开始安装。", "Choose this game's executable; this does not install anything.");
+            } else if (!_selectedGame.Installed) {
+                _primaryButton.Content = L("安装 OptScaler NR", "Install OptScaler NR");
+                _primaryButton.ToolTip = L("按所选后端、模型、代理和 INI 选项安装。", "Install with the selected backends, models, proxy and INI options.");
+            } else {
+                _primaryButton.Content = PackageDiffers(_selectedGame)
+                    ? L("更新 OptScaler NR", "Update OptScaler NR")
+                    : L("重新安装 / 应用更改", "Reinstall / apply changes");
+                _primaryButton.ToolTip = PackageDiffers(_selectedGame)
+                    ? L("已安装的 OptScaler NR 与当前选择的安装包不同（文件哈希不同），不一定是旧版本。按当前选项更新，无需先卸载；取消勾选“覆盖现有 INI”可保留现有配置。", "The installed OptScaler NR differs from the package you selected (different file hashes); it is not necessarily older. Update with your current options without uninstalling first. Uncheck Replace INI to keep your current configuration.")
+                    : L("重新安装并应用当前后端、模型和代理选项。取消勾选“覆盖现有 INI”可保留现有配置。", "Reinstall and apply your current backend, model and proxy options. Uncheck Replace INI to keep your current configuration.");
+            }
         }
 
         void UpdatePrimaryButtonState()
         {
             UpdateCompatibilitySummary();
             RefreshLibraryActions();
+            RefreshProfileActions();
+            RefreshHeroState();
             if (_removeGameMenuItem != null) _removeGameMenuItem.IsEnabled = _removeGameMenuItem.Tag is GameInfo && !_writeBusy && (_session == null || !_session.IsRunning);
             if (_primaryButton == null) return;
-            var isZh = _language == "zh";
+            if (_presentationBusy) { _primaryButton.IsEnabled = false; return; }
             if (_selectedGame == null)
             {
-                _primaryButton.Content = isZh ? "⚡ 选择一个游戏" : "⚡ Select a Game";
                 _primaryButton.IsEnabled = false;
                 if (_uninstallButton != null) _uninstallButton.IsEnabled = false;
                 return;
@@ -1475,15 +1533,11 @@ namespace OptScalerNR.Launcher
             var proxyChosen = !string.IsNullOrEmpty(CurrentSelectedProxy);
             var isBusy = _session != null && _session.IsRunning;
             if (!_selectedGame.HasExecutable) {
-                _primaryButton.Content = L("扫描 / 选择启动程序", "Find / choose game EXE");
                 _primaryButton.IsEnabled = !isBusy && !_writeBusy && _folderScan == null;
                 if (_uninstallButton != null) _uninstallButton.IsEnabled = false;
                 return;
             }
 
-            _primaryButton.Content = _selectedGame.Installed
-                ? (isZh ? "⚡ 更新 OptScaler NR" : "⚡ Update OptScaler NR")
-                : (isZh ? "⚡ 安装 OptScaler NR" : "⚡ Install OptScaler NR");
             _primaryButton.IsEnabled = !isBusy && !_writeBusy && _folderScan == null && hasBackend && proxyChosen;
             if (_uninstallButton != null)
                 _uninstallButton.IsEnabled = !isBusy && _selectedGame.Installed;
@@ -1658,6 +1712,7 @@ namespace OptScalerNR.Launcher
                 {
                     selectionChanged = MergeScannedGames(result.Games);
                     SaveLibraryCache();
+                    RefreshPackageComparisons(string.IsNullOrWhiteSpace(_packageRoot) && _lastInspectResult != null ? _lastInspectResult.PackageRoot : _packageRoot, true);
                     RefreshGameListView();
                 }
 
@@ -1704,6 +1759,7 @@ namespace OptScalerNR.Launcher
             if (_statusLed != null) _statusLed.Fill = WarningBrush;
             if (_progress != null) _progress.IsIndeterminate = true;
             UpdatePrimaryButtonState();
+            _decisions.OptiPatcher = (_optiPatcherToggle != null && _optiPatcherToggle.IsChecked == true) ? "install" : "skip";
 
             var req = new LauncherRequest
             {
@@ -1769,34 +1825,88 @@ namespace OptScalerNR.Launcher
             }
         }
 
-        void ShowCompatibilityHelp()
+        Window CreateCompatibilityHelpDialog()
         {
             var title = L("关于兼容修复与配套库", "About Compatibility Repair & Companion Libraries");
-            var content = L(
-                "【兼容修复的作用与使用场景】\n\n" +
+            var dialog = DialogTheme.Create(_window, title, 620);
+            var panel = new StackPanel { Margin = new Thickness(22) };
+
+            var statusBox = new Border
+            {
+                Background = LauncherTheme.Brush("ThemeSubtle"),
+                BorderBrush = LauncherTheme.Brush("ThemeBorder"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(14, 10, 14, 10),
+                Margin = new Thickness(0, 0, 0, 16)
+            };
+            var statusStack = new StackPanel();
+            statusStack.Children.Add(new TextBlock
+            {
+                Text = L("当前游戏配套文件状态", "Current Game Companion Library Status"),
+                Foreground = LauncherTheme.Brush("ThemeSuccess"),
+                FontWeight = FontWeights.SemiBold,
+                FontSize = 12,
+                Margin = new Thickness(0, 0, 0, 4)
+            });
+            var summaryText = (_compatSummary != null && !string.IsNullOrEmpty(_compatSummary.Text))
+                ? _compatSummary.Text
+                : L("选择游戏后自动检查配套运行库文件。", "Select a game to check its companion runtime files automatically.");
+            statusStack.Children.Add(new TextBlock
+            {
+                Text = summaryText,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = LauncherTheme.Brush("ThemeInk"),
+                FontSize = 12
+            });
+            statusBox.Child = statusStack;
+            panel.Children.Add(statusBox);
+
+            var qaText = L(
+                "【兼容修复常见问题 Q&A】\n\n" +
                 "1. 什么时候需要使用兼容修复？\n" +
-                "   • 游戏设置中的 DLSS 帧生成 / XeSS / FSR 选项灰显、无法开启或提示硬件不支持（如《赛博朋克 2077》等游戏自带了陈旧的配套 DLL）。\n" +
+                "   • 游戏设置中的 DLSS 帧生成 / XeSS / FSR 选项灰显、无法开启或提示硬件不支持（部分游戏自带了较旧的配套 DLL）。\n" +
                 "   • 开启插帧后游戏闪退、报错，或插帧倍率受限。\n" +
                 "   • 游戏更新后自带的文件与 OptiScaler 补丁发生版本冲突。\n\n" +
                 "2. 兼容修复做了什么？\n" +
                 "   • 自动备份：将游戏目录中原有的配套 DLL（libxess.dll、amd_fidelityfx_*.dll 等）完整备份到游戏目录下的 OptiScaler-compat-backup 文件夹中。\n" +
                 "   • 配套替换：将本工具箱经过实测验证的配套运行库一键部署到游戏目录，替换厂商未更新的老旧文件，使补丁与游戏运行库完美协同。\n\n" +
                 "3. 如何还原或应对游戏更新？\n" +
-                "   • 若修复后没有改善或出现异常，随时点击“恢复游戏原文件”即可一键无损还原。\n" +
+                "   • 若修复后没有改善或出现异常，随时点击“恢复原文件”即可一键无损还原。\n" +
                 "   • 游戏更新后若正常运行，可在还原窗口中选择“保留当前文件并结束修复”，安全清理旧记录。",
-                "[Purpose & Usage Scenarios of Compatibility Repair]\n\n" +
+                "[Compatibility Repair Q&A]\n\n" +
                 "1. When should you use Compatibility Repair?\n" +
-                "   • In-game DLSS Frame Generation / XeSS / FSR options are greyed out, cannot be toggled on, or show hardware unsupported errors (e.g. Cyberpunk 2077 bundles outdated companion DLLs).\n" +
+                "   • In-game DLSS Frame Generation / XeSS / FSR options are greyed out, cannot be toggled on, or show hardware unsupported errors (some games bundle outdated companion DLLs).\n" +
                 "   • Game crashes or throws errors when frame generation is enabled, or frame rate multipliers are limited.\n" +
                 "   • Game updates introduced conflicting companion libraries.\n\n" +
                 "2. What does Compatibility Repair do?\n" +
                 "   • Automatic Backup: Safely backs up original companion DLLs (libxess.dll, amd_fidelityfx_*.dll, etc.) to the OptiScaler-compat-backup folder inside the game directory.\n" +
                 "   • Companion Replacement: Deploys validated runtime libraries bundled with this toolbox, replacing stale vendor files so the mod and game work seamlessly together.\n\n" +
                 "3. How to restore or handle game updates?\n" +
-                "   • If repair does not help, click 'Restore game files' anytime for one-click lossless rollback.\n" +
+                "   • If repair does not help, click 'Restore Files' anytime for one-click lossless rollback.\n" +
                 "   • After a game update, you can choose 'Keep current files and finish repair' to safely keep the latest files."
             );
-            DialogTheme.Show(_window, content, title, MessageBoxButton.OK, MessageBoxImage.Information);
+            panel.Children.Add(new TextBlock
+            {
+                Text = qaText,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = LauncherTheme.Brush("ThemeInk"),
+                Margin = new Thickness(0, 0, 0, 20)
+            });
+
+            var row = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right };
+            var ok = new Button { Content = L("确定", "OK"), MinWidth = 90, Margin = new Thickness(4) };
+            DialogTheme.Primary(dialog, ok);
+            ok.Click += delegate { dialog.DialogResult = true; };
+            row.Children.Add(ok);
+            panel.Children.Add(row);
+            DialogTheme.SetContent(dialog, panel);
+            return dialog;
+        }
+
+        void ShowCompatibilityHelp()
+        {
+            CreateCompatibilityHelpDialog().ShowDialog();
         }
 
         void UpdateCompatibilitySummary()
@@ -1817,7 +1927,7 @@ namespace OptScalerNR.Launcher
                 return;
             }
             if (report.Active) {
-                _compatSummary.Text = L("已有兼容修复备份。无改善可点“恢复游戏原文件”；游戏已更新时，也可在该窗口保留当前文件并结束旧修复，再重新修复。", "A compatibility repair backup exists. Use Restore game files if it did not help. After a game update, that dialog also lets you keep current files and finish the old repair before trying again.");
+                _compatSummary.Text = L("已有修复备份，可恢复原文件；游戏更新后的处理选项见恢复窗口。", "Repair backup available. Restore originals or review game-update options in the restore dialog.");
                 return;
             }
             var names = new List<string>();
@@ -1826,8 +1936,8 @@ namespace OptScalerNR.Launcher
                     if (file.State == "different") names.Add(file.Name);
             _compatSummary.Text = names.Count > 0
                 ? L("游戏目录与包内配套文件不同：", "Game and package companion files differ: ") + string.Join(", ", names) +
-                    L("。版本不同不等于故障。若游戏中 DLSS-FG/XeSS/FSR 不可用、插帧不可开启或启动异常，可点“兼容修复”查看并尝试替换。", ". Different versions do not prove a fault. If in-game DLSS-FG/XeSS/FSR is unavailable, frame gen is disabled or startup fails, click Compatibility repair to review and try replacement.")
-                : L("若游戏中 DLSS-FG/XeSS/FSR 不可用、插帧不可开启或启动异常，可点“兼容修复”检查；无需自行寻找 DLL。", "If in-game DLSS-FG/XeSS/FSR is unavailable, frame gen is disabled or startup fails, click Compatibility repair to review; no manual DLL search is needed.");
+                    L("。不同不等于故障；仅在启动或插帧异常时尝试修复。", ". Differences do not prove a fault; try repair only for startup or frame-generation issues.")
+                : L("启动、插帧或 XeSS 异常时可检查配套运行库；正常使用无需修复。", "Check companion runtimes for startup, frame-generation or XeSS issues; no repair is needed when working normally.");
         }
 
         Window CreateCompatibilityDialog(bool restore)
@@ -1838,7 +1948,7 @@ namespace OptScalerNR.Launcher
                 Title = restore ? L("恢复游戏原文件", "Restore game files") : L("兼容修复与配套库替换", "Compatibility repair & companion replacement"),
                 Width = 650, SizeToContent = SizeToContent.Height, MaxHeight = 720,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner, ResizeMode = ResizeMode.NoResize,
-                ShowInTaskbar = false, Background = new SolidColorBrush(Color.FromRgb(32,35,43)), Foreground = Brushes.White
+                ShowInTaskbar = false
             };
             DialogTheme.Apply(dialog, _window);
             var panel = new StackPanel { Margin = new Thickness(24) };
@@ -1846,7 +1956,7 @@ namespace OptScalerNR.Launcher
             text(_selectedGame == null ? "" : _selectedGame.Exe);
             text(restore
                 ? L("关闭游戏后恢复上次修复前的文件，并移除修复时新增的文件。游戏更新过的文件不会被覆盖。若游戏已更新或希望保留现状，可选“保留当前文件并结束修复”：不恢复任何 DLL，保留全部备份，并允许再次修复。", "Close the game first. Restore files from before the last repair and remove files added by it. Files changed by game updates will be preserved. Alternatively, Keep current files and finish repair changes no DLLs, retains all backups and allows a new repair.")
-                : L("关闭游戏后，将自动把游戏目录中的配套运行库（XeSS、AMD FidelityFX 等）安全备份到 OptiScaler-compat-backup，并替换为本工具箱经过验证的最新配套组件。\n解决如《赛博朋克 2077》等游戏中设置里无法开启 DLSS 帧生成 / FSR / XeSS，或因游戏原厂自带 DLL 老旧冲突导致的异常。\n无改善可随时点击“恢复游戏原文件”一键还原。", "Close the game first. Safely back up game companion runtime libraries (XeSS, AMD FidelityFX, etc.) into OptiScaler-compat-backup, and replace them with tested companion components bundled with this toolbox.\nSolves issues such as Cyberpunk 2077 where in-game DLSS-FG / FSR / XeSS cannot be toggled on or conflicts with outdated game DLLs.\nIf it does not help, you can restore original files at any time."));
+                : L("关闭游戏后，将自动把游戏目录中的配套运行库（XeSS、AMD FidelityFX 等）安全备份到 OptiScaler-compat-backup，并替换为本工具箱经过验证的最新配套组件。\n解决部分游戏中设置里无法开启 DLSS 帧生成 / FSR / XeSS，或因游戏自带 DLL 老旧冲突导致的异常。\n无改善可随时点击“恢复原文件”一键还原。", "Close the game first. Safely back up game companion runtime libraries (XeSS, AMD FidelityFX, etc.) into OptiScaler-compat-backup, and replace them with tested companion components bundled with this toolbox.\nSolves issues in some games where in-game DLSS-FG / FSR / XeSS cannot be toggled on or conflicts with outdated bundled DLLs.\nIf it does not help, you can restore original files at any time."));
             var selections = new Dictionary<string, CheckBox>();
             if (report != null && !string.IsNullOrEmpty(report.Error)) text(report.Error);
             var canRestore = restore && report != null && report.Active && !string.IsNullOrEmpty(report.Fingerprint);
@@ -1869,7 +1979,7 @@ namespace OptScalerNR.Launcher
                     panel.Children.Add(selectAllBtn);
                 }
                 foreach (var group in report.Groups) {
-                    var check = new CheckBox { Content = XessGroupLabel(group.Id), Foreground = Brushes.White,
+                    var check = new CheckBox { Content = XessGroupLabel(group.Id), Foreground = LauncherTheme.Brush("ThemeInk"),
                         IsEnabled = group.Ready && !report.Active, Margin = new Thickness(0,6,0,6) };
                     selections[group.Id] = check;
                     RoutedEventHandler changed = (s,e) => {
@@ -1936,43 +2046,48 @@ namespace OptScalerNR.Launcher
             var canExtract = capability != null && capability.PreparationState == "ready";
             var original = capability != null && capability.OriginalState == "ready";
             var small = capability != null && capability.SmallState == "ready";
+            // Preparable mirrors the installer's source check: 310.8.0 can only prepare original, so the
+            // Small choice must not ride on extraction tools alone (the installer would fail late).
+            var originalPreparable = capability != null && capability.OriginalState == "preparable";
+            var smallPreparable = capability != null && capability.SmallState == "preparable";
             var dialog = new Window
             {
                 Owner = _window.IsVisible ? _window : null, Title = L("选择 Mochizuki 模型", "Select Mochizuki models"), Width = 500,
                 SizeToContent = SizeToContent.Height, WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false,
-                Background = new SolidColorBrush(Color.FromRgb(32, 35, 43)), Foreground = Brushes.White
+                Background = LauncherTheme.Brush("ThemeSurface"), Foreground = LauncherTheme.Brush("ThemeInk")
             };
             DialogTheme.Apply(dialog, _window);
             var panel = new StackPanel { Margin = new Thickness(24) };
             panel.Children.Add(new TextBlock
             {
-                Text = L("请选择要安装的模型，不会自动勾选任何选项。", "Choose the models to install. No option is selected automatically."),
+                Text = L("选择安装范围；已有模型可复用，缺少的模型将自动提取。", "Choose what to install. Existing models are reused; missing models are extracted automatically."),
                 TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12)
             });
             panel.Children.Add(new TextBlock
             {
-                Text = L("新模型需要 nvngx_dlssnr.dll 310.9.16.0 或已验证的新版权重；原始模型使用旧版权重。来源缺失或无效时会停止安装。", "The new model requires nvngx_dlssnr.dll 310.9.16.0 or verified new weights. Original uses older weights. Missing or invalid sources stop installation."),
-                TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Orange,
+                Text = L("Small 需要 nvngx_dlssnr.dll 310.9.16；Original 也支持 310.8.0。", "Small needs nvngx_dlssnr.dll 310.9.16; Original also supports 310.8.0."),
+                TextWrapping = TextWrapping.Wrap, Foreground = LauncherTheme.Brush("ThemeWarning"),
                 Margin = new Thickness(0, 0, 0, 16)
             });
             var proceed = new Button { Content = L("继续", "Continue"), IsEnabled = false, MinWidth = 100, Margin = new Thickness(4) };
             DialogTheme.Primary(dialog, proceed);
-            if (!canExtract && !(original && small))
+            var enabled = new[] {
+                (original && small) || (canExtract && originalPreparable && smallPreparable),
+                small || (canExtract && smallPreparable),
+                original || (canExtract && originalPreparable)
+            };
+            if (!enabled[0] && !enabled[1] && !enabled[2])
                 panel.Children.Add(new TextBlock {
-                    Text = capability != null && capability.PreparationState == "missing-python"
-                        ? L("未找到可用的 Python 3.10+，无法提取缺失模型。请安装 Python 后重新检查，或将预提取的 dlssnr.bin / dlssnr-small.bin 放入安装包的 dlssnr-amd 文件夹。已有模型仍可选择。",
-                            "Python 3.10+ was not found. Install Python and inspect again, or place pre-extracted dlssnr.bin / dlssnr-small.bin in the package's dlssnr-amd folder. Existing models remain available.")
-                        : L("模型提取环境未就绪，请重新检查或解压完整安装包。已有模型仍可选择。", "Model extraction is unavailable. Inspect again or extract the complete package. Existing models remain available."),
-                    TextWrapping = TextWrapping.Wrap, Foreground = Brushes.OrangeRed, Margin = new Thickness(0,0,0,12)
+                    Text = L("部分模型暂不可用，请补齐来源或完整安装包后重试。", "Some models are unavailable. Add the source or restore the complete package and retry."),
+                    TextWrapping = TextWrapping.Wrap, Foreground = LauncherTheme.Brush("ThemeWarning"), Margin = new Thickness(0,0,0,12)
                 });
-            var enabled = new[] { (original && small) || canExtract, small || canExtract, original || canExtract };
             var values = new[] { "both", "small", "original" };
-            var labels = new[] { L("两个模型（推荐）", "Both models (recommended)"), L("仅新模型", "New model only"), L("仅原始模型", "Original model only") };
+            var labels = new[] { L("Original + Small", "Original + Small"), "Small", "Original" };
             for (var i = 0; i < values.Length; i++)
             {
                 var value = values[i];
-                var radio = new RadioButton { Content = labels[i], IsEnabled = enabled[i], Foreground = enabled[i] ? Brushes.White : Brushes.Gray, GroupName = "MochizukiModels", Margin = new Thickness(0, 6, 0, 6) };
+                var radio = new RadioButton { Content = labels[i], IsEnabled = enabled[i], Foreground = enabled[i] ? LauncherTheme.Brush("ThemeInk") : LauncherTheme.Brush("ThemeMuted"), GroupName = "MochizukiModels", Margin = new Thickness(0, 6, 0, 6) };
                 radio.Checked += delegate { dialog.Tag = value; proceed.IsEnabled = true; };
                 panel.Children.Add(radio);
             }
@@ -1992,33 +2107,30 @@ namespace OptScalerNR.Launcher
             if (_lastInspectResult != null && _lastInspectResult.Backends != null)
                 foreach (var backend in _lastInspectResult.Backends)
                     if (backend != null && backend.Id == "lmxxf") { capability = backend; break; }
-            var original = capability != null && capability.OriginalState == "ready";
+            var original = capability != null && (capability.OriginalState == "ready" || capability.OriginalState == "preparable");
             var small = capability != null && (capability.SmallState == "ready" || capability.SmallState == "preparable");
+            var needsOriginalPreparation = capability != null && capability.OriginalState == "preparable";
+            var needsSmallPreparation = capability != null && capability.SmallState == "preparable";
             var dialog = new Window {
                 Owner = _window.IsVisible ? _window : null, Title = L("选择 lmxxf 模型", "Select lmxxf models"), Width = 540,
                 SizeToContent = SizeToContent.Height, WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false,
-                Background = new SolidColorBrush(Color.FromRgb(32,35,43)), Foreground = Brushes.White
+                Background = LauncherTheme.Brush("ThemeSurface"), Foreground = LauncherTheme.Brush("ThemeInk")
             };
             DialogTheme.Apply(dialog, _window);
             var panel = new StackPanel { Margin = new Thickness(24) };
             panel.Children.Add(new TextBlock { Text = L("请选择要安装的模型。现有的另一套模型会保留。", "Choose the models to install. Other installed models are retained."), TextWrapping = TextWrapping.Wrap });
-            panel.Children.Add(new TextBlock { Text = "Original: " + (original ? L("就绪", "Ready") : L("缺失", "Missing")) + "  |  Small: " +
-                (capability != null && capability.SmallState == "preparable" ? L("未安装（可提取）", "Not installed (can extract)") : small ? L("已安装", "Installed") : L("缺失", "Missing")), Margin = new Thickness(0,10,0,10) });
-            if (capability != null && !string.IsNullOrEmpty(BackendHintText(capability)))
-                panel.Children.Add(new TextBlock { Text = BackendHintText(capability), TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Orange, Margin = new Thickness(0,0,0,10) });
+            panel.Children.Add(new TextBlock { Text = "Original: " +
+                (needsOriginalPreparation ? L("未安装（可提取）", "Not installed (can extract)") : original ? L("就绪", "Ready") : L("缺失", "Missing")) + "  |  Small: " +
+                (needsSmallPreparation ? L("未安装（可提取）", "Not installed (can extract)") : small ? L("已安装", "Installed") : L("缺失", "Missing")), Margin = new Thickness(0,10,0,10) });
             var proceed = new Button { Content = L("继续", "Continue"), IsEnabled = false, MinWidth = 100, Margin = new Thickness(4) };
             DialogTheme.Primary(dialog, proceed);
             var values = new[] { "both", "small", "original" };
-            var needsSmallPreparation = capability != null && capability.SmallState == "preparable";
-            var labels = new[] {
-                needsSmallPreparation ? L("两个模型（复用 Original，提取 Small）", "Both models (reuse Original, extract Small)") : L("两个模型", "Both models"),
-                needsSmallPreparation ? L("Small（从来源提取并安装）", "Small (extract and install from source)") : "Small (310.9.16)",
-                L("Original（仅复用原始模型）", "Original (reuse existing model only)") };
+            var labels = new[] { "Original + Small", "Small", "Original" };
             var enabled = new[] { original && small, small, original };
             for (var i = 0; i < values.Length; i++) {
                 var value = values[i];
-                var radio = new RadioButton { Content = labels[i], Foreground = enabled[i] ? Brushes.White : Brushes.Gray, IsEnabled = enabled[i], GroupName = "LmxxfModels", Margin = new Thickness(0,6,0,6) };
+                var radio = new RadioButton { Content = labels[i], Foreground = enabled[i] ? LauncherTheme.Brush("ThemeInk") : LauncherTheme.Brush("ThemeMuted"), IsEnabled = enabled[i], GroupName = "LmxxfModels", Margin = new Thickness(0,6,0,6) };
                 radio.Checked += delegate { dialog.Tag = value; proceed.IsEnabled = true; };
                 panel.Children.Add(radio);
             }
@@ -2040,10 +2152,13 @@ namespace OptScalerNR.Launcher
             var needsSource = false;
             if (_lastInspectResult != null && _lastInspectResult.Backends != null)
                 foreach (var backend in _lastInspectResult.Backends) {
-                    if (backend == null || !selected.Contains(backend.Id) || backend.RuntimeState != "ready") continue;
-                    if (backend.Id == "mochizuki" && backend.ModelState == "missing") needsSource = true;
-                    if (backend.Id == "lmxxf" && backend.OriginalState != "ready" &&
+                    if (backend == null || !selected.Contains(backend.Id)) continue;
+                    if (backend.Id == "mochizuki" && backend.RuntimeState == "ready" && backend.ModelState == "missing") needsSource = true;
+                    if (backend.Id == "lmxxf" && backend.RuntimeState == "ready" &&
+                        backend.OriginalState != "ready" && backend.OriginalState != "preparable" &&
                         backend.SmallState != "ready" && backend.SmallState != "preparable") needsSource = true;
+                    if (backend.Id == "daniel" && backend.ModelState == "missing" &&
+                        (backend.RuntimeState == "ready" || (backend.Hints != null && Array.IndexOf(backend.Hints, "daniel-setup") < 0))) needsSource = true;
                 }
             if (!needsSource) return true;
             if (!string.IsNullOrEmpty(_decisions.ModelSourceDll))
@@ -2070,6 +2185,10 @@ namespace OptScalerNR.Launcher
             if (_writeBusy || _folderScan != null || (_session != null && _session.IsRunning))
             {
                 DialogTheme.Show(_window, _language == "zh" ? "操作正在进行中…" : "An operation is already in progress.", _window.Title);
+                return;
+            }
+            if (installing && !HasLocalPackage()) {
+                DialogTheme.Show(_window, L("请从完整解压的安装包启动 Setup.bat。若需使用其他目录，请在设置中确认开启诊断模式并选择完整包。", "Run Setup.bat from a complete extracted package. To use another folder, explicitly enable diagnostic mode in Settings and select a complete package."), _window.Title);
                 return;
             }
 
@@ -2124,6 +2243,7 @@ namespace OptScalerNR.Launcher
             _pendingAction = action;
 
             _decisions.ExistingIni = (_replaceIni != null && _replaceIni.IsChecked == true) ? "overwrite" : "keep";
+            _decisions.OptiPatcher = (_optiPatcherToggle != null && _optiPatcherToggle.IsChecked == true) ? "install" : "skip";
 
             var req = new LauncherRequest
             {
@@ -2191,6 +2311,11 @@ namespace OptScalerNR.Launcher
                     UpdatePrimaryButtonState();
                     return;
                 }
+                if (action == "inspect" && !string.Equals(ComparisonPath(source.PackageRoot), ComparisonPath(_packageRoot), StringComparison.OrdinalIgnoreCase)) {
+                    _resumeInstallAction = "";
+                    if (_selectedGame != null) InspectGame(_selectedGame);
+                    return;
+                }
 
                 if (result != null && !string.IsNullOrEmpty(result.LogPath))
                     _currentLogPath = result.LogPath;
@@ -2218,7 +2343,7 @@ namespace OptScalerNR.Launcher
 
                 if (string.Equals(action, "inspect", StringComparison.OrdinalIgnoreCase))
                 {
-                    ApplyInspect(result);
+                    ApplyInspect(result, source.PackageRoot);
                     var resume = _resumeInstallAction;
                     _resumeInstallAction = "";
                     if (!string.IsNullOrEmpty(resume) && code == 0 && result != null && result.Status == "success") {
@@ -2248,6 +2373,7 @@ namespace OptScalerNR.Launcher
                             if (_selectedGame != null) _selectedGame.Installed = true;
                         }
                         SaveLibraryCache();
+                        SelectGameProfiles();
                         RefreshGameListView();
                         if (_selectedGame != null) InspectGame(_selectedGame);
                     }
@@ -2271,9 +2397,10 @@ namespace OptScalerNR.Launcher
             }));
         }
 
-        void ApplyInspect(LauncherResult result)
+        void ApplyInspect(LauncherResult result, string requestedPackageRoot = null)
         {
             if (result == null) return;
+            if (!string.Equals(ComparisonPath(requestedPackageRoot ?? NormalPackageRoot), ComparisonPath(_packageRoot), StringComparison.OrdinalIgnoreCase)) return;
             _lastInspectResult = result;
             if (!string.IsNullOrEmpty(result.Status) && result.Status != "success") {
                 RefreshInspectionText();
@@ -2366,6 +2493,7 @@ namespace OptScalerNR.Launcher
             finally { _updatingBackends = false; }
             RefreshBackendHints();
             UpdatePrimaryButtonState();
+            DetectPackageUpdate(_selectedGame, result, requestedPackageRoot);
 
             if (result.Notes != null)
             {
@@ -2473,18 +2601,22 @@ namespace OptScalerNR.Launcher
 
         void ReleaseLock()
         {
-            if (_targetMutex == null) return;
-            try { _targetMutex.ReleaseMutex(); } catch { }
-            _targetMutex.Dispose();
-            _targetMutex = null;
+            if (_targetMutex != null) {
+                try { _targetMutex.ReleaseMutex(); } catch { }
+                _targetMutex.Dispose();
+                _targetMutex = null;
+            }
+            RefreshDiagnosticModeUI();
         }
 
         void SetBusy(bool busy, string action)
         {
             _writeBusy = busy && action != "inspect" && action != "scan";
+            _presentationBusy = busy;
+            _presentationAction = action;
             if (_gameList != null) _gameList.IsEnabled = !_writeBusy;
-            if (_packageBrowse != null) _packageBrowse.IsEnabled = !_writeBusy;
-            if (_packageRootBox != null) _packageRootBox.IsEnabled = !_writeBusy;
+            RefreshProfileActions();
+            RefreshDiagnosticModeUI();
             if (busy) _eventStage = action;
             if (_addButton != null) _addButton.IsEnabled = !busy;
             if (_removeGameMenuItem != null) _removeGameMenuItem.IsEnabled = !busy && _removeGameMenuItem.Tag is GameInfo;
@@ -2498,6 +2630,7 @@ namespace OptScalerNR.Launcher
                 foreach (var p in _proxyPills.Values) p.IsEnabled = !busy;
             }
             RefreshLibraryActions();
+            RefreshHeroState();
         }
 
         void Detach(WorkerSession session)

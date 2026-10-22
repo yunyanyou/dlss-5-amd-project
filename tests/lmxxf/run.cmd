@@ -1,6 +1,6 @@
 @echo off
 rem lmxxf runtime and submission tests. Every test in tests\lmxxf belongs to exactly one tier below.
-rem Usage: tests\lmxxf\run.cmd abi^|warp^|device^|inline^|inline-discard^|inline-gpu^|cold-producer^|slots^|wait-profile^|split-state^|early-unity^|hip-passthrough^|gpu [out-dir]
+rem Usage: tests\lmxxf\run.cmd abi^|warp^|device^|inline^|inline-discard^|inline-gpu^|cold-producer^|slots^|wait-profile^|split-state^|early-unity^|hip-passthrough^|drs-cpu^|drs^|gpu [out-dir]
 rem   abi    : lmxxf_nr_abi, lmxxf_zero_fallback_abi.c, test_runtime_validation.py (no GPU)
 rem   warp   : lmxxf_same_frame_boundary, lmxxf_color_probe (D3D12 WARP; no GPU)
 rem   split-state: focused inherited-legacy/enhanced split admission and pixel readback (also in warp).
@@ -8,6 +8,8 @@ rem   device : lmxxf_list_split, lmxxf_list1_wrap, lmxxf_create_execute, lmxxf_e
 rem            plus early Unity caller admission, retained split/Reset (hardware D3D12 adapter)
 rem   early-unity: only the early caller/retained-list regression (also included in device).
 rem   hip-passthrough: focused HIP round-trip/codec comparison (also included in gpu).
+rem   drs-cpu: complete captured geometry/options identity and conservative retention decisions (no GPU).
+rem   drs    : actual Original/Small exact-network codec cycling, fresh baselines and recording replay.
 rem   slots  : private inline history/lifetime, split vs 1..5 hashes and timed GPU sweeps.
 rem   cold-producer: fresh Small/Original networks enqueue before a withheld producer fence; replay bytes.
 rem   wait-profile: 1440p old/new wait budgets, split baseline, hashes and paced/unpaced sweeps.
@@ -30,7 +32,10 @@ call "%REPO%\tests\_lib\msvc-env.cmd" 2>nul || exit /b 1
 rem Repo-rooted includes (#include "OptiScaler-..." / "third_party/..."). The repo root goes at the END of
 rem INCLUDE, not in /I: /I is searched before the SDK/STL dirs, and on a case-insensitive disk
 rem <version> would then resolve to the repo's VERSION file.
-set "INCLUDE=%INCLUDE%;%REPO%"
+rem Product source and external SDK roots follow for the same reason (product header chains like
+rem <misc/GameConfigs.h> from SubmissionHooks.h); mirrors the vcxproj include set.
+set "EXT=%REPO%\OptiScaler-DLSSNR-PreSR-Multipass-main\external"
+set "INCLUDE=%INCLUDE%;%REPO%;%REPO%\OptiScaler-DLSSNR-PreSR-Multipass-main\OptiScaler;%EXT%\nvngx_dlss_sdk;%EXT%\xess\inc\xess;%EXT%\xess\inc\xell;%EXT%\xess\inc\xess_fg;%EXT%\FidelityFX-SDK\ffx-api\include\ffx_api;%EXT%\simpleini;%EXT%\unordered_dense\include;%EXT%\spdlog\include;%EXT%\freetype;%EXT%\streamline;%EXT%\streamline1;%EXT%\nvapi;%EXT%\nlohmann;%EXT%\fakenvapi;%EXT%\magic_enum\include\magic_enum;%EXT%\AntiLag2-SDK;%EXT%\latencyflex;%EXT%\vulkan\include"
 set "RT_INC=%REPO%\OptiScaler-DLSSNR-PreSR-Multipass-main\OptiScaler\dlssnr\backend\lmxxf_runtime"
 set "INC=%REPO%\OptiScaler-DLSSNR-PreSR-Multipass-main\OptiScaler\include"
 set "DETOURS=%REPO%\OptiScaler-DLSSNR-PreSR-Multipass-main\OptiScaler\library\detours\detours.lib"
@@ -41,6 +46,8 @@ set "D3D=d3d12.lib dxgi.lib dxguid.lib uuid.lib"
 if /i "%TIER%"=="model-gpu" goto model-gpu
 if /i "%TIER%"=="model" goto model
 if /i "%TIER%"=="abi" goto abi
+if /i "%TIER%"=="drs" goto drs
+if /i "%TIER%"=="drs-cpu" goto drs-cpu
 if /i "%TIER%"=="native-temporal" (
   call :RunNativeTemporal || goto fail
   goto pass
@@ -59,7 +66,7 @@ if /i "%TIER%"=="cold-producer" goto cold-producer
 if /i "%TIER%"=="slots" goto slots
 if /i "%TIER%"=="wait-profile" goto slots
 if /i "%TIER%"=="split-state" goto split-state
-echo usage: tests\lmxxf\run.cmd abi^|warp^|device^|inline^|inline-discard^|inline-gpu^|cold-producer^|slots^|wait-profile^|split-state^|early-unity^|hip-passthrough^|gpu [out-dir]
+echo usage: tests\lmxxf\run.cmd abi^|warp^|device^|inline^|inline-discard^|inline-gpu^|cold-producer^|slots^|wait-profile^|split-state^|early-unity^|hip-passthrough^|drs-cpu^|drs^|gpu [out-dir]
 exit /b 2
 
 :model-gpu
@@ -87,6 +94,19 @@ goto pass
 "%OUT%\lmxxf_model_options.exe" || goto fail
 goto pass
 
+:drs-cpu
+%CXX% /I"%REPO%\third_party\lmxxf\Development\HIP" /I"%REPO%\third_party\lmxxf\src" tests\lmxxf\lmxxf_drs_retention.cpp /Fe"%OUT%\lmxxf_drs_retention.exe" /Fo"%OUT%\lmxxf_drs_retention.obj" /link user32.lib || goto fail
+"%OUT%\lmxxf_drs_retention.exe" || goto fail
+goto pass
+
+:drs
+if not defined LMXXF_ASSETS goto fail
+set "LMXXF_WEIGHTS_DIR=%LMXXF_ASSETS%"
+call :Runtime || goto fail
+%CXX% /I"%RT_INC%" /I"%INC%" tests\lmxxf\lmxxf_recording_runtime_gpu.cpp /Fe"%OUT%\lmxxf_recording_runtime_gpu.exe" /Fo"%OUT%\lmxxf_recording_runtime_gpu.obj" /link %D3D% "%DETOURS%" || goto fail
+"%OUT%\lmxxf_recording_runtime_gpu.exe" "%LMXXF_TEST_RUNTIME%" "%MODS%" --drs || goto fail
+goto pass
+
 :abi
 %CXX% tests\lmxxf\hip_runtime_load.cpp /Fe"%OUT%\hip_runtime_load.exe" /Fo"%OUT%\hip_runtime_load.obj" || goto fail
 "%OUT%\hip_runtime_load.exe" || goto fail
@@ -111,7 +131,7 @@ goto warpSmoke
 call :RunSplitState || goto fail
 call :RunInlineFixture warp || goto fail
 call :RunDiagLifetime || goto fail
-%CXX% /I"%INC%" tests\lmxxf\lmxxf_wrapped_command_list.cpp /Fe"%OUT%\lmxxf_wrapped_command_list.exe" /Fo"%OUT%\lmxxf_wrapped_command_list.obj" /link %D3D% "%DETOURS%" || goto fail
+%CXX% /I"%INC%" /I"%REPO%\OptiScaler-DLSSNR-PreSR-Multipass-main\OptiScaler" /I"%REPO%\OptiScaler-DLSSNR-PreSR-Multipass-main\external\nvngx_dlss_sdk" /I"%REPO%\OptiScaler-DLSSNR-PreSR-Multipass-main\external\spdlog\include" tests\lmxxf\lmxxf_wrapped_command_list.cpp /Fe"%OUT%\lmxxf_wrapped_command_list.exe" /Fo"%OUT%\lmxxf_wrapped_command_list.obj" /link %D3D% "%DETOURS%" || goto fail
 "%OUT%\lmxxf_wrapped_command_list.exe" || goto fail
 %CXX% tests\lmxxf\lmxxf_temporal_control.cpp /Fe"%OUT%\lmxxf_temporal_control.exe" /Fo"%OUT%\lmxxf_temporal_control.obj" /link %D3D% d3dcompiler.lib || goto fail
 "%OUT%\lmxxf_temporal_control.exe" || goto fail

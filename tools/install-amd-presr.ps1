@@ -577,7 +577,11 @@ Close the game completely, then run Setup.bat again.
 "@
 }
 # Also flag a live process whose image lives in the game folder.
-$gameExes = @(Get-ChildItem -LiteralPath $game -Filter '*.exe' -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name)
+# Our own running binaries are not the game: users who extract the whole package into the game
+# folder would otherwise self-lock (the launcher itself launched this installer).
+$gameExes = @(Get-ChildItem -LiteralPath $game -Filter '*.exe' -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -notin @('OptScalerNR.Launcher.exe', 'dlssnr_on_amd_setup.exe', 'person-worker.exe') } |
+    Select-Object -ExpandProperty Name)
 if ($gameExes.Count -gt 0) {
     $running = Get-Process -ErrorAction SilentlyContinue | Where-Object {
         $n = "$($_.ProcessName).exe"
@@ -844,6 +848,13 @@ function Test-MochizukiModelFile([string]$Path, [uint32]$Entries = 599) {
 
         if ($Entries -eq 599 -and $hashStr -eq $script:knownOriginalSha) { return $true }
         if ($Entries -eq 255 -and $hashStr -eq $script:knownSmallSha) { return $true }
+
+        $stream.Dispose(); $stream = $null
+        if ($flen -ge 65536 -and (Get-Command Ensure-NativeModelExtractor -ErrorAction SilentlyContinue)) {
+            Ensure-NativeModelExtractor
+            $fam = if ($Entries -eq 255) { 'small' } else { 'original' }
+            if ([OptScaler.NativeModelExtractor]::VerifyMochizukiPack($Path, $fam)) { return $true }
+        }
 
         # Fallback to python full tensor validation
         $modelTool = Find-FirstFile @((Join-Path $Root 'mochizuki-model.py'), (Join-Path $PSScriptRoot 'install/mochizuki-model.py'))
@@ -1151,27 +1162,39 @@ if ($installMochizuki) {
         if (-not $mochizukiNv) {
             Fail 'Model preparation failed: missing supported nvngx_dlssnr.dll to extract requested models.'
         }
-        $modelTool = Find-FirstFile @((Join-Path $Root 'mochizuki-model.py'), (Join-Path $PSScriptRoot 'install/mochizuki-model.py'))
-        $pythonHelper = Find-FirstFile @((Join-Path $Root 'mochizuki-python.ps1'), (Join-Path $PSScriptRoot 'install/mochizuki-python.ps1'))
-        if (-not $pythonHelper) {
-            Fail 'Model preparation failed: Python detection helper missing. Re-extract the complete OptiScaler package.'
-        }
-        . $pythonHelper
-        $python = Find-MochizukiPython
-        if (-not $python) {
-            Write-MochizukiPythonHelp
-            Fail 'Model preparation failed: Python 3.10+ is required to extract Mochizuki models. The existing installation was preserved.'
-        }
-        if (-not $modelTool) {
-            Fail 'Model preparation failed: Model extractor missing. Re-extract the complete OptiScaler package.'
-        }
         $modelOutput = Join-Path $Root 'dlssnr-amd/dlssnr.bin'
         $extractModels = if ($needExtractOriginal -and $needExtractSmall) { 'both' } elseif ($needExtractSmall) { 'small' } else { 'original' }
-        Write-Host "Extracting Mochizuki models ($extractModels); validating tensors. This may take a few minutes..." -ForegroundColor Cyan
-        & $python -X utf8 $modelTool $mochizukiNv $modelOutput --models $extractModels
-        $code = $LASTEXITCODE
-        if ($code -ne 0) {
-            Fail "Model preparation failed (exit code $code). The existing installation was preserved."
+        $canNativeMochi = ((Get-Item -LiteralPath $mochizukiNv).Length -ge 65536) -and
+            [bool](Get-Command Ensure-NativeModelExtractor -ErrorAction SilentlyContinue)
+        if ($canNativeMochi) {
+            Write-Host "Extracting Mochizuki models ($extractModels); validating tensors..." -ForegroundColor Cyan
+            try {
+                Ensure-NativeModelExtractor
+                [OptScaler.NativeModelExtractor]::ExtractMochizukiModels($mochizukiNv, $modelOutput, $extractModels)
+            } catch {
+                Fail "Model preparation failed: $($_.Exception.Message). The existing installation was preserved."
+            }
+        } else {
+            $modelTool = Find-FirstFile @((Join-Path $Root 'mochizuki-model.py'), (Join-Path $PSScriptRoot 'install/mochizuki-model.py'))
+            $pythonHelper = Find-FirstFile @((Join-Path $Root 'mochizuki-python.ps1'), (Join-Path $PSScriptRoot 'install/mochizuki-python.ps1'))
+            if (-not $pythonHelper) {
+                Fail 'Model preparation failed: Python detection helper missing. Re-extract the complete OptiScaler package.'
+            }
+            . $pythonHelper
+            $python = Find-MochizukiPython
+            if (-not $python) {
+                Write-MochizukiPythonHelp
+                Fail 'Model preparation failed: Python 3.10+ is required to extract Mochizuki models. The existing installation was preserved.'
+            }
+            if (-not $modelTool) {
+                Fail 'Model preparation failed: Model extractor missing. Re-extract the complete OptiScaler package.'
+            }
+            Write-Host "Extracting Mochizuki models ($extractModels); validating tensors. This may take a few minutes..." -ForegroundColor Cyan
+            & $python -X utf8 $modelTool $mochizukiNv $modelOutput --models $extractModels
+            $code = $LASTEXITCODE
+            if ($code -ne 0) {
+                Fail "Model preparation failed (exit code $code). The existing installation was preserved."
+            }
         }
         if ($needExtractOriginal) {
             if (-not (Test-MochizukiModelFile $modelOutput 599)) {
@@ -1244,16 +1267,37 @@ if ($installMochizuki) {
 $lmxxfSelectedModels = $LmxxfModels
 if ($installLmxxf) {
     if (-not $lmxxfModelHelper) { Fail 'Incomplete package: lmxxf-small.ps1 is missing. Re-extract the complete package.' }
+    $lmxxfOriginalPack = $null
+    foreach ($candidate in $modelCandidates) {
+        if ((Test-Path -LiteralPath $candidate -PathType Leaf) -and ((Get-Item -LiteralPath $candidate).Length -ge 65536) -and (Test-MochizukiModelFile $candidate 599)) {
+            $lmxxfOriginalPack = $candidate; break
+        }
+    }
+    $lmxxfOriginalSourceDll = $null
+    if (-not $lmxxfWeights -and -not $lmxxfOriginalPack) {
+        foreach ($candidate in $modelSourceCandidates) {
+            if ((Test-Path -LiteralPath $candidate -PathType Leaf) -and ((Get-Item -LiteralPath $candidate).Length -ge 65536)) {
+                $candSha = Get-Sha256 $candidate
+                if ($candSha -ieq $mochizukiNewNvSha -or $candSha -ieq $mochizukiNvSha) {
+                    $lmxxfOriginalSourceDll = $candidate; break
+                }
+            }
+        }
+    }
     $lmxxfSmallPack = $null
     foreach ($candidate in $smallModelCandidates) {
-        if (Test-MochizukiModelFile $candidate 255) { $lmxxfSmallPack = $candidate; break }
+        if ((Test-Path -LiteralPath $candidate -PathType Leaf) -and ((Get-Item -LiteralPath $candidate).Length -ge 65536) -and (Test-MochizukiModelFile $candidate 255)) {
+            $lmxxfSmallPack = $candidate; break
+        }
     }
     $lmxxfSourceDll = $null
     if (-not $lmxxfSmallWeights -and -not $lmxxfSmallPack) {
         foreach ($candidate in $modelSourceCandidates) {
-            if ((Test-Path -LiteralPath $candidate -PathType Leaf) -and (Get-Sha256 $candidate) -eq $mochizukiNewNvSha) { $lmxxfSourceDll = $candidate; break }
+            if ((Test-Path -LiteralPath $candidate -PathType Leaf) -and ((Get-Item -LiteralPath $candidate).Length -ge 65536) -and (Get-Sha256 $candidate) -ieq $mochizukiNewNvSha) { $lmxxfSourceDll = $candidate; break }
         }
     }
+    $canPrepareLmxxfOriginal = [bool]($lmxxfWeights -or $lmxxfOriginalPack -or $lmxxfOriginalSourceDll)
+    $canPrepareLmxxfSmall = [bool]($lmxxfSmallWeights -or $lmxxfSmallPack -or $lmxxfSourceDll)
     if (-not $lmxxfSelectedModels) {
         if (-not $NonInteractive) {
             # List only the model sets that were actually detected, so a Small-only
@@ -1278,12 +1322,26 @@ if ($installLmxxf) {
                 }
             } while (-not $lmxxfSelectedModels)
             $lmxxfModelsExplicit = $true
-        } elseif ($lmxxfWeights -and ($lmxxfSmallWeights -or $lmxxfSmallPack -or $lmxxfSourceDll)) { $lmxxfSelectedModels = 'both' }
-        elseif ($lmxxfSmallWeights -or $lmxxfSmallPack -or $lmxxfSourceDll) { $lmxxfSelectedModels = 'small' }
-        elseif ($lmxxfWeights) { $lmxxfSelectedModels = 'original' }
+        } elseif ($canPrepareLmxxfOriginal -and $canPrepareLmxxfSmall) { $lmxxfSelectedModels = 'both' }
+        elseif ($canPrepareLmxxfSmall) { $lmxxfSelectedModels = 'small' }
+        elseif ($canPrepareLmxxfOriginal) { $lmxxfSelectedModels = 'original' }
         else { $lmxxfSelectedModels = 'none'; Write-Host 'lmxxf models missing; installing components only. Supply complete Original or Small weights before enabling NR.' -ForegroundColor Yellow }
     }
-    if ($lmxxfSelectedModels -in @('both','original') -and -not $lmxxfWeights) { Fail 'lmxxf Original weights are missing or incomplete. Supply complete native-game-tiled-assets before installation.' }
+    if ($lmxxfSelectedModels -in @('both','original')) {
+        if (-not $lmxxfWeights) {
+            if (-not $lmxxfOriginalPack -and -not $lmxxfOriginalSourceDll) {
+                Fail 'lmxxf Original weights are missing or incomplete. Supply complete native-game-tiled-assets, a verified dlssnr.bin, or nvngx_dlssnr.dll 310.9.16 / 310.8.0 before installation.'
+            }
+            if (-not $lmxxfSmallStage) {
+                $lmxxfSmallStage = Join-Path $Root ('.lmxxf-stage-' + [guid]::NewGuid().ToString('N'))
+                [void][IO.Directory]::CreateDirectory($lmxxfSmallStage)
+            }
+            $lmxxfWeights = Join-Path $lmxxfSmallStage 'original'
+            Write-Host 'Preparing lmxxf Original weights from model source...' -ForegroundColor Cyan
+            Initialize-LmxxfOriginal -Pack $lmxxfOriginalPack -Dll $lmxxfOriginalSourceDll -Output $lmxxfWeights
+            if (-not (Test-LmxxfModel $lmxxfWeights original)) { Fail 'Prepared lmxxf Original weights failed validation.' }
+        }
+    }
     if ($lmxxfSelectedModels -eq 'none') {
         foreach ($candidate in $lmxxfCandidates) {
             if (Test-Path -LiteralPath $candidate -PathType Container) {
@@ -1295,9 +1353,12 @@ if ($installLmxxf) {
         if ($lmxxfSmallWeights -and -not (Test-LmxxfModel $lmxxfSmallWeights small)) { Fail 'lmxxf Small weight validation failed. The game folder was not changed.' }
         if (-not $lmxxfSmallWeights) {
             if (-not $lmxxfSmallPack -and -not $lmxxfSourceDll) { Fail 'lmxxf Small requires native-game-tiled-assets/small, a verified dlssnr-small.bin, or nvngx_dlssnr.dll 310.9.16.' }
-            $lmxxfSmallStage = Join-Path $Root ('.lmxxf-stage-' + [guid]::NewGuid().ToString('N'))
-            [void][IO.Directory]::CreateDirectory($lmxxfSmallStage)
+            if (-not $lmxxfSmallStage) {
+                $lmxxfSmallStage = Join-Path $Root ('.lmxxf-stage-' + [guid]::NewGuid().ToString('N'))
+                [void][IO.Directory]::CreateDirectory($lmxxfSmallStage)
+            }
             $lmxxfSmallWeights = Join-Path $lmxxfSmallStage 'small'
+            Write-Host 'Preparing lmxxf Small weights from model source...' -ForegroundColor Cyan
             Initialize-LmxxfSmall -Pack $lmxxfSmallPack -Dll $lmxxfSourceDll -Output $lmxxfSmallWeights
             if (-not (Test-LmxxfModel $lmxxfSmallWeights small)) { Fail 'Prepared lmxxf Small weights failed validation.' }
         }
@@ -1397,6 +1458,36 @@ if ($installDaniel) {
             Copy-Item -LiteralPath $srcNv -Destination (Join-Path $game 'nvngx_dlssnr.dll') -Force
             Write-Host 'Copied nvngx_dlssnr.dll into the game folder (danielblnc runtime expects it there).' -ForegroundColor Green
             $nv = Join-Path $game 'nvngx_dlssnr.dll'
+        }
+    }
+
+    if (-not $srcA -and (Test-Path -LiteralPath $setup -PathType Leaf) -and
+        ((Get-Item -LiteralPath $setup).Length -ge 65536) -and
+        (Get-Command Ensure-NativeModelExtractor -ErrorAction SilentlyContinue)) {
+        try {
+            Ensure-NativeModelExtractor
+            $extractedRuntime = Join-Path $Root 'version.dll'
+            if ([OptScaler.NativeModelExtractor]::ExtractDanielRuntime($setup, $extractedRuntime)) {
+                Write-Host "Extracted danielblnc runtime (version.dll) from dlssnr_on_amd_setup.exe." -ForegroundColor Green
+                $srcA = Find-AuthorRuntime
+            }
+        } catch {
+            Write-Host "NOTE: native runtime extraction from dlssnr_on_amd_setup.exe skipped: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    }
+    if (-not $weights -and $nv -and (Test-Path -LiteralPath $nv -PathType Leaf) -and
+        ((Get-Item -LiteralPath $nv).Length -ge 65536) -and
+        (Get-Command Ensure-NativeModelExtractor -ErrorAction SilentlyContinue)) {
+        try {
+            Ensure-NativeModelExtractor
+            $extractedWeights = Join-Path $Root 'dlssnr_on_amd_weights.bin'
+            [OptScaler.NativeModelExtractor]::ExtractDanielWeights($nv, $extractedWeights)
+            if (Test-Path -LiteralPath $extractedWeights -PathType Leaf) {
+                Write-Host "Extracted dlssnr_on_amd_weights.bin directly from nvngx_dlssnr.dll." -ForegroundColor Green
+                $weights = $extractedWeights
+            }
+        } catch {
+            Write-Host "NOTE: native weights extraction from nvngx_dlssnr.dll failed: $($_.Exception.Message)" -ForegroundColor Yellow
         }
     }
 
@@ -2152,12 +2243,121 @@ if ($installLmxxf) {
 }
 
 # --- Optional OptiPatcher (DLSS Spoofing Enhancement / OptiScaler native feature) ---
+# Shared installer core: fetch the latest rolling release within a deadline, validate the PE and
+# install it; fall back to the bundled offline copy when the network is unavailable or the download
+# is invalid. Returns $true when an OptiPatcher.asi was installed into the game.
+function Install-OptiPatcherPlugin {
+    param([int]$TimeoutSec)
+
+    Write-Host "Attempting to download latest OptiPatcher.asi (timeout: ${TimeoutSec}s)..." -ForegroundColor Cyan
+    $optiPatcherUrl = 'https://github.com/optiscaler/OptiPatcher/releases/download/rolling/OptiPatcher.asi'
+    $tempDownload = [IO.Path]::GetTempFileName()
+    $downloadSucceeded = $false
+    try {
+        $curlCmd = Get-Command 'curl.exe' -ErrorAction SilentlyContinue
+        if ($curlCmd) {
+            # -f / --fail ensures non-zero exit on HTTP 4xx/5xx; Test-ValidPePlugin ensures valid PE
+            & curl.exe -f -s -S -L --connect-timeout 10 --max-time $TimeoutSec -o $tempDownload $optiPatcherUrl 2>$null
+            if ($LASTEXITCODE -eq 0 -and (Test-ValidPePlugin $tempDownload)) {
+                $downloadSucceeded = $true
+            }
+        }
+    } catch { }
+    if (-not $downloadSucceeded) {
+        try {
+            $req = [System.Net.HttpWebRequest]::Create($optiPatcherUrl)
+            $req.Timeout = $TimeoutSec * 1000
+            $req.ReadWriteTimeout = $TimeoutSec * 1000
+            $req.UserAgent = 'OptScaler-Setup'
+            $resp = $req.GetResponse()
+            try {
+                $stream = $resp.GetResponseStream()
+                try {
+                    $fs = [IO.File]::Create($tempDownload)
+                    try { $stream.CopyTo($fs) }
+                    finally { $fs.Dispose() }
+                } finally { $stream.Dispose() }
+            } finally { $resp.Dispose() }
+            if (Test-ValidPePlugin $tempDownload) {
+                $downloadSucceeded = $true
+            }
+        } catch { }
+    }
+
+    # Resolve plugins destination following host [Plugins] Path resolution
+    $targetPluginsDir = Get-PluginsTargetDirectory $game $gameIni
+    $targetPluginFile = Join-Path $targetPluginsDir 'OptiPatcher.asi'
+    $gameFullPrefix = [IO.Path]::GetFullPath($game).TrimEnd('\', '/') + '\'
+    $displayDest = if ($targetPluginFile.StartsWith($gameFullPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+        $targetPluginFile.Substring($gameFullPrefix.Length)
+    } else {
+        $targetPluginFile
+    }
+
+    function Install-OptiPatcherFile([string]$sourcePath) {
+        if ([IO.Path]::GetFullPath($targetPluginFile).StartsWith($gameFullPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            $rel = [IO.Path]::GetFullPath($targetPluginFile).Substring($gameFullPrefix.Length)
+            Install-One $sourcePath $rel
+        } else {
+            if (-not (Test-Path -LiteralPath $targetPluginsDir -PathType Container)) {
+                [void][IO.Directory]::CreateDirectory($targetPluginsDir)
+            }
+            Copy-Item -LiteralPath $sourcePath -Destination $targetPluginFile -Force
+        }
+    }
+
+    $installed = $false
+    if ($downloadSucceeded) {
+        Write-Host 'Downloaded latest OptiPatcher.asi successfully.' -ForegroundColor Green
+        # Update cache in package only when PE validation succeeded
+        $pkgPluginDirs = @((Join-Path $release 'plugins'), (Join-Path $release 'OptiScaler\plugins'))
+        foreach ($pd in $pkgPluginDirs) {
+            if (Test-Path -LiteralPath $pd -PathType Container) {
+                try {
+                    Copy-Item -LiteralPath $tempDownload -Destination (Join-Path $pd 'OptiPatcher.asi') -Force
+                    Write-Host "Updated package plugin cache: $(Join-Path $pd 'OptiPatcher.asi')" -ForegroundColor Green
+                } catch { }
+            }
+        }
+        Install-OptiPatcherFile $tempDownload
+        $installed = $true
+        Write-Host "Installed latest OptiPatcher.asi to: $displayDest" -ForegroundColor Green
+    } else {
+        Write-Host 'Network unavailable, timed out, or invalid download; using bundled offline version.' -ForegroundColor Yellow
+        Write-Host "If ineffective, download from https://github.com/optiscaler/OptiPatcher/releases and replace $displayDest" -ForegroundColor Yellow
+        $cachedPlugin = $null
+        foreach ($cand in @(
+            (Join-Path $release 'plugins\OptiPatcher.asi'),
+            (Join-Path $release 'OptiScaler\plugins\OptiPatcher.asi')
+        )) {
+            if ((Test-Path -LiteralPath $cand -PathType Leaf) -and (Test-ValidPePlugin $cand)) {
+                $cachedPlugin = $cand
+                break
+            }
+        }
+        if ($cachedPlugin) {
+            Install-OptiPatcherFile $cachedPlugin
+            $installed = $true
+            Write-Host "Installed bundled offline OptiPatcher.asi to: $displayDest" -ForegroundColor Green
+        } else {
+            Write-Host 'WARN: Bundled offline OptiPatcher.asi not found in package.' -ForegroundColor Yellow
+        }
+    }
+
+    if (Test-Path -LiteralPath $tempDownload) {
+        try { Remove-Item -LiteralPath $tempDownload -Force } catch { }
+    }
+
+    return $installed
+}
+
 $installedOptiPatcher = $false
 $isInteractiveUser = (-not $NonInteractive) -and (-not [Console]::IsInputRedirected -or [Console]::In.Peek() -ge 0)
 if ($launcherDecisions) {
     $isInteractiveUser = $false
     if ([string]$launcherDecisions.optiPatcher -eq 'install') {
-        Write-Host 'DecisionJson requested OptiPatcher; GUI installs do not download it in this version.' -ForegroundColor Yellow
+        Write-Host 'DecisionJson requested OptiPatcher; fetching latest with bundled fallback (30s deadline).' -ForegroundColor Cyan
+        $installedOptiPatcher = Install-OptiPatcherPlugin 30
     }
 }
 if ($isInteractiveUser) {
@@ -2190,111 +2390,14 @@ if ($isInteractiveUser) {
     }
 
     if ($optiPatcherChoice) {
-        Write-Host ''
-        Write-Host 'Attempting to download latest OptiPatcher.asi (timeout: 60s)...' -ForegroundColor Cyan
-        $optiPatcherUrl = 'https://github.com/optiscaler/OptiPatcher/releases/download/rolling/OptiPatcher.asi'
-        $tempDownload = [IO.Path]::GetTempFileName()
-        $downloadSucceeded = $false
-        try {
-            $curlCmd = Get-Command 'curl.exe' -ErrorAction SilentlyContinue
-            if ($curlCmd) {
-                # -f / --fail ensures non-zero exit on HTTP 4xx/5xx; Test-ValidPePlugin ensures valid PE
-                & curl.exe -f -s -S -L --connect-timeout 10 --max-time 60 -o $tempDownload $optiPatcherUrl 2>$null
-                if ($LASTEXITCODE -eq 0 -and (Test-ValidPePlugin $tempDownload)) {
-                    $downloadSucceeded = $true
-                }
-            }
-        } catch { }
-        if (-not $downloadSucceeded) {
-            try {
-                $req = [System.Net.HttpWebRequest]::Create($optiPatcherUrl)
-                $req.Timeout = 60000
-                $req.ReadWriteTimeout = 60000
-                $req.UserAgent = 'OptScaler-Setup'
-                $resp = $req.GetResponse()
-                try {
-                    $stream = $resp.GetResponseStream()
-                    try {
-                        $fs = [IO.File]::Create($tempDownload)
-                        try { $stream.CopyTo($fs) }
-                        finally { $fs.Dispose() }
-                    } finally { $stream.Dispose() }
-                } finally { $resp.Dispose() }
-                if (Test-ValidPePlugin $tempDownload) {
-                    $downloadSucceeded = $true
-                }
-            } catch { }
-        }
-
-        # Resolve plugins destination following host [Plugins] Path resolution
-        $targetPluginsDir = Get-PluginsTargetDirectory $game $gameIni
-        $targetPluginFile = Join-Path $targetPluginsDir 'OptiPatcher.asi'
-        $gameFullPrefix = [IO.Path]::GetFullPath($game).TrimEnd('\', '/') + '\'
-        $displayDest = if ($targetPluginFile.StartsWith($gameFullPrefix, [StringComparison]::OrdinalIgnoreCase)) {
-            $targetPluginFile.Substring($gameFullPrefix.Length)
-        } else {
-            $targetPluginFile
-        }
-
-        function Install-OptiPatcherFile([string]$sourcePath) {
-            if ([IO.Path]::GetFullPath($targetPluginFile).StartsWith($gameFullPrefix, [StringComparison]::OrdinalIgnoreCase)) {
-                $rel = [IO.Path]::GetFullPath($targetPluginFile).Substring($gameFullPrefix.Length)
-                Install-One $sourcePath $rel
-            } else {
-                if (-not (Test-Path -LiteralPath $targetPluginsDir -PathType Container)) {
-                    [void][IO.Directory]::CreateDirectory($targetPluginsDir)
-                }
-                Copy-Item -LiteralPath $sourcePath -Destination $targetPluginFile -Force
-            }
-        }
-
-        if ($downloadSucceeded) {
-            Write-Host 'Downloaded latest OptiPatcher.asi successfully.' -ForegroundColor Green
-            # Update cache in package only when PE validation succeeded
-            $pkgPluginDirs = @((Join-Path $release 'plugins'), (Join-Path $release 'OptiScaler\plugins'))
-            foreach ($pd in $pkgPluginDirs) {
-                if (Test-Path -LiteralPath $pd -PathType Container) {
-                    try {
-                        Copy-Item -LiteralPath $tempDownload -Destination (Join-Path $pd 'OptiPatcher.asi') -Force
-                        Write-Host "Updated package plugin cache: $(Join-Path $pd 'OptiPatcher.asi')" -ForegroundColor Green
-                    } catch { }
-                }
-            }
-            Install-OptiPatcherFile $tempDownload
-            $installedOptiPatcher = $true
-            Write-Host "Installed latest OptiPatcher.asi to: $displayDest" -ForegroundColor Green
-        } else {
-            Write-Host 'Network unavailable, timed out, or invalid download; using bundled offline version.' -ForegroundColor Yellow
-            Write-Host "If ineffective, download from https://github.com/optiscaler/OptiPatcher/releases and replace $displayDest" -ForegroundColor Yellow
-            $cachedPlugin = $null
-            foreach ($cand in @(
-                (Join-Path $release 'plugins\OptiPatcher.asi'),
-                (Join-Path $release 'OptiScaler\plugins\OptiPatcher.asi')
-            )) {
-                if ((Test-Path -LiteralPath $cand -PathType Leaf) -and (Test-ValidPePlugin $cand)) {
-                    $cachedPlugin = $cand
-                    break
-                }
-            }
-            if ($cachedPlugin) {
-                Install-OptiPatcherFile $cachedPlugin
-                $installedOptiPatcher = $true
-                Write-Host "Installed bundled offline OptiPatcher.asi to: $displayDest" -ForegroundColor Green
-            } else {
-                Write-Host 'WARN: Bundled offline OptiPatcher.asi not found in package.' -ForegroundColor Yellow
-            }
-        }
-
-        if (Test-Path -LiteralPath $tempDownload) {
-            try { Remove-Item -LiteralPath $tempDownload -Force } catch { }
-        }
-
-        # Enable LoadAsiPlugins=true in OptiScaler.ini
-        if ($installedOptiPatcher -and (Test-Path -LiteralPath $gameIni -PathType Leaf)) {
-            Set-IniSettings $gameIni 'Plugins' ([ordered]@{ 'LoadAsiPlugins' = 'true' })
-            Write-Host 'Enabled LoadAsiPlugins=true in OptiScaler.ini.' -ForegroundColor Green
-        }
+        $installedOptiPatcher = Install-OptiPatcherPlugin 60
     }
+}
+
+# Enable LoadAsiPlugins=true in OptiScaler.ini
+if ($installedOptiPatcher -and (Test-Path -LiteralPath $gameIni -PathType Leaf)) {
+    Set-IniSettings $gameIni 'Plugins' ([ordered]@{ 'LoadAsiPlugins' = 'true' })
+    Write-Host 'Enabled LoadAsiPlugins=true in OptiScaler.ini.' -ForegroundColor Green
 }
 
 # Ensure the resolved plugins directory always exists in the game folder and copy any

@@ -48,6 +48,7 @@
 #endif
 #define VK_USE_PLATFORM_WIN32_KHR
 #include <vulkan/vulkan.h>
+#include "MochizukiStageTiming.h"
 
 #include "mz_interpose.h"
 #include "nr_log.hpp"
@@ -215,6 +216,7 @@ struct TestHooks
     bool rejectSharedMotion = false; // MZ_TEST_REJECT_SHARED_MOTION=1: recoverable handle rejection.
     uint64_t sharedMotionDelay = 0; // MZ_TEST_SHARED_MOTION_DELAY=N: defer ready admission.
     bool rejectSharedInput = false; // MZ_TEST_REJECT_SHARED_INPUT=1: recoverable handle rejection.
+    bool rejectSharedStorage = false; // MZ_TEST_REJECT_SHARED_STORAGE=1: optional RGBA16F allocation fails.
     uint64_t sharedInputDelay = 0; // MZ_TEST_SHARED_INPUT_DELAY=N: defer ready admission N prepares.
     uint64_t inlineChain = 0; // MZ_TEST_INLINE_CHAIN=1: an inline frame must run whole on compute; =2: in segments;
                               // =3: segments are forced
@@ -257,6 +259,7 @@ const TestHooks& Hooks()
         if (const char* value = std::getenv("MZ_TEST_SHARED_INPUT")) h.sharedInput = std::strcmp(value, "0") != 0;
         if (const char* value = std::getenv("MZ_TEST_SHARED_MOTION")) h.sharedMotion = std::strcmp(value, "0") != 0;
         h.rejectSharedMotion = on("MZ_TEST_REJECT_SHARED_MOTION");
+        h.rejectSharedStorage = on("MZ_TEST_REJECT_SHARED_STORAGE");
         h.sharedMotionDelay = number("MZ_TEST_SHARED_MOTION_DELAY");
         h.rejectSharedInput = on("MZ_TEST_REJECT_SHARED_INPUT");
         h.sharedInputDelay = number("MZ_TEST_SHARED_INPUT_DELAY");
@@ -799,19 +802,33 @@ struct Vulkan
         const std::vector<VkPhysicalDevice> all =
             VkEnumerate<VkPhysicalDevice>("vkEnumeratePhysicalDevices", [this](uint32_t* n, VkPhysicalDevice* p)
                                           { return vkEnumeratePhysicalDevices(instance, n, p); });
+        // A stale second ICD can list the same adapter again. Check candidates newest first, so a missing
+        // capability in one driver does not hide a usable driver on the game's LUID.
+        struct Candidate
+        {
+            VkPhysicalDevice device {};
+            std::string name;
+            uint32_t driverVersion = 0;
+            size_t index = 0;
+        };
+        std::vector<Candidate> matches;
         for (VkPhysicalDevice p : all)
         {
-            VkPhysicalDeviceIDProperties id { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES };
+            VkPhysicalDeviceDriverProperties driver { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES };
+            VkPhysicalDeviceIDProperties id { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES, &driver };
             VkPhysicalDeviceProperties2 props { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2, &id };
             vkGetPhysicalDeviceProperties2(p, &props);
-            if (id.deviceLUIDValid && !std::memcmp(id.deviceLUID, &luid, sizeof luid))
-            {
-                physical = p;
-                name = props.properties.deviceName;
-                break;
-            }
+            if (!id.deviceLUIDValid || std::memcmp(id.deviceLUID, &luid, sizeof luid))
+                continue;
+            const uint32_t api = props.properties.apiVersion;
+            nr::logf("[mochizuki] Vulkan device %zu on the adapter: %s, driver %s (%s), driverVersion 0x%08X, Vulkan "
+                     "%u.%u.%u",
+                     matches.size(), props.properties.deviceName, driver.driverName, driver.driverInfo,
+                     props.properties.driverVersion, VK_API_VERSION_MAJOR(api), VK_API_VERSION_MINOR(api),
+                     VK_API_VERSION_PATCH(api));
+            matches.push_back({ p, props.properties.deviceName, props.properties.driverVersion, matches.size() });
         }
-        if (!physical)
+        if (matches.empty())
         {
             char text[112];
             std::snprintf(text, sizeof text,
@@ -821,25 +838,6 @@ struct Vulkan
         }
         if (hooks.unsupported)
             throw std::runtime_error("[unsupported] MZ_TEST_UNSUPPORTED: the capability check failed (test hook)");
-
-        uint32_t count = 0;
-        vkGetPhysicalDeviceQueueFamilyProperties(physical, &count, nullptr);
-        std::vector<VkQueueFamilyProperties> families(count);
-        vkGetPhysicalDeviceQueueFamilyProperties(physical, &count, families.data());
-        family = count;
-        for (uint32_t i = 0; i < count; ++i)
-            if ((families[i].queueFlags & (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT)) ==
-                (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT))
-            {
-                family = i;
-                break;
-            }
-        if (family == count)
-            throw std::runtime_error("[unsupported] no graphics and compute queue family");
-        for (uint32_t i = 0; i < count; ++i)
-            if ((families[i].queueFlags & VK_QUEUE_COMPUTE_BIT) && !(families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) &&
-                families[i].timestampValidBits >= families[family].timestampValidBits) { computeFamily = i; break; }
-
 
         // What nrvk::Context::create enables, plus the timeline semaphores the game's fences are imported as.
         VkPhysicalDeviceCooperativeMatrixFeaturesKHR coop {
@@ -870,70 +868,131 @@ struct Vulkan
                                      VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME,
                                      VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME };
 
-        // The capability precheck: what vkCreateDevice would refuse with the chain above, found and named before it
-        // is called. Vulkan 1.3 and the extensions first, since only then may their structures be chained.
-        VkPhysicalDeviceProperties props {};
-        vkGetPhysicalDeviceProperties(physical, &props);
-        if (props.apiVersion < VK_API_VERSION_1_3)
+        // The capability precheck names what vkCreateDevice would refuse. Check Vulkan 1.3 and the
+        // extensions before querying their feature structures, using each candidate's own queue families.
+        std::vector<VkQueueFamilyProperties> families;
+        std::vector<VkExtensionProperties> offered;
+        const auto check = [&](VkPhysicalDevice p) -> std::string
         {
-            char text[96];
-            std::snprintf(text, sizeof text, "[unsupported] the device offers Vulkan %u.%u; 1.3 is required",
-                          VK_API_VERSION_MAJOR(props.apiVersion), VK_API_VERSION_MINOR(props.apiVersion));
-            throw std::runtime_error(text);
+            uint32_t count = 0;
+            vkGetPhysicalDeviceQueueFamilyProperties(p, &count, nullptr);
+            families.assign(count, {});
+            vkGetPhysicalDeviceQueueFamilyProperties(p, &count, families.data());
+            family = count;
+            computeFamily = VK_QUEUE_FAMILY_IGNORED;
+            for (uint32_t i = 0; i < count; ++i)
+                if ((families[i].queueFlags & (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT)) ==
+                    (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT))
+                {
+                    family = i;
+                    break;
+                }
+            if (family == count)
+                return "[unsupported] no graphics and compute queue family";
+            for (uint32_t i = 0; i < count; ++i)
+                if ((families[i].queueFlags & VK_QUEUE_COMPUTE_BIT) &&
+                    !(families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) &&
+                    families[i].timestampValidBits >= families[family].timestampValidBits)
+                {
+                    computeFamily = i;
+                    break;
+                }
+            VkPhysicalDeviceProperties props {};
+            vkGetPhysicalDeviceProperties(p, &props);
+            if (props.apiVersion < VK_API_VERSION_1_3)
+            {
+                char text[96];
+                std::snprintf(text, sizeof text, "[unsupported] the device offers Vulkan %u.%u; 1.3 is required",
+                              VK_API_VERSION_MAJOR(props.apiVersion), VK_API_VERSION_MINOR(props.apiVersion));
+                return text;
+            }
+            offered = VkEnumerate<VkExtensionProperties>(
+                "vkEnumerateDeviceExtensionProperties", [p](uint32_t* n, VkExtensionProperties* e)
+                { return vkEnumerateDeviceExtensionProperties(p, nullptr, n, e); });
+            for (const char* e : extensions)
+                if (std::none_of(offered.begin(), offered.end(),
+                                 [e](const VkExtensionProperties& x) { return !std::strcmp(x.extensionName, e); }))
+                    return std::string("[unsupported] the driver lacks ") + e;
+            VkPhysicalDeviceCooperativeMatrixFeaturesKHR hasCoop {
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR
+            };
+            VkPhysicalDeviceShaderFloat8FeaturesEXT hasFp8 {
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT8_FEATURES_EXT
+            };
+            VkPhysicalDeviceVulkan11Features has11 { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES };
+            VkPhysicalDeviceVulkan12Features has12 { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
+            VkPhysicalDeviceVulkan13Features has13 { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
+            VkPhysicalDeviceWorkgroupMemoryExplicitLayoutFeaturesKHR hasWml {
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_WORKGROUP_MEMORY_EXPLICIT_LAYOUT_FEATURES_KHR
+            };
+            hasCoop.pNext = &hasFp8;
+            hasFp8.pNext = &has11;
+            has11.pNext = &has12;
+            has12.pNext = &has13;
+            has13.pNext = &hasWml;
+            VkPhysicalDeviceFeatures2 has { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &hasCoop };
+            vkGetPhysicalDeviceFeatures2(p, &has);
+            const struct
+            {
+                VkBool32 wanted, offered;
+                const char* name;
+            } features[] = {
+                { coop.cooperativeMatrix, hasCoop.cooperativeMatrix, "cooperativeMatrix" },
+                { fp8.shaderFloat8, hasFp8.shaderFloat8, "shaderFloat8" },
+                { fp8.shaderFloat8CooperativeMatrix, hasFp8.shaderFloat8CooperativeMatrix,
+                  "shaderFloat8CooperativeMatrix" },
+                { f11.storageBuffer16BitAccess, has11.storageBuffer16BitAccess, "storageBuffer16BitAccess" },
+                { f12.storageBuffer8BitAccess, has12.storageBuffer8BitAccess, "storageBuffer8BitAccess" },
+                { f12.shaderFloat16, has12.shaderFloat16, "shaderFloat16" },
+                { f12.shaderInt8, has12.shaderInt8, "shaderInt8" },
+                { f12.vulkanMemoryModel, has12.vulkanMemoryModel, "vulkanMemoryModel" },
+                { f12.timelineSemaphore, has12.timelineSemaphore, "timelineSemaphore" },
+                { f13.subgroupSizeControl, has13.subgroupSizeControl, "subgroupSizeControl" },
+                { f13.synchronization2, has13.synchronization2, "synchronization2" },
+                { wml.workgroupMemoryExplicitLayout, hasWml.workgroupMemoryExplicitLayout,
+                  "workgroupMemoryExplicitLayout" },
+                { wml.workgroupMemoryExplicitLayout8BitAccess, hasWml.workgroupMemoryExplicitLayout8BitAccess,
+                  "workgroupMemoryExplicitLayout8BitAccess" },
+                { wml.workgroupMemoryExplicitLayout16BitAccess, hasWml.workgroupMemoryExplicitLayout16BitAccess,
+                  "workgroupMemoryExplicitLayout16BitAccess" },
+            };
+            for (const auto& f : features)
+                if (f.wanted && !f.offered)
+                    return std::string("[unsupported] the driver lacks the Vulkan feature ") + f.name;
+            // Optional: without it the network takes its descriptor reads.
+            bufferDeviceAddress = has12.bufferDeviceAddress == VK_TRUE;
+            return {};
+        };
+        std::sort(matches.begin(), matches.end(), [](const Candidate& a, const Candidate& b)
+        {
+            return a.driverVersion != b.driverVersion ? a.driverVersion > b.driverVersion : a.index < b.index;
+        });
+        std::string refused;
+        for (Candidate& c : matches)
+        {
+            const std::string reason = check(c.device);
+            if (reason.empty())
+            {
+                physical = c.device;
+                name = std::move(c.name);
+                if (matches.size() > 1)
+                    nr::logf("[mochizuki] %zu Vulkan devices share this adapter (a duplicate driver); using device %zu",
+                             matches.size(), c.index);
+                break;
+            }
+            if (matches.size() > 1)
+                nr::logf("[mochizuki] Vulkan device %zu fails the check: %s", c.index, reason.c_str());
+            if (refused.empty())
+                refused = reason;
         }
-        const std::vector<VkExtensionProperties> offered = VkEnumerate<VkExtensionProperties>(
-            "vkEnumerateDeviceExtensionProperties", [this](uint32_t* n, VkExtensionProperties* p)
-            { return vkEnumerateDeviceExtensionProperties(physical, nullptr, n, p); });
-        for (const char* e : extensions)
-            if (std::none_of(offered.begin(), offered.end(),
-                             [e](const VkExtensionProperties& p) { return !std::strcmp(p.extensionName, e); }))
-                throw std::runtime_error(std::string("[unsupported] the driver lacks ") + e);
-        VkPhysicalDeviceCooperativeMatrixFeaturesKHR hasCoop {
-            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR
-        };
-        VkPhysicalDeviceShaderFloat8FeaturesEXT hasFp8 { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT8_FEATURES_EXT };
-        VkPhysicalDeviceVulkan11Features has11 { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES };
-        VkPhysicalDeviceVulkan12Features has12 { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES };
-        VkPhysicalDeviceVulkan13Features has13 { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES };
-        VkPhysicalDeviceWorkgroupMemoryExplicitLayoutFeaturesKHR hasWml {
-            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_WORKGROUP_MEMORY_EXPLICIT_LAYOUT_FEATURES_KHR
-        };
-        hasCoop.pNext = &hasFp8;
-        hasFp8.pNext = &has11;
-        has11.pNext = &has12;
-        has12.pNext = &has13;
-        has13.pNext = &hasWml;
-        VkPhysicalDeviceFeatures2 has { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2, &hasCoop };
-        vkGetPhysicalDeviceFeatures2(physical, &has);
-        const struct
+        if (!physical)
         {
-            VkBool32 wanted, offered;
-            const char* name;
-        } features[] = {
-            { coop.cooperativeMatrix, hasCoop.cooperativeMatrix, "cooperativeMatrix" },
-            { fp8.shaderFloat8, hasFp8.shaderFloat8, "shaderFloat8" },
-            { fp8.shaderFloat8CooperativeMatrix, hasFp8.shaderFloat8CooperativeMatrix,
-              "shaderFloat8CooperativeMatrix" },
-            { f11.storageBuffer16BitAccess, has11.storageBuffer16BitAccess, "storageBuffer16BitAccess" },
-            { f12.storageBuffer8BitAccess, has12.storageBuffer8BitAccess, "storageBuffer8BitAccess" },
-            { f12.shaderFloat16, has12.shaderFloat16, "shaderFloat16" },
-            { f12.shaderInt8, has12.shaderInt8, "shaderInt8" },
-            { f12.vulkanMemoryModel, has12.vulkanMemoryModel, "vulkanMemoryModel" },
-            { f12.timelineSemaphore, has12.timelineSemaphore, "timelineSemaphore" },
-            { f13.subgroupSizeControl, has13.subgroupSizeControl, "subgroupSizeControl" },
-            { f13.synchronization2, has13.synchronization2, "synchronization2" },
-            { wml.workgroupMemoryExplicitLayout, hasWml.workgroupMemoryExplicitLayout,
-              "workgroupMemoryExplicitLayout" },
-            { wml.workgroupMemoryExplicitLayout8BitAccess, hasWml.workgroupMemoryExplicitLayout8BitAccess,
-              "workgroupMemoryExplicitLayout8BitAccess" },
-            { wml.workgroupMemoryExplicitLayout16BitAccess, hasWml.workgroupMemoryExplicitLayout16BitAccess,
-              "workgroupMemoryExplicitLayout16BitAccess" },
-        };
-        for (const auto& f : features)
-            if (f.wanted && !f.offered)
-                throw std::runtime_error(std::string("[unsupported] the driver lacks the Vulkan feature ") + f.name);
-        // Optional: without it the network takes its descriptor reads.
-        bufferDeviceAddress = has12.bufferDeviceAddress == VK_TRUE;
+            if (matches.size() > 1)
+                refused += " (" + std::to_string(matches.size()) +
+                           " Vulkan devices share this adapter, none passes: a duplicate or stale driver may be "
+                           "installed)";
+            throw std::runtime_error(refused);
+        }
         f12.bufferDeviceAddress = bufferDeviceAddress ? VK_TRUE : VK_FALSE;
         // Official Kernel::create chains pipeline robustness when the physical device offers it.
         // Enable the extension on the device this runtime creates, or that chain is illegal.
@@ -2108,6 +2167,16 @@ struct NetworkKey
     bool computeExport = false; // NrInlineComputeExport on a first-pass key (RuntimeConfig::compute_export)
     bool motionPasses = false; // NrInlineComputeMotion on a multi-pass key (RuntimeConfig::motion_in_place_passes)
     bool operator==(const NetworkKey&) const = default;
+    // Geometry alone may change; every other build semantic stays exact.
+    bool SameGraphSemantics(const NetworkKey& other) const
+    {
+        auto geometryOnly = other;
+        geometryOnly.width = width;
+        geometryOnly.height = height;
+        geometryOnly.renoWidth = renoWidth;
+        geometryOnly.renoHeight = renoHeight;
+        return *this == geometryOnly;
+    }
     bool SameModel(const NetworkKey& other) const
     {
         return width == other.width && height == other.height && format == other.format &&
@@ -2131,13 +2200,16 @@ struct ProductRuntime : nr::Runtime
         ~ExposureImage() { image.Release(device); }
     } exposure;
     std::unique_ptr<nr::renodx::Stage> reno;
+    MochizukiStageTiming stageTiming;
     uint32_t renoPasses = 0;
     uint64_t id = 0;
+    bool graphAco = false; // Actual compiler provenance, not requested ACO mode.
     NetworkKey key {};
+    VkQueue queue {};
 
     ProductRuntime(const nr::HostDevice& host, const nr::RuntimeConfig& config,
                    const nr::TemporalConfig& temporal, const NetworkKey& key, Vulkan& vk)
-        : nr::Runtime(host, config, nr::ControlMaskConfig {}, temporal), id(++g_nextNetworkId), key(key)
+        : nr::Runtime(host, config, nr::ControlMaskConfig {}, temporal), id(++g_nextNetworkId), key(key), queue(vk.queue)
     {
         nr::logf("[mochizuki] network #%llu created (%ux%u, model=%u, maxPasses=%u, renodx=%d)",
                  static_cast<unsigned long long>(id), key.width, key.height, key.networkModel, key.maxPasses,
@@ -2157,6 +2229,15 @@ struct ProductRuntime : nr::Runtime
         reno = std::make_unique<nr::renodx::Stage>(host, sc);
         exposure.device = host.device;
         exposure.image.Create(vk, VK_FORMAT_R32_SFLOAT, 1, 1);
+        static_assert(MochizukiStageTiming::kPasses == nr::renodx::kMaxUnlockedPasses);
+        uint32_t familiesCount = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(host.physical, &familiesCount, nullptr);
+        std::vector<VkQueueFamilyProperties> families(familiesCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(host.physical, &familiesCount, families.data());
+        VkPhysicalDeviceProperties props {};
+        vkGetPhysicalDeviceProperties(host.physical, &props);
+        stageTiming.Create(host.device, props.limits.timestampPeriod, families[vk.family].timestampValidBits,
+            vk.computeFamily < familiesCount ? families[vk.computeFamily].timestampValidBits : 0);
     }
 
     ~ProductRuntime()
@@ -2437,6 +2518,7 @@ struct Session
     std::vector<std::shared_ptr<ImageInput>> retiredInputs;
     std::weak_ptr<ImageInput> bufferColourCache, sharedColourCache;
     Hold<Geometry> sharedColourHold;
+    bool sharedColourStorageRefused = false; // session-local: no repeated optional allocation failures
     Hold<Geometry> bufferColourHold;
     int sharedInputRequest = Hooks().sharedInput;
     uint64_t sharedInputDelay = Hooks().sharedInputDelay;
@@ -2690,8 +2772,10 @@ struct Session
     float networkMs[kGpuSamples] {}, otherMs[kGpuSamples] {};
     float encodeMsLast = -1.f, transferMsLast = -1.f; // stage timing, last accepted sample (statsMutex)
     uint32_t gpuMsCount = 0, gpuMsNext = 0;
-    nr::Runtime* statsNetwork = nullptr;
     uint64_t statsSerial = 0, gpuSamples = 0, gpuTick = 0;
+    uint64_t statsNetworkId = 0;
+    ProductRuntime* pendingTimingNetwork = nullptr;
+    uint32_t pendingTimingSlot = MochizukiStageTiming::kUnavailable;
 
     // SetControls' last word, which PrepareFrame copies into every job. The mutex only guards a host that sets them
     // from another thread than the render thread.
@@ -3311,6 +3395,7 @@ struct Session
     {
         // vkQueueSubmit has accepted the work. Preserve its release credential
         // before optional trace/awaited bookkeeping can allocate or throw.
+        if (pendingTimingNetwork) pendingTimingNetwork->stageTiming.Submitted(pendingTimingSlot, finished);
         job.vkFinished = finished;
         if (colourInput) colourInput->finished = finished;
         if (motionInput) motionInput->finished = finished;
@@ -3473,7 +3558,20 @@ struct Session
         vram.Close();
     }
 
-    // Median and p95 of the network's GPU time over the last kGpuSamples frames; zero before the first sample.
+    void PushGpuSample(float total, float network, float encode, float transfer)
+    {
+        std::lock_guard stats(statsMutex);
+        ++gpuSamples;
+        gpuTick = GetTickCount64();
+        gpuMs[gpuMsNext] = total;
+        networkMs[gpuMsNext] = network;
+        otherMs[gpuMsNext] = std::max(total - network, 0.f);
+        encodeMsLast = encode; transferMsLast = transfer;
+        gpuMsNext = (gpuMsNext + 1) % kGpuSamples;
+        gpuMsCount = std::min(gpuMsCount + 1, kGpuSamples);
+    }
+
+    // Vulkan core/stage TOTAL median and p95, not pure network dispatch time.
     void NetworkMs(float& median, float& p95)
     {
         float sorted[kGpuSamples];
@@ -3713,11 +3811,11 @@ struct Session
         VkCheck(vkResetCommandBuffer(c, 0), "vkResetCommandBuffer (passthrough)");
         VkCheck(vkBeginCommandBuffer(c, &bi), "vkBeginCommandBuffer (passthrough)");
         if (colourInput && colourInput->Shared()) {
-            colourInput->Ownership(c, true, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
-            VkBufferImageCopy copy = colourFootprint.vk;
-            copy.imageExtent = { job.width, job.height, 1 };
-            vkCmdCopyImageToBuffer(c, colourImage.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, output.buffer, 1, &copy);
-            colourInput->Ownership(c, false, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
+            // The recording's retained carrier already holds the captured input.
+            // Publish the same ownership/fence handoff as NR; RecordOutputs copies
+            // this texture directly, so passthrough needs no buffer download.
+            colourInput->Ownership(c, true, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL);
+            colourInput->Ownership(c, false, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL);
         } else {
             vkCmdCopyBuffer(c, input.buffer, output.buffer, 1, &region);
             if (firstOutput.buffer) vkCmdCopyBuffer(c, input.buffer, firstOutput.buffer, 1, &region);
@@ -4337,6 +4435,9 @@ struct Session
         {
             std::lock_guard stats(statsMutex);
             gpuMsCount = gpuMsNext = 0;
+            gpuTick = 0;
+            encodeMsLast = transferMsLast = -1.f;
+            statsNetworkId = statsSerial = 0;
         }
         infoFrameWidth = net.width;
         infoFrameHeight = net.height;
@@ -4445,31 +4546,47 @@ struct Session
         if (!serve && geometry.width && !(geometry == g))
             RetireGeometry();
         // The network, and the frame's buffers unless they are made already, beside what the frames still hold.
-        bool admitted = VramAdmits(NetworkBytes(key) + (geometry == g ? 0 : FrameBytes(g)) + kVramMarginBytes,
-                                   key.width, key.height, "the network", why, &buildBaseUsage);
+        const UINT64 need = NetworkBytes(key) + (geometry == g ? 0 : FrameBytes(g)) + kVramMarginBytes;
+        bool admitted = VramAdmits(need, key.width, key.height, "the network", why, &buildBaseUsage);
         if (preserveCurrent && key.maxPasses > net.maxPasses && upgradeRefusals < hooks.upgradeRefusals)
         {
             ++upgradeRefusals;
             admitted = false;
             why = "insufficient VRAM for capacity expansion (test hook)";
         }
-        if (!admitted && !preserveCurrent && (runtime || !buried.empty() || Releasing()))
+        if (!admitted && !preserveCurrent && (!buried.empty() || Releasing()))
         {
-            // Not beside them: what the frames held goes first, after a drain of both sides, and the networks retired
-            // before with it (the drain lets the releaser free them), then the check again.
+            // Release already retired work first, without giving up the network the frames still hold.
             Drain();
-            if (runtime)
-            {
-                std::lock_guard lock(submitMutex);
-                LogNetworkTime("replacing the network");
-                exposureSnapshot = runtime->reno ? runtime->reno->exposure_state() : nullptr;
-                runtime.reset();
-            }
-            if (geometry.width && !(geometry == g))
-                ReleaseGeometry();
             ReleasesDone(kDrainWaitMs);
-            admitted = VramAdmits(NetworkBytes(key) + (geometry == g ? 0 : FrameBytes(g)) + kVramMarginBytes, key.width,
-                                  key.height, "the network", why, &buildBaseUsage);
+            admitted = VramAdmits(need, key.width, key.height, "the network", why, &buildBaseUsage);
+        }
+        const bool freeGeometry = geometry.width && !(geometry == g);
+        if (!admitted && !preserveCurrent && (runtime || freeGeometry))
+        {
+            // Only give up the current network if reclaiming it would make room. The game can take back
+            // freed VRAM, so destroying it for an impossible rebuild also loses the immediate way back.
+            const UINT64 reclaim = (runtime ? NetworkBytes(net) : 0) + (freeGeometry ? FrameBytes(geometry) : 0);
+            std::string notEnough;
+            if (VramAdmits(need > reclaim ? need - reclaim : 0, key.width, key.height,
+                           "the network once the running one is freed", notEnough))
+            {
+                Drain();
+                if (runtime)
+                {
+                    std::lock_guard lock(submitMutex);
+                    LogNetworkTime("replacing the network");
+                    exposureSnapshot = runtime->reno ? runtime->reno->exposure_state() : nullptr;
+                    runtime.reset();
+                }
+                if (freeGeometry)
+                    ReleaseGeometry();
+                ReleasesDone(kDrainWaitMs);
+                admitted = VramAdmits(need, key.width, key.height, "the network", why, &buildBaseUsage);
+            }
+            else
+                nr::logf("[mochizuki] %s, the running network's %llu MB included: it keeps serving", notEnough.c_str(),
+                         static_cast<unsigned long long>(reclaim >> 20));
         }
         if (!admitted)
         {
@@ -4578,15 +4695,23 @@ struct Session
             gpuUsed = true;
             // The builder takes `old` over only once its thread exists: a failed start must not free it here.
             const bool buildAco = key.aco;
+            // No native-plan work or GPU wait on this caller. The builder probes the immutable core.
+            // This one-shot reference is not a model cache and is never searched across Sessions.
+            auto donor = old ? old : runtime;
+            if (inlineQueue || !donor || !donor->key.SameGraphSemantics(key) ||
+                donor->queue != vk.queue ||
+                donor->network() != (key.networkModel ? nr::NetworkModel::Small : nr::NetworkModel::Original) ||
+                donor->int4_mixed() != key.int4 || !donor->network_note().empty())
+                donor.reset();
             // Keep the caller's reference until thread creation succeeds, then transfer the
             // lambda's only reference into Build so old.reset there actually releases the net.
             auto handed = old;
             std::lock_guard handoff(buildMutex);
             builder = std::thread(
-                [this, host, config, temporal, handed = std::move(handed), oldFinished, buildAco, key, buffers = std::move(buffers)]() mutable
+                [this, host, config, temporal, handed = std::move(handed), donor = std::move(donor), oldFinished, buildAco, key, buffers = std::move(buffers)]() mutable
                 {
                     { std::lock_guard ownership(buildMutex); } // caller drops its copy before Build starts
-                    Build(host, config, temporal, std::move(handed), oldFinished, std::move(buffers), buildAco, key);
+                    Build(host, config, temporal, std::move(handed), oldFinished, std::move(buffers), buildAco, key, std::move(donor));
                 });
             old.reset();
         }
@@ -4615,7 +4740,7 @@ struct Session
     // the session up to this thread (Abandon), it ends it.
     void Build(const nr::HostDevice& host, const nr::RuntimeConfig& config, const nr::TemporalConfig& temporal,
                std::shared_ptr<ProductRuntime> old, UINT64 oldFinished, std::unique_ptr<FrameBuffers> buffers,
-               bool buildAco, const NetworkKey& key)
+               bool buildAco, const NetworkKey& key, std::shared_ptr<ProductRuntime> donor)
     {
         const auto t0 = std::chrono::steady_clock::now();
         nr::g_build_stage.store(0, std::memory_order_relaxed);
@@ -4642,7 +4767,10 @@ struct Session
                     buildBaseUsage = usage; // the growth is measured from after the release
             }
             else
+            {
                 RetireNetwork(std::move(old), oldFinished);
+                donor.reset(); // No sharing after an unresolved previous completion.
+            }
         }
         std::shared_ptr<ProductRuntime> made;
         char error[sizeof buildError] {};
@@ -4696,6 +4824,18 @@ struct Session
                     useNative(e.what());
                 }
             }
+            auto construct = [&]()
+            {
+                nr::RuntimeConfig local = config;
+                const bool importing = !nr::binary::directory().empty();
+                if (donor && donor->graphAco == importing)
+                    local.share = donor->share_for(config.width, config.height);
+                if (!local.share)
+                    donor.reset();
+                // share_for can reject geometries; the core can reject arguments. Both use its real full build.
+                // No with_slot_of: its per-plan mutable tail/noise protocol needs transactional enqueue proof.
+                return std::make_shared<ProductRuntime>(host, local, temporal, key, vk);
+            };
             if (!nr::binary::directory().empty())
             {
                 try
@@ -4703,7 +4843,7 @@ struct Session
                     const nr::BuildCancelScope cancel(&abandon);
                     nr::g_build_stage.store(1, std::memory_order_relaxed);
                     ReportProgress(this, "Building ACO network", 0, 0);
-                    made = std::make_shared<ProductRuntime>(host, config, temporal, key, vk);
+                    made = construct();
                     nr::g_build_stage.store(0, std::memory_order_relaxed);
                     const uint32_t imported = nr::binary::mode().imported;
                     if (!imported)
@@ -4733,7 +4873,7 @@ struct Session
                 const nr::BuildCancelScope cancel(&abandon);
                 nr::g_build_stage.store(1, std::memory_order_relaxed);
                 ReportProgress(this, "Preparing network graph", 0, 0);
-                made = std::make_shared<ProductRuntime>(host, config, temporal, key, vk);
+                made = construct();
                 nr::g_build_stage.store(0, std::memory_order_relaxed);
                 ReportProgress(this, "Saving shader cache", 0, 0);
                 pipelines.Finish();
@@ -4752,6 +4892,10 @@ struct Session
             std::snprintf(error, sizeof error, "network build failed at %ux%u: an unknown exception", config.width,
                           config.height);
         }
+        // Releasing a donor never changes a retained recipe: it owns its original runtime/images.
+        // Shared arenas/core survive through the candidate's own shared ownership.
+        donor.reset();
+        if (made) made->graphAco = acoOn;
         if (error[0] && abandon)
             nr::logf("[mochizuki] the network build at %ux%u stopped after %.1f s: the session is being destroyed",
                      config.width, config.height,
@@ -5385,6 +5529,29 @@ struct Session
         }
         slotTimeouts = 0;
         nextSlot = (slot + 1) % kSlots;
+        if (statsNetworkId != runtime->id) {
+            std::lock_guard stats(statsMutex);
+            gpuMsCount = gpuMsNext = 0; gpuTick = 0;
+            encodeMsLast = transferMsLast = -1.f;
+            statsNetworkId = runtime->id; statsSerial = 0;
+            runtime->stageTiming.DiscardSamples();
+        }
+        if (runtime->reno) {
+            uint64_t completed = 0;
+            if (vkGetSemaphoreCounterValue(vk.device, fromVk.semaphore, &completed) == VK_SUCCESS)
+                runtime->stageTiming.Harvest(completed, [this](const MochizukiStageTiming::Sample& sample) {
+                    PushGpuSample(sample.total, sample.network, -1.f, -1.f);
+                });
+        }
+        struct TimingReservation {
+            Session& session;
+            ~TimingReservation() {
+                if (session.pendingTimingNetwork)
+                    session.pendingTimingNetwork->stageTiming.CancelUnsubmitted(session.pendingTimingSlot);
+                session.pendingTimingNetwork = nullptr;
+                session.pendingTimingSlot = MochizukiStageTiming::kUnavailable;
+            }
+        } timingReservation {*this};
         // Inline: the whole chain goes on the compute family when nothing in it
         // needs a graphics-only command (a format-converting blit). Otherwise the
         // conversions stay on graphics and only the network loop moves (segments).
@@ -5693,6 +5860,8 @@ struct Session
                 sf.exposure.width = sf.exposure.height = 1; sf.exposure.usage = kImageUsage;
             }
             uint32_t calls = 0;
+            pendingTimingNetwork = runtime.get();
+            pendingTimingSlot = runtime->stageTiming.Begin(c, fullCompute);
             const nr::renodx::Stage::Network network = [&](uint32_t pass, const nr::ColourFrame& proxy,
                                                           const nr::ColourFrame& neural, bool reset) {
                 nr::EngineFrame e = frame;
@@ -5717,11 +5886,14 @@ struct Session
                     ck.local_structure = std::min(ck.local_structure, 1.f);
                     if (ck.skin_structure < 0.f) ck.skin_structure = 1.f;
                 }
+                runtime->stageTiming.BeginNetwork(c, pendingTimingSlot);
                 const auto result = runtime->record_engine(c, e, ck);
+                runtime->stageTiming.EndNetwork(c, pendingTimingSlot);
                 calls += result.frame.network_dispatches;
                 consumed |= result.history_consumed;
             };
             runtime->reno->record(c, sf, network);
+            runtime->stageTiming.End(c, pendingTimingSlot);
             dispatches.store(calls, std::memory_order_relaxed);
         }
         else if (motion)
@@ -5806,22 +5978,11 @@ struct Session
                           std::memory_order_relaxed);
         historyCount.store(std::min(historyCount.load(std::memory_order_relaxed) + 1, kHistorySamples),
                            std::memory_order_relaxed);
-        if (const float ms = runtime->last_gpu_ms(); ms > 0 &&
-            (statsNetwork != runtime.get() || statsSerial != runtime->gpu_timing_serial()))
-        {
-            std::lock_guard stats(statsMutex);
-            if (statsNetwork != runtime.get()) { gpuMsCount = gpuMsNext = 0; }
-            statsNetwork = runtime.get();
-            statsSerial = runtime->gpu_timing_serial();
-            ++gpuSamples;
-            gpuTick = GetTickCount64();
-            gpuMs[gpuMsNext] = ms;
-            networkMs[gpuMsNext] = runtime->last_network_ms();
-            otherMs[gpuMsNext] = runtime->last_other_ms();
-            encodeMsLast = runtime->last_encode_ms();
-            transferMsLast = runtime->last_transfer_ms();
-            gpuMsNext = (gpuMsNext + 1) % kGpuSamples;
-            gpuMsCount = std::min(gpuMsCount + 1, kGpuSamples);
+        if (!runtime->reno) {
+            if (const float ms = runtime->last_gpu_ms(); ms > 0 && statsSerial != runtime->gpu_timing_serial()) {
+                statsSerial = runtime->gpu_timing_serial();
+                PushGpuSample(ms, runtime->last_network_ms(), runtime->last_encode_ms(), runtime->last_transfer_ms());
+            }
         }
 
         // Plan A, output side: the network wrote its answer into the canonical image, but the readback below
@@ -5861,12 +6022,13 @@ struct Session
                          VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
         }
 
-        // The answer is where the core wrote it: the frame's own image, or (Plan A, above) the game's own image
-        // the canonical answer was just converted into. Either way the readback takes the same valid w x h
-        // from the top-left, with colourFootprint's -- the game's -- row pitch.
-        VkBufferImageCopy out = colourFootprint.vk;
-        out.imageExtent = { w, h, 1 };
-        vkCmdCopyImageToBuffer(c, net->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, output.buffer, 1, &out);
+        // A shared colour recording delivers the answer from its retained texture.
+        // Buffer/canonical/DRS paths keep their existing valid-extent row-pitch copy.
+        if (!sharedColour) {
+            VkBufferImageCopy out = colourFootprint.vk;
+            out.imageExtent = { w, h, 1 };
+            vkCmdCopyImageToBuffer(c, net->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, output.buffer, 1, &out);
+        }
         if (sharedColour)
             colourInput->Ownership(c, false, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL);
         if (sharedMotion)
@@ -6629,18 +6791,24 @@ int32_t CoreRecordOutputs(void* context, void* job, void* command_list)
             if (!c || job != JobHandle(s->jobGen) ||
                 (j.state != LMXXF_NR_JOB_PRODUCER_SUBMITTED && j.state != LMXXF_NR_JOB_NR_COMPLETE))
                 return Fail(LMXXF_NR_INVALID_ARGUMENT, "RecordOutputs: inputs not recorded");
-            Transition(c, s->output.resource, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_SOURCE);
+            // BoundRecording restores the carrier captured by this closed recipe,
+            // not the session's latest route. Begin waits for the prior consumer;
+            // Enqueue publishes the Vulkan completion wait before this list runs.
+            const bool sharedOutput = s->colourInput && s->colourInput->Shared();
+            ID3D12Resource* outputSource = sharedOutput ? s->colourInput->texture : s->output.resource;
+            Transition(c, outputSource, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_SOURCE);
             Transition(c, s->result, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
             D3D12_TEXTURE_COPY_LOCATION dst { s->result, D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX, {} };
-            D3D12_TEXTURE_COPY_LOCATION src { s->output.resource, D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT, {} };
-            src.PlacedFootprint = s->colourFootprint.d3d;
+            D3D12_TEXTURE_COPY_LOCATION src { outputSource, sharedOutput ? D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX :
+                D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT, {} };
+            if (!sharedOutput) src.PlacedFootprint = s->colourFootprint.d3d;
             // The frame's valid extent into result's top-left: all of the buffer, except with dynamic resolution.
             const D3D12_BOX box { 0, 0, 0, j.width, j.height, 1 };
-            const bool whole =
-                j.width == src.PlacedFootprint.Footprint.Width && j.height == src.PlacedFootprint.Footprint.Height;
+            const bool whole = j.width == s->colourFootprint.d3d.Footprint.Width &&
+                               j.height == s->colourFootprint.d3d.Footprint.Height;
             c->CopyTextureRegion(&dst, 0, 0, 0, &src, whole ? nullptr : &box);
             Transition(c, s->result, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-            Transition(c, s->output.resource, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_COMMON);
+            Transition(c, outputSource, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_COMMON);
             if (j.firstPass)
             {
                 Transition(c, s->firstOutput.resource, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_SOURCE);
@@ -6787,8 +6955,8 @@ int32_t GetLastError(char* buf, uint32_t chars)
     return LMXXF_NR_OK;
 }
 
-// MochizukiNrControls.h. Every Controls field is 4 bytes and 4-aligned and the struct ends at its last field, so the
-// whole fields a caller's struct holds are its first struct_size & ~3 bytes.
+// MochizukiNrControls.h. Every Controls field is 4 bytes and 4-aligned; complete-package callers must match its
+// exact size, ending at network_model. Reject both shorter and longer control blocks.
 static_assert(alignof(MochizukiNrControls) == 4 &&
               sizeof(MochizukiNrControls) == offsetof(MochizukiNrControls, network_model) +
                                                  sizeof(MochizukiNrControls::network_model) &&
@@ -6872,7 +7040,6 @@ int32_t GetInfo(void* context, MochizukiNrInfo* out)
         info.model_h = s->infoModelHeight;
         info.max_passes = s->infoMaxPasses;
         info.motion_refused_dxgi = s->motionRefused;
-        s->NetworkMs(info.gpu_ms_median, info.gpu_ms_p95);
         {
             std::lock_guard stats(s->statsMutex);
             info.gpu_samples = s->gpuSamples;
@@ -6893,6 +7060,16 @@ int32_t GetInfo(void* context, MochizukiNrInfo* out)
                 info.gpu_ms_mean /= s->gpuMsCount;
                 info.gpu_ms_network_mean /= s->gpuMsCount;
                 info.gpu_ms_other_mean /= s->gpuMsCount;
+                float totals[kGpuSamples], networks[kGpuSamples];
+                std::copy_n(s->gpuMs, s->gpuMsCount, totals);
+                std::copy_n(s->networkMs, s->gpuMsCount, networks);
+                std::sort(totals, totals + s->gpuMsCount);
+                std::sort(networks, networks + s->gpuMsCount);
+                const uint32_t n = s->gpuMsCount;
+                info.gpu_ms_median = n % 2 ? totals[n / 2] : (totals[n / 2 - 1] + totals[n / 2]) / 2;
+                info.gpu_ms_p95 = totals[(n * 95 + 99) / 100 - 1];
+                info.gpu_ms_network_median = n % 2 ? networks[n / 2] : (networks[n / 2 - 1] + networks[n / 2]) / 2;
+                info.gpu_ms_network_p95 = networks[(n * 95 + 99) / 100 - 1];
             }
         }
         info.build_seconds = s->infoBuildSeconds;

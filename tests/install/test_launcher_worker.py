@@ -294,6 +294,80 @@ class LauncherWorkerTests(unittest.TestCase):
         self.assertEqual(mochi["modelState"], "preparable")
         self.assertEqual(mochi["hints"], ["mochi-preparable"])
 
+    def test_mochi_reports_per_model_preparable_states(self):
+        pkg, game, exe = self.standalone_worker()
+        (pkg / "MochizukiNrRuntime.dll").write_bytes(b"runtime fixture")
+        (pkg / "mochizuki-owned.txt").write_text("shaders/example.hlsl\n", encoding="utf-8")
+        original = game / "dlssnr-amd/dlssnr.bin"
+        original.parent.mkdir()
+        original.write_bytes(b"NRMODEL1" + (599).to_bytes(4, "little") + bytes(20))
+
+        def patch_source_hash(content, old_hash):
+            source = pkg / "nvngx_dlssnr.dll"
+            source.write_bytes(content)
+            capability = pkg / "install-capabilities.ps1"
+            text = capability.read_text(encoding="utf-8-sig").replace(
+                old_hash, hashlib.sha256(content).hexdigest())
+            capability.write_text(text, encoding="utf-8-sig")
+            return self.invoke(pkg / WORKER.name, "inspect", exe)
+
+        # Original already extracted; a 310.9.16 source can still prepare small -> the launcher's
+        # Small option must stay enabled (ready + preparable mix).
+        code, result, events = patch_source_hash(
+            b"trusted 310.9.16 source fixture; never loaded",
+            "2bc19bc09a7b89dd44f73e2ac0108fcc586e2154bdd0830f242f4f040e28789f")
+        self.assertEqual(code, 0, events)
+        mochi = next(b for b in result["backends"] if b["id"] == "mochizuki")
+        self.assertEqual(mochi["originalState"], "ready", mochi)
+        self.assertEqual(mochi["smallState"], "preparable", mochi)
+
+        # A 310.8.0 source prepares neither small nor (with original gone) anything beyond original.
+        original.unlink()
+        code, result, events = patch_source_hash(
+            b"trusted 310.8.0 source fixture; never loaded",
+            "e16bcf15e16e13f527491cdf7845b2fe6521a738d8f7c9c721866a8496e1fc8e")
+        self.assertEqual(code, 0, events)
+        mochi = next(b for b in result["backends"] if b["id"] == "mochizuki")
+        self.assertEqual(mochi["originalState"], "preparable", mochi)
+        self.assertEqual(mochi["smallState"], "missing", mochi)
+
+    def test_mochi_small_follows_new_model_source_across_candidates(self):
+        # Setup prefers a 310.9.16 source wherever it sits; the capability scan must not stop at the
+        # first accepted candidate (pkg 310.8.0) and lose small preparability from the game copy.
+        pkg, game, exe = self.standalone_worker()
+        (pkg / "MochizukiNrRuntime.dll").write_bytes(b"runtime fixture")
+        (pkg / "mochizuki-owned.txt").write_text("shaders/example.hlsl\n", encoding="utf-8")
+        (pkg / "nvngx_dlssnr.dll").write_bytes(b"trusted 310.8.0 source fixture; never loaded")
+        (game / "nvngx_dlssnr.dll").write_bytes(b"trusted 310.9.16 source fixture; never loaded")
+        capability = pkg / "install-capabilities.ps1"
+        text = capability.read_text(encoding="utf-8-sig")
+        text = text.replace("2bc19bc09a7b89dd44f73e2ac0108fcc586e2154bdd0830f242f4f040e28789f",
+                            hashlib.sha256(b"trusted 310.9.16 source fixture; never loaded").hexdigest())
+        text = text.replace("e16bcf15e16e13f527491cdf7845b2fe6521a738d8f7c9c721866a8496e1fc8e",
+                            hashlib.sha256(b"trusted 310.8.0 source fixture; never loaded").hexdigest())
+        capability.write_text(text, encoding="utf-8-sig")
+        code, result, events = self.invoke(pkg / WORKER.name, "inspect", exe)
+        self.assertEqual(code, 0, events)
+        mochi = next(b for b in result["backends"] if b["id"] == "mochizuki")
+        self.assertEqual(mochi["originalState"], "preparable", mochi)
+        self.assertEqual(mochi["smallState"], "preparable", mochi)
+
+    def test_mochi_installed_model_does_not_authorize_untrusted_source(self):
+        # Small already extracted; an unsupported nvngx_dlssnr.dll must NOT make original preparable
+        # (the earlier hash filter is skipped when a model is installed).
+        pkg, game, exe = self.standalone_worker()
+        (pkg / "MochizukiNrRuntime.dll").write_bytes(b"runtime fixture")
+        (pkg / "mochizuki-owned.txt").write_text("shaders/example.hlsl\n", encoding="utf-8")
+        small = game / "dlssnr-amd/dlssnr-small.bin"
+        small.parent.mkdir()
+        small.write_bytes(b"NRMODEL1" + (255).to_bytes(4, "little") + bytes(20))
+        (pkg / "nvngx_dlssnr.dll").write_bytes(b"unsupported source; never hashed")
+        code, result, events = self.invoke(pkg / WORKER.name, "inspect", exe)
+        self.assertEqual(code, 0, events)
+        mochi = next(b for b in result["backends"] if b["id"] == "mochizuki")
+        self.assertEqual(mochi["smallState"], "ready", mochi)
+        self.assertEqual(mochi["originalState"], "missing", mochi)
+
     def test_requested_package_selects_its_own_scripts(self):
         pkg, game, exe = self.standalone_worker()
         update = pkg.parent / "requested update"

@@ -184,6 +184,8 @@ class MenuCommon
     static void RenderVsyncSettings(RenderMenuContext& ctx);
     static void RenderActiveUpscalerSettings(RenderMenuContext& ctx);
     static void RenderFrameGenerationSelection(RenderMenuContext& ctx);
+    static void RenderFGModeSlider(RenderMenuContext& ctx, const char* label, int maxInterpolationCount,
+                                   CustomOptional<int>* countConfig, const char* tooltip);
     static void RenderFrameGenerationRuntimeSettings(RenderMenuContext& ctx);
     static void RenderFsrCommonSettings(RenderMenuContext& ctx);
     static void RenderFramerateSettings(RenderMenuContext& ctx);
@@ -208,6 +210,7 @@ class MenuCommon
     static void UpdateManualInput(HWND targetHwnd);
 
   public:
+    static void RenderKeybind(const char* name, int id, CustomOptional<int>& configKey);
     static void Dx11Inited() { _dx11Ready = true; }
     static void Dx12Inited() { _dx12Ready = true; }
     static void VulkanInited() { _vulkanReady = true; }
@@ -227,4 +230,10 @@ class MenuCommon
     static void Shutdown();
     static void HideMenu();
     static void Present();
+
+    // Vulkan FG outputs present the generated frames on their own, the game's presents only show the real ones.
+    // FGOutputPresent is called for each frame they present, FGOutputPresents says if the game's frames go through
+    // them.
+    static void FGOutputPresent();
+    static void FGOutputPresents(bool presents);
 };

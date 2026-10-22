@@ -1,3 +1,170 @@
+## 2026-10-22 — 能力检测逐模型来源判定二审修复
+
+01c36d2b 的两条审查意见均属实:①单一 $mochiNv 取第一个受信源即停(包目录 310.8.0 遮蔽
+游戏目录 310.9.16),smallState 误判 missing,而安装器实际会继续扫描并优先 310.9.16;
+②某模型已就绪时早前哈希过滤被整体跳过,originalState 仅凭 mochiNv 非空即 preparable,
+不受信源也能启用 Original,安装器必然后置拒绝。修复:providesOriginal/providesSmall
+改为独立遍历全部候选源($sourceDlls:ModelSourceDll+包+游戏)逐个验哈希,与安装器
+"任一受信源即可、新版本源才能提供 small"的语义对齐,不再依赖单选 mochiNv、也不因
+模型已装跳过验证。新增两个回归测试(双源 310.8.0+310.9.16→small preparable;small
+已装+不受信源→original missing),worker 全套 25 过,能力脚本解析通过。
+
+## 2026-10-22 — 代码审查四问题修复(P1 能力状态 / P2×3)
+
+审查范围 a2b45d02^..main,四条全部核实属实并修复:P1(我此前 D5 修复不完整的回归)——
+mochizuki 能力只发 ready|missing、无 preparable,新 enable 矩阵会把"有受信源但未提取模型"
+场景三个选项全禁用;install-capabilities.ps1 现按源哈希区分:任意受信源→originalState
+preparable,仅 310.9.16(2bc19bc0…)→smallState preparable,并新增就绪+可提取混合组合与
+310.8.0 组合的回归测试(test_launcher_worker 全套 23 过)。P2 三处:release.yml OptiPatcher
+刷新步骤结尾显式 exit 0(Actions 的 pwsh 包装会用残留的非零 LASTEXITCODE 退出,导致
+best-effort 失败跳过后续打包);菜单 FSR4 预设延迟补挂去掉 IsAnyModuleHooked 全局门
+(SDK DLL 启动即被 FfxApi_Proxy 挂钩使恒真,驱动模块补挂被跳过;Hook 本身按模块幂等);
+XeLLProxy::BundledVersion 按 LoadProxyLibrary 规则解析 XeLLLibrary(相对路径锚定游戏
+EXE、目录取其内 libxell.dll、无效回退 Opti 副本),否则目录/相对配置读到 {0,0,0} 使配对
+门限失效。C++ BUILD_OK、YAML 解析通过、能力脚本解析通过。
+
+## 2026-10-22 — DxgiSpoofing"被自动改掉"反馈核验 + Int8 强制点补提示
+
+7 处运行时改写点全部核验:6 处带 `!has_value()` 门(仅 auto 态调整,SoftDefault 显式值
+持久化并受尊重,含 nvngx 缺失处——初判"无门"有误,外层整块有门且已有日志);唯一无门
+的是 FSR4-Int8 强制开(dllmain:1510,上游故意,Int8 跑 FFX 必须伪装),但零提示覆盖显式
+false,观感即 bug。已在该处加提示日志(显式 ini 值保留说明),行为零变化。全景分析与
+判别口径记入 docs/upstream-issues.md U6,建议上游跟进提示或改门控。
+
+## 2026-10-22 — Win10 Agility 盲开等五缺陷修复(work/notes 审查报告核验后)
+
+外部审查报告(work/notes/2026-10-22-win10-agility-and-launcher-defects-review.md)五条,
+逐行核验:1-4 认可,5 部分认可(报告称前端仅查 PreparationState 不确——对话框另有
+OriginalState/SmallState 门控与版本感知提示,但 `|| canExtract` 通道确能在"工具就绪+
+源 DLL 仅 310.8.0"时放开 Small,安装后端才报致命错)。修复:D1 Win10 Agility 自动
+升级加 `gameAgilityVersion > 0 &&` 下限(无 Agility 导出的游戏返回 0,原 0<615 恒真,
+kernelbase Detours 会被内核反作弊击杀;仅 Win10,build<22000);D2
+`FsrAgilitySDKUpgrade` 改 `CustomOptional<bool, NoDefault>`(消费点 3 处随之
+`.value_or(false)`)——`value_for_config` 会把"值==默认"映射回
+auto,显式 false 保存即丢,与 D1 组成无法自救的崩溃循环(同类风险键见
+docs/upstream-issues.md U4);D3 INI 注释对齐新语义;D4 安装器进程检测排除自身
+(Launcher/提取器/person-worker,包解压进游戏目录时自锁);D5 模型对话框 enable 矩阵
+纳入 `preparable`(Small 需 `small || (canExtract && smallPreparable)`)。D1/D2 上游
+同款(dllmain.cpp:1160-1168 / Config.h:484),已入上游台账 docs/upstream-issues.md。
+
+## 2026-10-22 — HSR(D3D11 + ffx_12)被内核反作弊击杀:FSR4 驱动 DLL 补丁改为显式覆盖才挂
+
+崩坏:星穹铁道(kernel AC HoYoKProtect)上 1.13.2 起开 FSR4 超分,超分初始化与首帧
+交接全部成功后约 85ms 进程被外部终止(异常码 0x00000000、模块 unknown、无栈无 dump)。
+对照实验:1.13.1-alpha 同游戏同配置(ffx_12)存活 9.5 分钟;差异是 1.13.2 的
+`fsr4/FSR4DriverProvider.cpp` 在加载驱动签名 amdxcffx64.dll 时无条件执行
+`FSR4Presets::Hook`(.text 页 Detours)与 `FSR4Models::Hook`(provider 虚表改写)。
+对内核反作弊进程修改驱动签名模块 = 击杀;与 DX11/DX12 无关(D3D12 游戏同样被钩但无
+内核 AC 故存活)。
+
+修复:两处 Hook 仅在用户显式选择(`Fsr4Preset` / `Fsr4Model` 均为 NoDefault optional)
+时执行;`FSR4Models::SelectableModels` 增加只读 RTTI 枚举分支(未挂钩模块照常列出可
+选模型,不写任何字节)并新增锁保护的 `IsModuleHooked`;菜单在首次显式选择预设/模型时
+对已加载模块延迟补挂,`(Failed to hook)` 文案区分"未请求挂钩(驱动默认)"。默认配置
+下不再触碰 amdxcffx64.dll 的代码页与虚表,恢复 1.13.1 的 AC 安全线;显式选择覆盖属
+用户自担。构建 BUILD_OK(build-release-local --fast)。实机复现待上报者验证。
+
+## 2026-10-22 — 启动器恢复 OptiPatcher 推荐安装（下载限时 + 包内回退 + CI 刷新）
+
+启动器（e15c2981 引入 worker 时）把 OptiPatcher 降级为 `optiPatcher='skip'` 且安装器对
+GUI 决策硬性拒绝（"GUI installs do not download it in this version"），控制台交互流程
+保留。现恢复为推荐注入式：`Decisions` 增加 `optiPatcher`（GUI 默认 `install`，worker
+缺省仍 `skip`），安装器抽出共享内核 `Install-OptiPatcherPlugin -TimeoutSec`——拉取
+optiscaler/OptiPatcher rolling 版并做 PE 校验，成功装最新并更新包缓存，失败回退包内
+离线副本，装后开启 `LoadAsiPlugins=true`；控制台 60s、GUI 决策 30s 时限。
+CI（release.yml 打包前）best-effort 拉取最新版并做 PE 校验（MZ/PE 签名/AMD64/尺寸
+4KB-20MB），通过才覆盖 `assets/plugins/OptiPatcher.asi` 参与打包，失败保留已提交副本；
+本地打包（BUILD_LOCAL_PACKAGE/PACKAGE_RELEASE）固定使用仓库内副本、永不联网，副本
+更新只经 CI 或手动。验证：安装脚本解析通过、release.yml YAML 解析通过、PE 校验四例
+（真文件/坏 MZ/i386/超小）行为正确、launcher 构建 LAUNCHER_OK。
+
+## 2026-10-22 — 1.13.2 帧生成崩溃回归修复（菜单下转 / XeFG-XeLL 配对）
+
+用户日志（TW3 fsrfg 输出、TW3 xefg 输出、鸣潮 xefg 输出）确认 1.13.2 一开帧生成就崩溃：
+切"帧生成"标签页即崩、或 XeFG 从启动就进不去游戏；1.13.1-alpha8 及更早同游戏正常。
+
+根因一：`bdd11179`（M10 迁移）把菜单四处
+`reinterpret_cast<IFGFeature_Dx12*>(state.currentFG)`（同类型恒等）改成了对
+`state.CurrentFG()` 的下转。`IFGFeature_Dx12` 虚继承 `IFGFeature`，`CurrentFG()`
+返回的是经虚基偏移调整后的基类子对象地址，reinterpret_cast 不还原偏移；
+`IsUsingUIAny()` 等基类成员调用在错误地址上做运行期虚基调整（MSVC 把 vfptr 当
+vbptr 读）→ 野指针。修复与上游 9df512d 逐处对齐（上游无此 bug，是集成时把上游的
+访问器和我们旧 cast 拼接出来的）：4034/4089 处用上游的不带 cast 的
+`state.CurrentFG()`，5571/5611 处用上游的恒等
+`reinterpret_cast<IFGFeature_Dx12*>(state.currentFG)`；这些卡片是 DX12 专属，
+Vulkan FG 不经过 menu_common 的这些分支。
+`work/scratch/fgtab_downcast_repro.cpp` 实测：基类地址与派生地址相差 0x68 字节，
+错误下转的 `IsUsingUIAny()` 读到错误结果（MSVC 上即崩溃）。
+
+根因二：LOW_LATENCY_INPUTS 把全进程 XeLL 调用引流到最先加载的 libxell。带旧
+XeSS2 栈的游戏/解锁器（TW3+MFG unlocker：libxell 1.2.1）会把自己的旧 XeLL 上下文
+交给 OptiScaler 的 libxess_fg 1.3.1（日志佐证：TW3 "XeFG Log: libxell.dll version
+1.2.1" 崩溃，鸣潮 1.3.2 正常），违反 "XeFG and XeLL contexts must come from the
+same pair of libraries"。`XeFG_Dx12::CreateSwapchainContext` 现在在
+`SetLatencyReduction` 前做配对校验：不配对则不挂 XeLL（XeFG 无延迟加速运行）并
+`release_xefg_xell()`，不再把跨版本上下文喂给 XeFG。初版规则是 "XeLL 与 libxess_fg
+同 major 且 minor 不小于 XeFG"；【10-22 修订】Intel 按 SDK 整套配对 fg/xell、两者
+版本号独立演化（官方 XeSS SDK 3.0.2 即 fg 1.3.4 + xell 1.3.2），该规则会误拦官方
+组合。现规则：真实加载的 libxell（`XeLLProxy::Version()`）不得低于捆绑副本
+（`XeLLProxy::BundledVersion()`，读 Opti 目录或 XeLLLibrary 覆盖的文件版本资源）；
+TW3 的 1.2.1 仍拦、官方跨 minor 组合放行、捆绑文件缺失时放行（回到无门限行为），
+六组合在 `work/scratch/xefg_pair_gate_test.cpp` 验证。上游 9df512d 同样缺该校验
+（随低延迟切片引入的上游潜在 bug）；alpha8 二进制无 "XeFG paces" 字符串，走的是
+fakenvapi 可选路径（失败即跳过、不强配对），故 alpha8 不崩。此门限是本地加固，
+值得上报上游。
+
+追加审查（4dbaea06..e3c0c35a 全量、同类缺陷专项）：菜单 `_ffxFGIndex` 两处
+（4247/5475）集成时丢了上游的上界保护（上游 4294/5639 有
+`|| _ffxFGIndex >= (int) ffxFGVersionNames.size()`），FG 上下文重建使版本表变短时
+静态索引越界读 `const char*` → 同一 FG 标签页崩溃面；已按上游原句还原并重编通过。
+其余核查干净：所有 `CurrentFG()` 消费点（菜单/Streamline/FrameLimit/input_common）
+均无 cast、只调基类接口；`IFeature` 升采样器层级同构但零下转（Vulkan_Hooks 用
+dynamic_cast）；FSRFG 回调 `pUserCtx` 恒等往返；`currentVkFG` 类型化直用；
+LowLatencyTech 非虚继承，static_cast 合法；XeFGInputs 原生钩子 target 空指针不可达
+（挂钩即已解析）；xefg_marker 未知 marker 先拒绝后索引。遗留待观察：XeFG
+passthrough 输入（FGInput=XeFG+FGOutput=XeFG）在 LL 构建下把游戏旧 libxess_fg 的
+导出重定向到 Opti 的 1.3.1 副本、而其 XeLL 上下文仍落在最先加载的旧 libxell 上
+（非 LL 构建是整对交换、正确；LL 构建不是）——同族版本混搭，无现场报告，正确修法
+需 XeLL 输入在 passthrough 重定向时改用 Opti 配对，留待上游讨论。
+
+## 2026-10-20 — Narrow Storm input, shortcuts and menu closure
+
+Preserve the existing input implementation and the low-level hook
+`CallNextHookEx` repair. Keyboard/mouse menu policy never zeroes other DirectInput
+axes or buttons. Actual method targets have bounded stable proxy registrations
+for CreateDevice, Release and state/data reads; shared targets attach once and
+each proxy calls its own original. Release generations protect address reuse.
+Failed detach transactions retain live flags/trampolines. WndProc restore/query
+failures and unknown subclass chains retain the forwarding root and refuse unsafe
+retargeting. Foreign-thread removal posts tokenized owner-thread work without a
+cross-thread send or wait. Pending input-window switches retry independently of
+the published game target; cancellation, reinstall and destruction invalidate old
+tokens without discarding late-callback forwarding roots. Focus changes preserve
+owed releases and defer keyboard/mouse queue draining outside the input state
+mutex. No Raw/exclusive mouse compensation added.
+Canonical Ctrl/Shift/Alt presses retain the first held side's
+original-down modifiers through left/right rollover and fast release sequences.
+Dockspace submission requires an active menu frame; a fully hidden no-NewFrame
+render path does not call ImGui DockSpace, including its keep-alive mode.
+
+Callback closure refuses active teardown rather than waiting on a callback holding
+the input mutex. USER32 restoration/destruction is owner-thread-only. Exact IAT
+owner references release after known restoration and after callback gates reopen;
+uncertain chains and bounded late-entry proxy identities retain ordinary module
+references. No permanent loader PIN is introduced. This safety retention is not
+a claim that arbitrary DLL unload is supported. Real CPU Detours and message-only
+USER32 nested-callback fixtures exercise dispatch and reentry separately from game
+compatibility. The input hook fast path has callback accounting; it is not described
+as zero-overhead or a game FPS improvement.
+
+Daniel retains loaded HIP modules as before, but host pass state becomes initialized
+only after InitPass completes. A retained half-initialized pass rejects later reuse
+instead of enabling it; no retry, extra checker or scheduler is added.
+
+Shortcut/docking/history behavior and the focused CPU/WARP verification entries are
+documented in [menu navigation](architecture/menu-navigation.md). Defaults, existing
+INI preferences, native extraction, NR algorithms and precision policies remain.
+
 ## 2026-10-19 — Mochizuki 0.0.7 剩余能力统一评估
 
 一次覆盖尺寸/格式复用、plan/slot/capacity、activation、heap、residency/offload、pipeline registry、motion point 与 resize history，不再按多轮评估拆分。建议将受限后台 core/权重复用和同 Session 的 split activation 共享纳入一个实现方案；保留当前桶尺寸、失败服务、录制回放和退休框架。不直接采用使旧 runtime stale 的两区域 heap，不为 RAM offload 先增加多闲置网络缓存。全局管线复用保持关闭，采样与历史语义保持当前行为。临时 native 探针验证了实际资源共享、变化输入输出一致、容量拒绝和卸载恢复；不代表 temporal/ACO/游戏验收，尚无产品路径修改。详见 [统一评估](architecture/mochizuki-007-remaining-assessment.md)。
@@ -261,10 +428,17 @@ Page resets touch the current backend's page only; shared effects retain a separ
 reset, while Reset NR settings keeps its current backend plus shared-controls scope.
 
 Read existing nonblocking timing snapshots without enabling sampling on menu open.
-HIP/Vulkan network time is not whole NR latency; Daniel has no network snapshot in
-the host interface. Missing/stale measurements stay unavailable. Do not subtract
-network GPU time from frame interval to invent a remainder or combine overlapping
-stabilizer/blend measurements. No new runtime ABI, rendering route or default logging.
+HIP network time is not whole NR latency; Mochizuki's explicitly labelled Vulkan
+core total includes core input/composition, not bridge copies/shared effects.
+Daniel has no network snapshot in the host interface. The fixed 360-point sampled
+history uses completed-measurement counters (`gpu_samples` / stage `samples`), not
+execution frame counts or UI poll timestamps. Runtime/measurement epochs, backend,
+route, NR off and stale/missing observations clear/partition it even while hidden.
+Zero is a valid measured duration; unavailable data stays backend-neutral N/A.
+Cached snapshots may skip executions, so the curve does not claim every frame.
+Do not subtract network GPU time from frame interval to invent a remainder or
+combine overlapping stabilizer/blend measurements. No new runtime ABI, rendering
+route or default logging.
 
 ## 2026-10-03 — Retain mochizuki capacity when reducing active passes
 
@@ -970,3 +1144,20 @@ lmxxf 额外多槽吞吐回落；更少的 16/8 段没有进一步收益，因�
 - Product construction policy (patch 27) keeps independent pipeline import/fallback accounting, fixes the no-depth contract, skips unconsumed Facts readback and requires usable grade variants. Official standalone defaults and the public host/runtime ABI remain unchanged.
 - Keep current split transport and size scheduling. New cross-model arenas, image heaps and RAM-offload scheduling are deferred until their lifetime/order and net benefit are demonstrated against this host; they do not replace the local destruction fix. Motion point sampling is also deferred until the preceding LINEAR rescale contract is reconciled.
 - Evidence and limits: the source ownership record and extension decisions describe focused offline/GPU checks; this is not game-FPS, 4K stress or full Inline certification. No packaging or publishing is part of this change.
+
+## 2026-10-22: Launcher-only Mochizuki visual share codes (MZ1)
+
+- Share only Mochizuki visual-style settings from an existing game's `[DlssNr]`, plus the shared overall/residual/person/stabilizer controls and Mochizuki white-point source. Exclude `MochizukiNetworkModel`, `MochizukiInt4Mixed`, `MochizukiAcoMode`, `MochizukiModelScale`, `MochizukiDynamicResolution`, `MochizukiMaxPasses`, `MochizukiCompactTransfer`, and `MochizukiUnlockPasses`; all other sections and non-table keys are outside the contract.
+- Format is `MZ1:idx=value,idx=value;CCCC`, ascending numeric indices and uppercase four-digit CRC16/CCITT-FALSE (polynomial 0x1021, initial 0xFFFF) over the exact payload between colon and semicolon. Floats use integer hundredths; integers and booleans use raw integer / 0 or 1. Empty payload is valid. Encoding is sparse: absent means default, and default values are omitted.
+- The initial 136 table indices are frozen compatibility identifiers: append new keys only; never reorder or renumber. Reject unknown indices, duplicate indices, checksum errors and out-of-range values; float boundary rounding tolerates one hundredth before clamping.
+- Import previews the visual summary and changed-setting count. Apply neutralizes every existing table assignment only inside `[DlssNr]`, retaining original lines/comments, and writes the supplied non-default values. Encoding/BOM, existing line endings, unrelated keys, comments, blank lines and bytes outside that section are preserved.
+- Launcher apply uses target locking and a flushed temporary file followed by atomic `File.Replace` with a `.bak-<timestamp>` backup. Export never writes files. Share-code lifecycle is independent of NR installation: it operates on the selected game's already-existing `OptiScaler.ini`.
+
+## 2026-10-22: Standalone XeFG unlocker plugin import
+
+- The launcher card offers `导入 XeFG 解锁插件… / Import XeFG unlocker…` only for a selected game with an existing `OptiScaler` directory and an active/planned ASI-loading signal: the ASI toggle, OptiPatcher toggle, or current INI `LoadAsiPlugins=true`. Game selection, both toggles, and action completion re-evaluate visibility; busy operations disable import.
+- Accept only 4 KB–100 MB AMD64 PE plugins with MZ/PE signatures. Keep `.asi` filenames; copy `.dll` under the same basename with an `.asi` extension. Resolve `[Plugins] Path` relative to the game directory or as an absolute path; otherwise mirror the installer's `[Libraries] OptiDllPath`/`plugins` resolution. Invalid paths fall back to `OptiScaler/plugins`.
+- Refuse writes while the selected game is running; verify same-name process paths and conservatively refuse an inaccessible matching process. Import acquires the launcher's target lock. Missing destinations are copied; SHA256-identical files (including the same source/destination path) offer optional force re-copy. Different existing files offer overwrite / keep / cancel. Overwrite copies the original to `<name>.bak-<yyyyMMdd-HHmmss-fff>` before a flushed same-volume stage and atomic `File.Replace`; normal IO errors remain visible in the card and log.
+- After copying, warn when at least two `.asi` filenames match `(mfg.*unlock|xefg.*unlock).*\.asi`: keep only one frame-generation unlocker because multiple unlockers can conflict.
+- After copying, missing/empty/`auto` `LoadAsiPlugins` becomes `true` automatically; explicit `false` asks first, with a plugin-will-not-load hint if declined. Existing `true` is unchanged. Reuse the INI document editor to preserve encoding/BOM and unrelated content, with a flushed temporary file, atomic replace and timestamped INI backup.
+- This operates on an already-installed game's plugin directory directly. No installer round-trip, package installation, or automatic game launch is involved; cancellation and all resulting copy/INI outcomes use the card status and launcher log.

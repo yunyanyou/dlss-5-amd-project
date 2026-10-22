@@ -809,24 +809,14 @@ void InitNGXParameters(NVSDK_NGX_Parameter* InParams, API api)
         InParams->Set(NVSDK_NGX_Parameter_FrameInterpolation_NeedsUpdatedDriver, 0);
         InParams->Set(NVSDK_NGX_Parameter_FrameInterpolation_FeatureInitResult, 1);
 
-        // With an NGX replacement the fake provider knows its own ceiling, otherwise it is OptiScaler's
-        // own XeFG backend that decides how many frames can be generated
+        // Streamline handle the max interpolated frame count
+        // Nvngx replacement overrides whatever the real driver table reports (e.g. 1 on RTX 40)
         int countMax = 1;
 
         if (State::Instance().activeFgNvngx != FGNvngxReplacement::None)
-            countMax = Nvngx_FG::getMaxFakeFramesCount();
-        else if (State::Instance().activeFgOutput == FGOutput::XeFG)
-        {
-            countMax = MaxInterpolationCountForGame(Config::XeFGMaxInterpolations);
-
-            // Only on change, this can be called on every NGX parameter query
-            static int lastReported = 0;
-            if (countMax != lastReported)
-            {
-                lastReported = countMax;
-                LOG_DEBUG("Reporting NGX DLSSG.MultiFrameCountMax {} for XeFG", countMax);
-            }
-        }
+            countMax = std::max(1, Nvngx_FG::getMaxFakeFramesCount());
+        else
+            InParams->Get("DLSSG.MultiFrameCountMax", &countMax);
 
         InParams->Set("DLSSG.MultiFrameCountMax", countMax);
 
