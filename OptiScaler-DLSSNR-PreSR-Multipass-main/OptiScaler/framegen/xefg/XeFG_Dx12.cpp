@@ -8,26 +8,12 @@
 #include <resource_tracking/ResTrack_dx12.h>
 
 #include <nvapi/fakenvapi.h>
-#include <hooks/Streamline_Hooks.h>
 
 #include <magic_enum.hpp>
 
 #include <DirectXMath.h>
 
 using namespace DirectX;
-
-// Interpolation count requested by the game's own frame generation setting, in XeFG's unit
-// (interpolation count == multiplier - 1, the same convention as DLSSG.MultiFrameCount and
-// sl::DLSSGOptions::numFramesToGenerate). Returns 0 when the game has not requested FG at all.
-static int GameRequestedInterpolationCount()
-{
-    // Games that create DLSS-G through raw NGX report the count directly
-    if (const int ngxCount = State::Instance().dlssgDetectedInterpolationCount; ngxCount > 0)
-        return ngxCount;
-
-    // Games that go through Streamline report it via slDLSSGSetOptions instead
-    return StreamlineHooks::GameRequestedInterpolationCount();
-}
 
 void XeFG_Dx12::xefgLogCallback(const char* message, xefg_swapchain_logging_level_t level, void* userData)
 {
