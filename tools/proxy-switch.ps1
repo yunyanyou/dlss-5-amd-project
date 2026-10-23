@@ -576,8 +576,16 @@ if ($Interactive) {
     # plugin decides at runtime (PatchResult), and an unlisted game simply falls back
     # to spoofing.
     Write-Host ''
-    $ans = Read-Host '是否安装 OptiPatcher（DLSS 伪装增强）？[Y/N]'
-    if ([string]::IsNullOrWhiteSpace($ans) -or $ans -match '^(?i)y') {
+    # Only an explicit Y or N decides; an empty line and anything else ask again.
+    $install = $null
+    while ($null -eq $install) {
+        $raw = Read-Host '是否安装 OptiPatcher（DLSS 伪装增强）？[Y/N]'
+        if ([string]::IsNullOrWhiteSpace($raw)) { continue }
+        if ($raw.Trim() -match '^(?i)y(es)?$') { $install = $true; break }
+        if ($raw.Trim() -match '^(?i)n(o)?$') { $install = $false; break }
+        Warn ("无效选择：{0}（请输入 Y 或 N）" -f $raw.Trim())
+    }
+    if ($install) {
         Write-Host '  正在下载 OptiPatcher...' -ForegroundColor DarkGray
         if (Install-OptiPatcher) { Step 'OptiPatcher 安装完成' }
     } else {
