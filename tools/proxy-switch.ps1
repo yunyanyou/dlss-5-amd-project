@@ -492,7 +492,6 @@ function Invoke-Switch([string] $targetName) {
     $targetPath = Join-Path $Dir ($targetName + '.dll')
     if (-not $loader) { Die '没找到 OptiScaler 宿主 DLL（候选名中没有大于 20 MB 的文件）。请用 -Current 指定。' }
     $loaderName = [IO.Path]::GetFileNameWithoutExtension($loader)
-    Step "当前加载器：$loaderName.dll"
     if ($loaderName -eq $targetName) { Info '已经是目标名称，无需更改。'; return }
 
     if (Test-Path -LiteralPath $targetPath -PathType Leaf) {
@@ -532,7 +531,8 @@ if ($Interactive) {
     Write-Host ''
     $ans = Read-Host '是否安装 OptiPatcher（从 GitHub 下载）？[Y/n]'
     if ([string]::IsNullOrWhiteSpace($ans) -or $ans -match '^(?i)y') {
-        if (Install-OptiPatcher) { Info 'OptiPatcher 已放入 plugins，LoadAsiPlugins=true。' }
+        Write-Host '  正在下载 OptiPatcher...' -ForegroundColor DarkGray
+        if (Install-OptiPatcher) { Step 'OptiPatcher 安装完成' }
     } else {
         Info '已跳过 OptiPatcher。'
     }
