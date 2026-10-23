@@ -129,6 +129,8 @@ function Select-GameExe([string] $folder) {
 }
 
 function Wait-Key {
+    # A piped or redirected run has nobody to press a key; blocking here hangs scripts.
+    if ([Console]::IsInputRedirected) { return }
     Write-Host ''
     Write-Host '请按任意键继续...' -NoNewline
     try { $null = [Console]::ReadKey($true) } catch { }
@@ -403,9 +405,9 @@ function Show-Advice {
     # Whether the plugin is already present is an install detail; what this line answers
     # is "does the wiki know this game", so that is all it reports.
     if ($optiSupport) {
-        Info ("OptiPatcher：Wiki 收录，支持 DLSS {0} / DLSS-FG {1}" -f $optiSupport.dlss, $optiSupport.fg)
+        Info ("OptiPatcher支持：Wiki 收录，支持 DLSS {0} / DLSS-FG {1}" -f $optiSupport.dlss, $optiSupport.fg)
     } else {
-        Info 'OptiPatcher：Wiki 未收录此游戏'
+        Info 'OptiPatcher支持：Wiki 未收录此游戏'
     }
     if ($recommended) { Info ("推荐：{0}" -f $recommended) -ForegroundColor Green }
 }
@@ -443,6 +445,25 @@ function Show-State {
 
 if ($List) { Show-State; exit 0 }
 
+# LoadAsiPlugins: "true" loads plugins\*.asi; "auto" is the shipped default and reads as
+# false in this build, so it disables them without touching the file on disk.
+function Set-AsiPlugins([string] $value) {
+    $ini = Join-Path $Dir 'OptiScaler.ini'
+    if (-not (Test-Path -LiteralPath $ini)) {
+        Warn '目录里没有 OptiScaler.ini，无法写入 LoadAsiPlugins。'
+        return
+    }
+    $t = Get-Content -LiteralPath $ini -Raw -Encoding UTF8
+    if ($t -match '(?m)^LoadAsiPlugins=') {
+        $t = $t -replace '(?m)^LoadAsiPlugins=.*$', "LoadAsiPlugins=$value"
+    } elseif ($t -match '(?m)^\[Plugins\]') {
+        $t = $t -replace '(?m)^(\[Plugins\][ \t]*)$', "`$1`r`nLoadAsiPlugins=$value"
+    } else {
+        $t = $t.TrimEnd() + "`r`n`r`n[Plugins]`r`nLoadAsiPlugins=$value`r`n"
+    }
+    [IO.File]::WriteAllText($ini, $t, (New-Object Text.UTF8Encoding($false)))
+}
+
 function Install-OptiPatcher {
     $url = 'https://github.com/optiscaler/OptiPatcher/releases/download/rolling/OptiPatcher.asi'
     $tmp = Join-Path ([IO.Path]::GetTempPath()) ('OptiPatcher-' + [guid]::NewGuid().ToString('N') + '.asi')
@@ -471,20 +492,7 @@ function Install-OptiPatcher {
     if ($source -eq $tmp) { Remove-Item -LiteralPath $tmp -Force -EA 0 }
 
     # Turn the loader on the same way the upstream installer does.
-    $ini = Join-Path $Dir 'OptiScaler.ini'
-    if (Test-Path -LiteralPath $ini) {
-        $t = Get-Content -LiteralPath $ini -Raw -Encoding UTF8
-        if ($t -match '(?m)^LoadAsiPlugins=') {
-            $t = $t -replace '(?m)^LoadAsiPlugins=.*$', 'LoadAsiPlugins=true'
-        } elseif ($t -match '(?m)^\[Plugins\]') {
-            $t = $t -replace '(?m)^(\[Plugins\][ \t]*)$', "`$1`r`nLoadAsiPlugins=true"
-        } else {
-            $t = $t.TrimEnd() + "`r`n`r`n[Plugins]`r`nLoadAsiPlugins=true`r`n"
-        }
-        [IO.File]::WriteAllText($ini, $t, (New-Object Text.UTF8Encoding($false)))
-    } else {
-        Warn '目录里没有 OptiScaler.ini，未写入 LoadAsiPlugins，请在游戏内手动开启。'
-    }
+    Set-AsiPlugins 'true'
     return $true
 }
 
@@ -543,7 +551,9 @@ if ($Interactive) {
         Write-Host '  正在下载 OptiPatcher...' -ForegroundColor DarkGray
         if (Install-OptiPatcher) { Step 'OptiPatcher 安装完成' }
     } else {
-        Info '已跳过 OptiPatcher。'
+        # auto reads as false, so the plugin stays on disk but is not loaded.
+        Set-AsiPlugins 'auto'
+        Info '已跳过 OptiPatcher（LoadAsiPlugins=auto，插件不会加载）。'
     }
 
     Wait-Key
