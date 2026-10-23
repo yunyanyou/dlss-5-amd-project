@@ -1,3 +1,76 @@
+## 2026-10-23 — Proton vkd3d 直连审查修复(方案回退 + 熔断真正生效)
+
+六条审查意见全部属实并修复:P1×4(vkd3d 采用)——d3d12.dll 的 .def 不导出
+vkd3d_get_vk_*(函数在 libvkd3d 里,d3d12.def 只有标准 D3D12 接口),采用路径永远
+false;即使可达也缺 semaphore 导入初始化、SharedBuffer.buffer 始终为空(D3D12
+resource 不自动填充 VkBuffer)、Destroy 会销毁游戏的 instance/device(借用型生命周期
+未做)。AdoptVkd3dDevice 整体 gate off(return false + 注释说明四个未解问题),Proton
+回退到自建设备路径,熔断器兜底。正确做法需研究 ID3D12Device 扩展接口或 winevulkan
+原生句柄,另行立项。P1×5(熔断)——原实现在 >=50 后只 return,下一帧仍会调用
+prepare;改为在 prepare 调用前检查 consecutivePrepareFailures>=50 即拦截,
+失败计数达到 50 时打一次 ERROR 日志。P2×6(SDK 延迟挂钩)——菜单选择预设/模型时
+只补挂了 DriverProvider 模块,漏了 SDK DLL 模块;现在同时补挂两者
+(UpscalerModule(0) + LoadedModule()),按各自 IsModuleHooked/幂等保护。BUILD_OK。
+
+## 2026-10-22 — 风格码入口移入 mochi 卡片 + 单弹窗双模式
+
+分享码入口从诊断区底段(可发现性差)移至 mochizuki 卡片右上角"✨ 风格码"胶囊按钮
+(与"主后端"同款样式);lmxxf/daniel 卡无此按钮,天然传达"仅 mochi 支持"。弹窗合并为
+单窗口 + 顶部(导出/导入)胶囊切换,切换原位换内容(只读/可写、含游戏标识勾选显隐、
+按钮文案 复制/预览+应用),两模式逻辑完整复用原 ShowShareCode 两分支。诊断区删分享码
+整段,插件行与 INI 面板之间加一条浅分割线(与兼容修复|安装选项之间同款)。LAUNCHER_OK。
+
+## 2026-10-22 — Linux/Proton 双层代理崩溃(command list 二次包装)
+
+Dying Light: The Beast(GE-Proton,vkd3d-proton)开 NR 后游戏提交 command list 即崩
+(空指针+0x2A80)。逆向定位(截图分析)+代码核实:链路为游戏调 CreateCommandList → 我们
+hkCreateCommandList → o_CreateCommandList → vkd3d 内部调 CreateCommandList1(也被我们
+挂钩)→ hkCreateCommandList1 把原生 list 包成代理 A 返回给 vkd3d → vkd3d 把 A 当"真
+list"返回 → hkCreateCommandList 再把 A 包成代理 B 给游戏 → 提交时 ExecuteExpanded 展开
+B 得到 A(是代理不是原生 list)→ 交给 vkd3d 的 ExecuteCommandLists → 按原生结构读 A 的
+内存 → 崩。日志铁证:每条 CreateCommandList 后跟 CreateCommandList1
+callerModule=d3d12core.dll。Windows D3D12 的 CreateCommandList 不走公开 CreateCommandList1
+入口,故仅 Proton 触发。修复两处:①hkCreateCommandList 调 o_CreateCommandList 时加
+SuppressProxyWrap(与 CreateProxiedCommandList:187 同款模式),内层 hkCreateCommandList1
+走透传分支;②CommandListProxy::Create/CreateClosed 增加 QI ILogicalCommandList 守卫,
+传入对象已是代理时拒绝再包(纵深防御)。BUILD_OK;待 Proton 用户实测。
+
+## 2026-10-22 — 模型源红色导入条(所选后端缺源文件时)
+
+所选后端(mochi/lmxxf/daniel)在能力检测中报"缺源文件"类 hint(mochi-source/lmxxf-weights/
+daniel-weights/daniel-runtime 等)且游戏目录与包内都没有可用文件时,后端卡片下方亮起红色
+警示条:动态文案指明缺什么(nvngx_dlssnr.dll 对应版本 / Daniel setup exe / 权重 bin),
+"导入模型源文件…"按钮打开文件框 → PE 校验(MZ/PE/AMD64/4KB-300MB)→ 复制到启动器包目录
+(_packageRoot,对所有游戏持久生效)→ 同名差异询问覆盖 → 自动重新 InspectGame 刷新徽章。
+刷新挂点:RefreshInspectionText(检测更新)、后端勾选变化、语言切换。安装时的兜底
+PrepareMissingModelSource 保留(红色条未处理/未导入时仍按次弹选),GPU 不支持类状态不
+显示导入条(导不导都没救)。新增 MainController.ModelImport.cs(csproj+build-launcher
+双清单登记)。LAUNCHER_OK。
+
+## 2026-10-22 — 诊断卡布局重排 + OptiPatcher 锁定插件开关
+
+布局(方案 A,按"作用时机 × 写入粒度"分四区):①安装选项小节标题(ReplaceIni/OptiPatcher,
+下次安装生效,与"应用"无关);②第三方插件行(提示改为"随'应用所选配置'写入");③画面风格
+分享码独立分区(仅读写风格参数,不替换整文件),置于插件行与共享配置面板之间;④"应用"
+按钮移入共享配置面板头部并更名"应用所选配置"——位置即语义,消除其横跨插件行/面板的
+歧义;面板标题追加"(整文件)"与分享码分区区分粒度。全部 FindName 引用不变,纯 XAML
+移块+文案。另:OptiPatcher 勾选时"加载 ASI 插件"强制勾选并禁用(安装器会写
+LoadAsiPlugins=true,可编辑的矛盾状态只会被覆盖或事后写坏),换游戏/默认刷新时同步
+重算锁定。启动器放游戏目录自锁问题确认已由 D4 排除修复(用户报障为 alpha2 旧包)。
+LAUNCHER_OK,VERSION → 1.13.2-alpha5。
+
+## 2026-10-22 — Linux/Proton 创建 Vulkan 设备崩溃:NR 扩展查询用了悬垂 instance
+
+用户在 Linux(Wine/Proton,vkd3d-proton)开 DlssNr 后每次 vkCreateDevice 崩溃,日志停在
+扩展查询前。根因(截图诊断+代码核实):Vulkan_Hooks.cpp:679 查 NR 扩展用的是全局
+State::VulkanInstance——vkd3d-proton 为 D3D12 建 instance 时不更新它(:537 有
+ScopedCreatingD3DDevice 门),UntrackInstance 销毁时也不清空(:569),它指向的早期 instance
+多半已销毁,拿死句柄过 winevulkan 枚举扩展即崩。修复:①扩展查询改用
+GetPhysicalDeviceApiVersion 按 physicalDevice 反查的所属 instance(:602 同一 hook 内既有
+现成机制),全局变量仅作反查失败(VK_NULL_HANDLE)时的兜底;②UntrackInstance 销毁 instance
+时若全局指向它则同步清空,消除同类悬垂。Windows 原生路径(单 instance 常驻)行为不变;
+Linux 实机回归待用户验证。
+
 ## 2026-10-22 — 能力检测逐模型来源判定二审修复
 
 01c36d2b 的两条审查意见均属实:①单一 $mochiNv 取第一个受信源即停(包目录 310.8.0 遮蔽
@@ -1161,3 +1234,11 @@ lmxxf 额外多槽吞吐回落；更少的 16/8 段没有进一步收益，因�
 - After copying, warn when at least two `.asi` filenames match `(mfg.*unlock|xefg.*unlock).*\.asi`: keep only one frame-generation unlocker because multiple unlockers can conflict.
 - After copying, missing/empty/`auto` `LoadAsiPlugins` becomes `true` automatically; explicit `false` asks first, with a plugin-will-not-load hint if declined. Existing `true` is unchanged. Reuse the INI document editor to preserve encoding/BOM and unrelated content, with a flushed temporary file, atomic replace and timestamped INI backup.
 - This operates on an already-installed game's plugin directory directly. No installer round-trip, package installation, or automatic game launch is involved; cancellation and all resulting copy/INI outcomes use the card status and launcher log.
+
+## 2026-10-22: Optional MZ2 game tags and direct plugin-folder access
+
+- Tagged Mochizuki codes use `MZ2:<payload>|<game>;CCCC`, retaining the frozen MZ1 key table and payload/apply semantics. The game tag is the source executable basename without its optional `.exe` suffix. CRC16/CCITT-FALSE covers the exact UTF-8 `payload|game` string, so edits to either part fail validation. Untagged exports remain byte-identical MZ1, and imports accept both versions; tag matching ignores case and the `.exe` suffix.
+- Export defaults to `包含游戏标识（推荐） / Include game tag (recommended)` checked; changing it regenerates the displayed/copied code and adds/removes ` · 来自 <game> / · from <game>` in the summary. After preview, applying a mismatched tagged code first asks `该分享码来自「<game>」，与当前游戏不符，仍要导入吗？ / This share code was made for '<game>', which does not match the current game. Import anyway?`; No leaves the INI unchanged. MZ1 has no mismatch prompt. Successful imports show `已导入通用分享码，效果请以实际画面为准 / Generic share code imported; judge the result by eye.`; matching tags apply without an extra prompt.
+- `打开插件文件夹 / Open plugins folder` sits beside the XeFG unlocker import action. It is available for a selected game with an existing `OptiScaler` directory and disabled while INI actions are busy; ASI/OptiPatcher toggles are not prerequisites. It reuses the unlocker destination resolver, including `[Plugins] Path` precedence and `[Libraries] OptiDllPath`-based `plugins` resolution with the existing fallback, and opens Explorer on the directory without selecting a file.
+- Opening never creates a directory. A missing resolved directory reports `未检测到插件目录，请先安装本工具 / Plugins folder not found; install this tool first.` The package already ships `plugins/` with its README and installation ensures the resolved directory exists, so a missing directory is treated as a missing/deleted or nonstandard installation rather than repaired by browsing.
+

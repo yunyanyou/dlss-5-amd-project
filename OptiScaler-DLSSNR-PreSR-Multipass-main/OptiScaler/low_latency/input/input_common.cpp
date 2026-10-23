@@ -145,7 +145,7 @@ LowLatencyMode InputCommon::default_output(API api)
         if (vendorId == VendorId::AMD && VulkanHooks::o_vkAntiLagUpdateAMD != nullptr)
             return LowLatencyMode::AntiLagVk;
 
-        if (vendorId == VendorId::Nvidia && VulkanHooks::o_vkSetLatencySleepModeNV != nullptr)
+        if (driver_reflex_available(api))
             return LowLatencyMode::Reflex;
 
         return LowLatencyMode::LatencyFlex;
@@ -158,7 +158,7 @@ LowLatencyMode InputCommon::default_output(API api)
     if (vendorId == VendorId::AMD)
         return LowLatencyMode::AntiLag2;
 
-    if (vendorId == VendorId::Nvidia && !fakenvapi::isUsingAsMainNvapi())
+    if (driver_reflex_available(api))
         return LowLatencyMode::Reflex;
 
     return LowLatencyMode::LatencyFlex;
@@ -166,19 +166,27 @@ LowLatencyMode InputCommon::default_output(API api)
 
 const char* InputCommon::output_unavailable(LowLatencyMode output, API api)
 {
-    auto vendorId = IdentifyGpu::getPrimaryGpu().vendorId;
+    if (output == LowLatencyMode::Reflex && !driver_reflex_available(api))
+        return api == API::Vulkan ? "Needs an Nvidia GPU with VK_NV_low_latency2" : "Needs an Nvidia GPU";
 
-    // On D3D the driver's Reflex is reached through nvapi, fakenvapi's is a translation of its own
-    if (output == LowLatencyMode::Reflex &&
-        (vendorId != VendorId::Nvidia || (api != API::Vulkan && fakenvapi::isUsingAsMainNvapi())))
-    {
-        return "Needs an Nvidia GPU";
-    }
+    if (output == LowLatencyMode::AntiLagVk && VulkanHooks::o_vkAntiLagUpdateAMD == nullptr)
+        return "Needs an AMD GPU with VK_AMD_anti_lag";
 
-    if ((output == LowLatencyMode::AntiLag2 || output == LowLatencyMode::AntiLagVk) && vendorId != VendorId::AMD)
+    if (output == LowLatencyMode::AntiLag2 && IdentifyGpu::getPrimaryGpu().vendorId != VendorId::AMD)
         return "Needs an AMD GPU";
 
     return nullptr;
+}
+
+bool InputCommon::driver_reflex_available(API api)
+{
+    if (IdentifyGpu::getPrimaryGpu().vendorId != VendorId::Nvidia)
+        return false;
+
+    if (api == API::Vulkan)
+        return VulkanHooks::o_vkSetLatencySleepModeNV != nullptr;
+
+    return !fakenvapi::isUsingAsMainNvapi();
 }
 
 LowLatencyMode InputCommon::for_api(LowLatencyMode mode, API api)
@@ -922,77 +930,6 @@ bool InputCommon::get_timing_data(TimingData& timingDataOut)
         return false;
     }
 
-    // auto processFrameReport = [&](const auto& frameReport) -> bool
-    //{
-    //     uint64_t start = UINT64_MAX;
-    //     uint64_t end = 0;
-
-    //    // Please don't look, just thought it would be least work
-    //    auto pTimes = (const uint64_t*) &frameReport.simStartTime;
-    //    for (auto i = 0; i < 11; i++)
-    //    {
-    //        auto& time = pTimes[i];
-    //        if (time == 0)
-    //            continue;
-
-    //        if (time < start)
-    //            start = time;
-
-    //        if (time > end)
-    //            end = time;
-    //    }
-
-    //    if (end < start)
-    //        return false;
-
-    //    double rangeNs = static_cast<double>(end - start);
-
-    //    timingData[TimingType::TimeRange] = TimingEntry { .position = 0, .length = rangeNs };
-    //    UPDATE_TIMING_ENTRY(sim, Simulation)
-    //    UPDATE_TIMING_ENTRY(renderSubmit, RenderSubmit)
-    //    UPDATE_TIMING_ENTRY(present, Present)
-    //    UPDATE_TIMING_ENTRY(driver, Driver)
-    //    UPDATE_TIMING_ENTRY(osRenderQueue, OsRenderQueue)
-    //    UPDATE_TIMING_ENTRY(gpuRender, GpuRender)
-
-    //    if (frameReport.frameID != 0)
-    //        State::Instance().reflexFrameId = frameReport.frameID;
-
-    //    return true;
-    //};
-
-    // if (_lastSleepDev && o_NvAPI_D3D_GetLatency)
-    //{
-    //     // Not calling free on this but it's static so hopefully fine
-    //     static NV_LATENCY_RESULT_PARAMS* results = new NV_LATENCY_RESULT_PARAMS();
-    //     results->version = NV_LATENCY_RESULT_PARAMS_VER;
-
-    //    if (auto result = hkNvAPI_D3D_GetLatency(_lastSleepDev, results); result != NVAPI_OK)
-    //    {
-    //        LOG_WARN("NvAPI_D3D_GetLatency failed: {}", magic_enum::enum_name(result));
-    //        return false;
-    //    }
-
-    //    // 64th element has the latest data
-    //    return processFrameReport(results->frameReport[63]);
-    //}
-
-    // if (_lastVkSleepDev && o_NvAPI_Vulkan_GetLatency)
-    //{
-    //     // Not calling free on this but it's static so hopefully fine
-    //     static NV_VULKAN_LATENCY_RESULT_PARAMS* results = new NV_VULKAN_LATENCY_RESULT_PARAMS();
-    //     results->version = NV_VULKAN_LATENCY_RESULT_PARAMS_VER;
-
-    //    if (auto result = hkNvAPI_Vulkan_GetLatency(_lastVkSleepDev, results); result != NVAPI_OK)
-    //    {
-    //        LOG_WARN("NvAPI_Vulkan_GetLatency failed: {}", magic_enum::enum_name(result));
-    //        return false;
-    //    }
-
-    //    // 64th element has the latest data
-    //    return processFrameReport(results->frameReport[63]);
-    //}
-
     {
         size_t maxIdx = 0;
         uint64_t maxID = frame_reports[0].frameID;
@@ -1440,8 +1377,16 @@ void InputCommon::update()
 
 InputResult InputCommon::mark_present_start(IUnknown* pDevice)
 {
-    // TODO: could allow AL2 but need to check the InputMarkerMode of the active AL2 input
-    if (activeInput != LowLatencyInput::UeLowLatency)
+    auto fg = State::Instance().CurrentFG();
+    bool fsrfgTypesFrames =
+        State::Instance().activeFgOutput == FGOutput::FSRFG && fg != nullptr && fg->IsActive() && !fg->IsPaused();
+
+    // UE only sends simulation markers
+    bool marksEnds =
+        activeInput == LowLatencyInput::UeLowLatency || (activeInput == LowLatencyInput::AntiLag2 && fsrfgTypesFrames &&
+                                                         !reports_frame_generation(LowLatencyInput::AntiLag2));
+
+    if (!marksEnds)
         return InputResult::InputNotSupported;
 
     // TODO: this is missing the frame id required by other outputs

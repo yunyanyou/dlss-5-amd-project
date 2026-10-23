@@ -282,8 +282,10 @@ class FfxApiProxy
 
             if (!main_dx12.isLoader)
             {
-                FSR4Presets::Hook(main_dx12.dll);
-                FSR4Models::Hook(main_dx12.dll);
+                if (Config::Instance()->Fsr4Preset.has_value())
+                    FSR4Presets::Hook(main_dx12.dll);
+                if (Config::Instance()->Fsr4Model.has_value())
+                    FSR4Models::Hook(main_dx12.dll);
             }
         }
 
@@ -430,8 +432,13 @@ class FfxApiProxy
 
         if (upscaling_dx12.dll != nullptr)
         {
-            FSR4Presets::Hook(upscaling_dx12.dll);
-            FSR4Models::Hook(upscaling_dx12.dll);
+            // Same gate as the driver DLL: patching code pages inside any loaded module can
+            // trigger kernel anti-cheat termination (seen: Honkai Star Rail), so the SDK copy
+            // is also left untouched until the user explicitly chooses an FSR4 override.
+            if (Config::Instance()->Fsr4Preset.has_value())
+                FSR4Presets::Hook(upscaling_dx12.dll);
+            if (Config::Instance()->Fsr4Model.has_value())
+                FSR4Models::Hook(upscaling_dx12.dll);
 
             wchar_t modulePath[MAX_PATH];
             DWORD len = GetModuleFileNameW(upscaling_dx12.dll, modulePath, MAX_PATH);
@@ -1467,18 +1474,23 @@ class FfxApiProxy
 
         FSR4DriverProviderDx12::AddToVersionList(ids, names, driverListing);
 
+        if (desc->outputCount == nullptr)
+            return FFX_API_RETURN_ERROR_PARAMETER;
+
         // Same contract as FFX, a non-zero count is the capacity of the arrays
         auto count = ids.size();
-        if (*desc->outputCount != 0 && (desc->versionIds != nullptr || desc->versionNames != nullptr))
+        if (*desc->outputCount != 0)
+        {
             count = std::min<size_t>(count, *desc->outputCount);
 
-        for (size_t i = 0; i < count; i++)
-        {
-            if (desc->versionIds != nullptr)
-                desc->versionIds[i] = ids[i];
+            for (size_t i = 0; i < count; i++)
+            {
+                if (desc->versionIds != nullptr)
+                    desc->versionIds[i] = ids[i];
 
-            if (desc->versionNames != nullptr)
-                desc->versionNames[i] = names[i];
+                if (desc->versionNames != nullptr)
+                    desc->versionNames[i] = names[i];
+            }
         }
 
         *desc->outputCount = count;

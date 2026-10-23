@@ -232,8 +232,8 @@ namespace OptScalerNR.Launcher
             _optiPatcherToggle = (CheckBox)window.FindName("OptiPatcherToggle");
             if (_optiPatcherToggle != null)
             {
-                _optiPatcherToggle.Checked += (s, e) => RememberOptiPatcherChoice();
-                _optiPatcherToggle.Unchecked += (s, e) => RememberOptiPatcherChoice();
+                _optiPatcherToggle.Checked += (s, e) => { RememberOptiPatcherChoice(); ApplyOptiPatcherPluginLock(); };
+                _optiPatcherToggle.Unchecked += (s, e) => { RememberOptiPatcherChoice(); ApplyOptiPatcherPluginLock(); };
             }
             _openLogButton = (Button)window.FindName("OpenLogButton");
             _logView = (TextBox)window.FindName("LogView");
@@ -363,7 +363,7 @@ namespace OptScalerNR.Launcher
 
             RoutedEventHandler backendChanged = (s, e) => {
                 if (_updatingBackends) return;
-                UpdateActiveCombo(); SaveBackendChoice(); UpdatePrimaryButtonState();
+                UpdateActiveCombo(); SaveBackendChoice(); UpdatePrimaryButtonState(); RefreshModelImportBar();
             };
             if (_lmxxfCheck != null) { _lmxxfCheck.Checked += backendChanged; _lmxxfCheck.Unchecked += backendChanged; }
             if (_danielCheck != null) { _danielCheck.Checked += backendChanged; _danielCheck.Unchecked += backendChanged; }
@@ -808,6 +808,7 @@ namespace OptScalerNR.Launcher
                 foreach (var label in new[] { _lmxxfReason, _danielReason, _mochiReason }) if (label != null) { label.Text = L("待选择 EXE", "Select EXE first"); label.Foreground = MissingBrush; }
                 foreach (var badge in new[] { _lmxxfBadge, _danielBadge, _mochiBadge }) if (badge != null) { badge.Background = MissingBg; badge.BorderBrush = MissingBorder; }
                 RefreshBackendHints();
+                RefreshModelImportBar();
                 return;
             }
             if (_injectText != null) _injectText.Text = failed
@@ -847,6 +848,7 @@ namespace OptScalerNR.Launcher
                 }
             }
             RefreshBackendHints();
+            RefreshModelImportBar();
             if (!failed) UpdateProxyRecommendation();
         }
 
@@ -2405,6 +2407,7 @@ namespace OptScalerNR.Launcher
             if (!string.IsNullOrEmpty(result.Status) && result.Status != "success") {
                 RefreshInspectionText();
                 UpdatePrimaryButtonState();
+                RefreshModelImportBar();
                 return;
             }
             var isZh = _language == "zh";

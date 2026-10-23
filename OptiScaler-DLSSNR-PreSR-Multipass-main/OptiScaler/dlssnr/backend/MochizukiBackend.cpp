@@ -69,6 +69,7 @@ struct MochizukiBackend::Impl
     uint64_t frameId = 0, retryAt = 0, infoAt = 0, logAt = 0;
     bool failed = false;
     unsigned errors = 0;
+    unsigned consecutivePrepareFailures = 0;
     unsigned tracedRecordings = 0;
     // Recording-proxy coverage. A large share of the game's command lists is never
     // wrapped by SubmissionHooks, so those frames go through as the original colour
@@ -395,6 +396,15 @@ ID3D12Resource* MochizukiBackend::RecordLayers(ID3D12GraphicsCommandList* cmd, c
         if (p->setAutoExposure)
             p->setAutoExposure(p->owner->context, useMeter ? 1u : 0u);
     }
+    // Circuit breaker tripped: stop calling prepare entirely (each failed attempt can leak;
+    // seen on Proton at ~128/s until OOM). Reset by the coverage coverage Reset()/activity path
+    // on a settings change or NR toggle.
+    if (p->consecutivePrepareFailures >= 50)
+    {
+        p->owner->activity.Reset();
+        coverage.Set(Coverage::Outcome::PrepareFailed, "circuit breaker open (50+ consecutive failures)");
+        return nullptr;
+    }
     LmxxfNrJob job {sizeof job};
     if (p->prepare(p->owner->context, &frame, &job) != LMXXF_NR_OK)
     {
@@ -412,10 +422,15 @@ ID3D12Resource* MochizukiBackend::RecordLayers(ID3D12GraphicsCommandList* cmd, c
         {
             p->Status(std::string("mochizuki: ") + reason);
             if (++p->errors <= 3 || p->errors % 6000 == 0) LOG_WARN("mochizuki PrepareFrame: {}", reason);
+            ++p->consecutivePrepareFailures;
+            if (p->consecutivePrepareFailures == 50)
+                LOG_ERROR("mochizuki: {} consecutive prepare failures ({}); circuit breaker opens on the next frame",
+                          p->consecutivePrepareFailures, reason);
         }
         return nullptr;
     }
     coverage.Prepared();
+    p->consecutivePrepareFailures = 0;
     std::shared_ptr<InlineRecording::Resources> inlineResources;
     if (inlineMode) {
         try {
@@ -565,6 +580,9 @@ void MochizukiBackend::ReleaseSession()
     p->coverage.counters->prepared.store(false, std::memory_order_relaxed);
     p->owner.reset(); p->failed = false; p->retryAt = p->infoAt = 0;
     p->tracedRecordings = 0;
+    // Reopening NR or switching back to this backend must get a fresh start, not a stale
+    // circuit-breaker trip from a previous session.
+    p->consecutivePrepareFailures = 0;
     LmxxfRecording::Collect();
     p->coverage.Flush(true);
     { std::lock_guard lock(p->mutex); p->timing = {}; p->progress = {}; p->details = {}; AdvanceTimingRuntimeId(); p->status = "mochizuki: NR off"; }

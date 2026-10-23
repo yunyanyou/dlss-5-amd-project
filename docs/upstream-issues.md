@@ -62,6 +62,110 @@ SoftDefault,显式值持久化并在此后启动被尊重。唯一无门的是 F
 auto=从未显式设置(门控自动调整,显式设一次即固定);ini 显式值仍在而行为相反=Int8
 强制(看日志);两者皆非=新问题,收日志。
 
+## 上游同步审计(2026-10-23,9df512d → 990ff98,19 commits)
+
+上游快照落后 19 个提交,已全量比对。结论:**我们修复的 5 个问题上游全部未修**(still-broken),
+上游有 3 个新修复我们缺(we-lack)。无一方方案需替换——上游的新代码不与我们的门控冲突,
+我们的 5 个修复保持不动。
+
+### A. 我们已修、上游仍未修(提 issue 的候选,附下游证据)
+
+| # | 问题 | 上游位置(990ff98) | 下游修复 |
+|---|---|---|---|
+| U1 | 驱动 DLL 无条件钩子 → AC 击杀 | fsr4/FSR4DriverProvider.cpp:181-182 | e9767600(Fsr4Preset/Fsr4Model has_value 门) |
+| U1b | SDK DLL 无条件钩子(同 AC 面 + ZZZ 卡顿源) | proxies/FfxApi_Proxy.h:285-286,433-434 | 85df65da(同款门控,双 DLL 四处) |
+| U2 | XeLL 配对无版本校验 → 旧栈崩 | framegen/xefg/XeFG_Dx12.cpp:110-112 | 3182b248(BundledVersion 比对) |
+| U3 | Win10 Agility 0<615 陷阱 | dllmain.cpp:1160-1167(无 >0 下限) | 2138e127(gameAgilityVersion > 0 门) |
+| U4 | FsrAgilitySDKUpgrade WithDefault{false} 显式值存不住 | Config.h:485 | 2138e127(改 NoDefault) |
+
+注:上游 d8aebe4 "Improve auto model selection" 给 hkIsSupported 加了 DetectedModel() 回退,
+**不是** ZZZ 卡顿修复——它仍每次调用 o_IsSupported、无缓存、钩子仍无条件安装;只改了
+Auto 时的模型选择策略(INT8 检测到就当已选)。与我们的门控不冲突,也不构成替换方案。
+
+### B. 上游新修复、我们缺(移植候选)
+
+| # | 上游提交 | 内容 | 移植判断 |
+|---|---|---|---|
+| P1 | d06f31e 菜单 >8 缓冲区崩溃 | 数组 8→16(DXGI 上限),blur 描述符 20→36,拒绝超大链,越界帧跳过 | **已移植**(a7537612):NUM_BACK_BUFFERS 8→16 + MaxBackBuffers 8→16;下游越界守卫原已存在 |
+| P2 | fa44a4a Vulkan RDR2 Reflex/FSRFG 崩溃 | KHR/EXT 别名解析设备函数 + vkSignalSemaphore[KHR] 时间线信号 + vkAcquireNextImage2KHR FG 路由 | **已移植**(a7537612):5 文件全量;SignalSemaphore 按设备解析 core/KHR,GetDeviceProcAddr 带 KHR/EXT 回退 |
+| P3 | 33e434e DX12 FSR4 交换链升级 | FrameGeneration 选项链加 FrameGenerationSwapchain next 项 | **已移植**(a7537612) |
+| P4 | d8aebe4 FSR4 Auto 模型选择改进 | DetectedModel() 回退 + FP8 抑制 | **策略层已移植**(a7537612,见下);IdentifyGpu.cpp 检测精化跳过(与 65ee5d6 重叠,待同步窗口) |
+
+
+### P4 移植说明(2026-10-23,与门控并存)
+
+d8aebe4 三部分,移植两部分、跳过一部分:
+
+1. **FSR4Models.cpp `DetectedModel()` + `hkIsSupported` 策略**——已移植。INT8/INT8_2/INT8Lite 检测值
+   映射为模型;selected 未设置时回退检测值(门控下不可达,保留与上游行为一致);FP8 抑制分支(显式
+   选择跑不动时不让 FFX 落到 FP8);device==nullptr 跳过 lastReportedSupport。
+2. **FSR4DriverProviderDx12.cpp FP8 仿真门**——已移植。仿真 FP8 wave matrix 只对 FG 模块和显式 FP8
+   超分开放(INT8 GPU 上 FFX 默认选 FP8 质量差/慢)。
+3. **IdentifyGpu.cpp 140 行**——跳过。与 65ee5d6 重叠,无 GPU 实测不整体搬;现有检测喂同一枚举,
+   策略层已完整生效。
+
+卡顿不受影响:门控不变,Auto(未显式选模型)依然零挂钩。
+### C. 剩余提交处理记录(二批 + 三批)
+
+勘误(2026-10-24):初版把 b686ef4/824a7b7/62887bf(Vulkan FSR4 支持、FG 隐藏、VK 管线 workaround)
+误列为待同步——经 `git merge-base --is-ancestor` 核实,它们是 9df512d 的祖先,早已随快照集成。
+策略修正:上游已修 = 上游用户报过真实 bug,同 bug 在我们树里;不再"等我们的用户再报一遍"。
+
+**已二批移植(P5-P8,小冲突直进)**:
+
+| # | 提交 | 内容 |
+|---|---|---|
+| P5 | d1a146a | AL2→AL2 转换 × FSRFG:UsingDifferentInput 容忍 + mark_present_start 的 AL2+FSRFG 帧标记 |
+| P6 | 0778a10 | FSRFG Vulkan vsync:vkWaitForPresent[KHR/2KHR] 挂钩,FG 持有交换链时立即返回成功(FG 自己节奏控制) |
+| P7 | 223cf6b | Enshrouded MV:新 velocity_convert 计算着色器(R16G16_SNORM/UNORM → R16G16_SFLOAT)+ FFXFeature_Vk 接线 + shaderStorageImageExtendedFormats 特性启用 |
+| P8 | 14434bf | HZD 重制版启动崩溃:版本枚举 outputCount 空指针防护 + 非零容量时才写数组 |
+| (P4 内含) | 42d6162 | device==nullptr 跳过 lastReportedSupport(已随 P4 移植) |
+
+**E1-E6 已全部移植(2026-10-23 第三批,wt-upstream-sync 单 worktree 按上游拓扑序串行)**:
+
+审阅(work/notes/REVIEW-upstream-e1-e6.md)修正三处误判后全量执行:E4 全量移植
+(三项"拒收"是 diff 上下文,上游 creatingD3DDevice 本就 thread_local);E6 不暂缓
+(导出 nvapi_QueryInterface 作主 nvapi 时被 NvApiHooks detour,不绕过;被删
+signal→sleep 在 LL 构建不可达);九提交一次合入,无实机门槛。19/19 全部消化。
+
+| # | 提交 | 我们的提交 | 适配要点 |
+|---|---|---|---|
+| E3d | a8d0f0a | 8b566b20 | 旧单例直接可套;[FSRFG] DisableFlipMetering 不进 kKnown(防与 [NvApi] 同名混淆),直读 |
+| E3b | c471428 | 540b326f | FpsOverlayShowRatio 进 kKnown([Menu],host allowlist 已加) |
+| E3c | c2529ed | 5b8b5c42 | OverlayLine 栈数组;接受上游语义(Just FPS 不再显示比例) |
+| E3a | 03e6ef0 | 4c4528a2 | SetFlagEnvVar 删变量语义;表格 hunk 适配我们 MenuUi |
+| E1 | e0a4859 | 7baef8c3 | 修真 bug:Release 归零后 intrinsics 空指针;上游残留照搬,见 U7 |
+| E4 | 65ee5d6 | ce1a8939 | LUID 绑定/线程局部保留;修我们的 InitFg"先置 initTried 后检查"永久拒绝 bug |
+| E5 | a79c2f3 | 12b180f7 | 47 处 ifdef 扁平化 + Xell_Hooks 删除 + 旧 fakenvapi FG/计时路径删除 |
+| E6 | 5dfedd6 | fb8f6da4 | 加导出侧防御(延迟 ID 直接导出→InputReflex),闭合上游同样存在的 detour 失败缺口 |
+| E2 | c220ad9 | edec0643 | 计时器进底栏状态组;信息卡用 MenuCard;标题保留 (Q)/(OP) |
+
+host ci PASS。**验收缺口(源码完成、待实机)**:AMD FSR-FG flip meter、GPU 检测矩阵
+(RDNA2/3/4 + Intel/NV + 混合适配器)、Linux/Proton Vulkan 变更、XeLL/XeFG 全组合。
+
+## U8 a8d0f0a 的钩子安装竞态(上游同样存在,下游已修)
+
+HookFactory/HookFlipMeter 的"判空→装钩→提交"无锁:两个并发首次请求都会过判空,
+失败的 Detours 提交会清掉另一线程已装好的 o_ 指针,下次调用走空指针。上游 990ff98
+同样存在;我们已加 installMutex 单一所有者修复(2026-10-23 审查 P1)。同批审查另修:
+FG 水印开关需 fgChanged+scChanged 才真正重建原生 FSR FG 上下文(上游只设 fgChanged,
+在我们的 FSRFG 实现里不会销毁重建,驱动在创建时读环境变量,故不生效);SDK 预热的
+set/call/clear 事务加专用 primingMutex(DX12/VK 两个 provider 首载可并发,互相清标记
+会让旧游戏 SDK 赢得粘性版本决策)。
+
+## U7 e0a4859 的 intrinsics 全局覆盖泄漏(上游同样存在,观察)
+
+每次 IAmdExtD3DFactory::CreateInterface(IID_IAmdExtD3DShaderIntrinsics) 覆盖全局
+o_amdExtD3DShaderIntrinsics,上一个 real 引用泄漏。上游 990ff98 同样存在;我们照搬,
+不单独修(等上游;若多交换链场景出现泄漏证据再处理)。
+
+### D. 行动项
+
+1. **提 issue(高优先)**:U1/U1b(AC 击杀,有星铁现场)、U3+U4(Win10 Agility 死循环)——上游修复成本低
+2. **提 issue(中优先)**:U2(XeLL 配对)、U6(DxgiSpoofing 无提示覆盖)
+3. ~~移植 P1-P3~~ 已完成(a7537612)
+4. **下次同步窗口**:评估 E1-E6(见 C 节);E3 overlay 群组需按 CfgKey 体系适配,非直拷
+
 ## 非上游问题的说明
 
 菜单虚基下转崩溃(bdd11179)与 `_ffxFGIndex` 越界是**我们集成时引入**(上游无此代码/上游本有上界保护),不属于上游问题,已在 decisions.md 记录。

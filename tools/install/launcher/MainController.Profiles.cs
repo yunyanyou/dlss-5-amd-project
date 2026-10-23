@@ -44,6 +44,7 @@ namespace OptScalerNR.Launcher
             _iniApplyButton = _window.FindName("IniApplyButton") as Button;
             _iniFolderButton = _window.FindName("IniFolderButton") as Button;
             InitShareCode();
+            InitModelImport();
             InitUnlockerPlugin();
             try { _iniProfiles = new IniProfiles(_settingsDir); }
             catch (Exception ex) { IniFailure(ex); }
@@ -77,20 +78,21 @@ namespace OptScalerNR.Launcher
 
         void RefreshProfilesLanguage()
         {
-            SetLabel("IniHeading", "OptiScaler.ini 共享配置", "Shared OptiScaler.ini profiles");
-            SetLabel("IniSelectHint", "选择配置后点击“应用”。仅更改插件时请选择“当前游戏 INI”。", "Select a profile, then Apply. Choose Current game INI to apply only the plugin setting.");
+            SetLabel("InstallOptionsHeading", "安装选项（下次安装或更新时生效）", "Install options (applied on the next install or update)");
+            SetLabel("IniHeading", "OptiScaler.ini 共享配置（整文件）", "Shared OptiScaler.ini profiles (whole file)");
+            SetLabel("IniSelectHint", "选择配置后点击“应用所选配置”。仅更改插件时请选择“当前游戏 INI”。", "Select a profile, then Apply selection. Choose Current game INI to apply only the plugin setting.");
             SetLabel("PluginHeading", "第三方插件", "Third-party plugins");
             if (_iniSaveButton != null) _iniSaveButton.Content = L("保存…", "Save…");
             if (_iniQuickSaveButton != null) _iniQuickSaveButton.Content = L("快速保存", "Quick save");
             if (_iniImportButton != null) _iniImportButton.Content = L("导入…", "Import…");
             if (_iniRenameButton != null) _iniRenameButton.Content = L("重命名…", "Rename…");
             if (_iniDeleteButton != null) _iniDeleteButton.Content = L("删除", "Delete");
-            if (_iniApplyButton != null) _iniApplyButton.Content = L("应用", "Apply");
+            if (_iniApplyButton != null) _iniApplyButton.Content = L("应用所选配置", "Apply selection");
             if (_iniFolderButton != null) _iniFolderButton.Content = L("配置文件夹", "Profiles folder");
             if (_iniSearchBox != null) _iniSearchBox.ToolTip = L("搜索共享配置", "Search shared profiles");
             if (_iniPluginToggle != null) {
                 _iniPluginToggle.Content = L("加载 ASI 插件", "Load ASI plugins");
-                _iniPluginToggle.ToolTip = L("仅点击“应用”时修改 [Plugins] LoadAsiPlugins。", "Changes [Plugins] LoadAsiPlugins only when Apply is clicked.");
+                _iniPluginToggle.ToolTip = L("随“应用所选配置”写入 [Plugins] LoadAsiPlugins。", "Written to [Plugins] LoadAsiPlugins by Apply selection.");
             }
             RefreshUnlockerLanguage();
             PopulateIniProfiles();
@@ -141,6 +143,7 @@ namespace OptScalerNR.Launcher
             var hasGame = available && game != null;
             var hasIni = hasGame && File.Exists(Path.Combine(game.Directory, "OptiScaler.ini"));
             RefreshShareCode(game != null && !IniBusy() && File.Exists(Path.Combine(game.Directory, "OptiScaler.ini")));
+            RefreshModelImportBar();
             var selected = hasGame && !string.IsNullOrEmpty(_iniSelectedProfile);
             if (_iniProfileCombo != null) _iniProfileCombo.IsEnabled = hasGame;
             if (_iniSearchBox != null) _iniSearchBox.IsEnabled = available;
@@ -151,7 +154,10 @@ namespace OptScalerNR.Launcher
             if (_iniDeleteButton != null) _iniDeleteButton.IsEnabled = selected;
             if (_iniApplyButton != null) _iniApplyButton.IsEnabled = hasIni;
             if (_iniFolderButton != null) _iniFolderButton.IsEnabled = available;
-            if (_iniPluginToggle != null) _iniPluginToggle.IsEnabled = hasGame;
+            // Single source of truth: the game-available gate AND the OptiPatcher pin are decided
+            // together, so a profile-actions refresh can never re-enable a toggle the installer
+            // would force back on.
+            if (_iniPluginToggle != null) _iniPluginToggle.IsEnabled = hasGame && !OptiPatcherPinsPlugins();
             RefreshUnlockerPlugin();
         }
 
@@ -418,8 +424,10 @@ namespace OptScalerNR.Launcher
                 case "renamed": text = L("已重命名：", "Renamed: ") + _iniStatusDetail; break;
                 case "deleted": text = L("已删除共享配置：", "Shared profile deleted: ") + _iniStatusDetail; break;
                 case "applied": text = L("已应用，请重启游戏。原 INI 备份：", "Applied; restart the game. Original INI backup: ") + _iniStatusDetail; break;
+                case "share-imported": text = L("已导入通用分享码，效果请以实际画面为准", "Generic share code imported; judge the result by eye."); break;
                 case "share-error": text = _iniStatusDetail; break;
                 case "unlocker": text = _iniStatusDetail; break;
+                case "plugins-missing": text = L("未检测到插件目录，请先安装本工具", "Plugins folder not found; install this tool first."); break;
                 case "io": text = L("配置操作失败，请检查文件权限与可用空间。", "Profile operation failed. Check file permissions and free space."); break;
                 default: text = _iniProfiles == null ? L("配置库不可用。", "Profile library unavailable.")
                     : _selectedGame == null ? L("选择游戏以使用共享配置。", "Select a game to use shared profiles.")

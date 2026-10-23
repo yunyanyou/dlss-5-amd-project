@@ -1015,6 +1015,7 @@ class Config
     CustomOptional<int> FpsShortcutKey { VK_PRIOR };
     CustomOptional<int> FpsCycleShortcutKey { VK_NEXT };
     CustomOptional<bool> FpsOverlayHorizontal { false };
+    CustomOptional<bool> FpsOverlayShowRatio { false };
     CustomOptional<float> FpsOverlayAlpha { 0.4f };
     CustomOptional<float> FpsOverlayColorR { 1.0f };
     CustomOptional<float> FpsOverlayColorG { 1.0f };
@@ -1281,6 +1282,7 @@ class Config
     CustomOptional<bool> FSRFGSkipConfigForHudless { false };
     CustomOptional<bool> FSRFGSkipDispatchForHudless { false };
     CustomOptional<bool> FSRFGEnableWatermark { false };
+    CustomOptional<bool> FSRFGDisableFlipMetering { false };
 
     // XeFG
     //
@@ -1342,7 +1344,6 @@ class Config
     CustomOptional<bool> FN_ForceLatencyFlex { false };
     CustomOptional<LFXMode> FN_LatencyFlexMode { LFXMode::Conservative };
     CustomOptional<ForceReflex> FN_ForceReflex { ForceReflex::InGame };
-    CustomOptional<bool> ImASillyGooseThatIsAboutToMisuseReflex { false };
     CustomOptional<LowLatencyInput> LowLatencyInput { LowLatencyInput::Auto };
     CustomOptional<LowLatencyMode> LowLatencyOutput { LowLatencyMode::Auto };
 

@@ -9,6 +9,7 @@
 #include <inputs/FG/Streamline_Inputs.h>
 #include <inputs/FG/Streamline_Inputs_Sl1_Dx12.h>
 
+#include <chrono>
 #include <set>
 #include <deque>
 #include <mutex>
@@ -107,6 +108,8 @@ class State
 
     std::string gameExe;
     std::string gameName;
+    // Counts from when the dll is attached to the process
+    std::chrono::steady_clock::time_point startTime { std::chrono::steady_clock::now() };
     std::string gameVersion;
     GameEngineType gameEngine = GameEngineType::Other;
 
@@ -147,7 +150,6 @@ class State
     Sl1_Inputs_Dx12 s_sl1FGInputs {};
 
     // OptiFG
-    bool fgPresentIsCalled = false;
     bool fgOnlyGenerated = false;
     bool fgHudlessCompare = false;
     bool fgChanged = false;
@@ -214,10 +216,13 @@ class State
     bool reflexLimitsFps = false;
     bool reflexShowWarning = false;
     bool rtssReflexInjection = false;
-    bool fakenvapiReloadLowLatency = false;
     UINT64 reflexFrameId = 0;
     UINT64 frameCount = 0;
     bool vkAntiLagSupported = false;
+
+    // AMD driver flip metering
+    bool amdFlipMeterCreated = false;
+    uint32_t amdFlipMeterMode = 0;
 
     // for realtime changes
     ankerl::unordered_dense::map<unsigned int, bool> changeBackend;

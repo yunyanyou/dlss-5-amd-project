@@ -70,7 +70,7 @@ template<class Draw> void Render(Page& page, float scale, Draw draw)
     // frame's wide WorkRect after resize and defeats responsive label wrapping.
     if (ImGui::BeginChild("##MenuPageBody", {0, 0}))
     {
-        MenuUi::TextWrapped("%s", entries[selected].description);
+        MenuUi::TextWrapped("%s", MenuLocale::Translate(entries[selected].description));
         ImGui::Spacing();
         draw(page);
     }
