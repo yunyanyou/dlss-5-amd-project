@@ -440,7 +440,8 @@ function Show-State {
     foreach ($p in $present) {
         # A host-sized entry is ours; anything smaller is a file this game or another
         # mod already owns, and must never be overwritten.
-        $state = if ($p.Bytes -gt 20MB) { '  <- 当前注入' } else { '  <- 已被占用' }
+        $state = if ($p.Bytes -gt 20MB) { '  <- 当前注入' }
+                 else { '  <- 已被占用（游戏或其它 mod 的文件，切换时不会覆盖）' }
         Info ("{0}.dll  {1} MB{2}{3}" -f $p.Name, $p.MB, $state, (Get-Marks $p.Name))
     }
     Show-Advice
