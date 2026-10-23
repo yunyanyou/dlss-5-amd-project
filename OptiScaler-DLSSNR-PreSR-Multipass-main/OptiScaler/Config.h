@@ -578,7 +578,7 @@ class Config
     // DLSS_Pre_Exposure or, without one, 1/DLSS_Pre_Exposure; manual otherwise), 2 meter (the runtime's
     // own meter, the game's exposure ignored; manual until it has a value), 3 auto (game if usable, else
     // meter, else manual). Values above 3 read as 0.
-    CustomOptional<uint32_t> MochizukiWhitePointSource { 0u };
+    CustomOptional<uint32_t> MochizukiWhitePointSource { 1u };
     CustomOptional<float> MochizukiHistoryStrength { 1.f };
     CustomOptional<bool> MochizukiPreprocess { false };
     CustomOptional<uint32_t> MochizukiPreprocessExposure { 1u };
@@ -964,8 +964,8 @@ class Config
 
     // Sharpness
     CustomOptional<SharpenShader> SharpnessShader { SharpenShader::RCAS };
-    CustomOptional<bool> OverrideSharpness { false };
-    CustomOptional<float> Sharpness { 0.4f };
+    CustomOptional<bool> OverrideSharpness { true };
+    CustomOptional<float> Sharpness { 0.5f };
 
     // RCAS
     CustomOptional<bool> RcasEnabled { false };
