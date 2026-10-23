@@ -400,13 +400,12 @@ function Show-Advice {
     $optiAsi = @((Join-Path $Dir 'plugins\OptiPatcher.asi'),
                  (Join-Path $Dir 'OptiScaler\plugins\OptiPatcher.asi')) |
         Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-    $optiState = if ($optiAsi) { '已安装' } else { '未安装' }
+    # Whether the plugin is already present is an install detail; what this line answers
+    # is "does the wiki know this game", so that is all it reports.
     if ($optiSupport) {
-        Info ("OptiPatcher：{0}，支持 DLSS {1} / DLSS-FG {2}" -f $optiState, $optiSupport.dlss, $optiSupport.fg)
-    } elseif (-not $NoProbe) {
-        Info ("OptiPatcher：{0}，未收录此游戏" -f $optiState)
+        Info ("OptiPatcher：Wiki 收录，支持 DLSS {0} / DLSS-FG {1}" -f $optiSupport.dlss, $optiSupport.fg)
     } else {
-        Info ("OptiPatcher：{0}" -f $optiState)
+        Info 'OptiPatcher：Wiki 未收录此游戏'
     }
     if ($recommended) { Info ("推荐：{0}" -f $recommended) -ForegroundColor Green }
 }
@@ -444,6 +443,51 @@ function Show-State {
 
 if ($List) { Show-State; exit 0 }
 
+function Install-OptiPatcher {
+    $url = 'https://github.com/optiscaler/OptiPatcher/releases/download/rolling/OptiPatcher.asi'
+    $tmp = Join-Path ([IO.Path]::GetTempPath()) ('OptiPatcher-' + [guid]::NewGuid().ToString('N') + '.asi')
+    $source = $null
+    try {
+        Invoke-WebRequest -Uri $url -OutFile $tmp -TimeoutSec 30 -UseBasicParsing
+        $fs = [IO.File]::OpenRead($tmp)
+        try {
+            $b = New-Object byte[] 2
+            [void]$fs.Read($b, 0, 2)
+            if ($b[0] -eq 0x4D -and $b[1] -eq 0x5A) { $source = $tmp }
+        } finally { $fs.Dispose() }
+    } catch { }
+
+    if (-not $source) {
+        foreach ($cand in @((Join-Path $PSScriptRoot 'plugins\OptiPatcher.asi'),
+                            (Join-Path $PSScriptRoot 'OptiScaler\plugins\OptiPatcher.asi'))) {
+            if (Test-Path -LiteralPath $cand) { $source = $cand; break }
+        }
+    }
+    if (-not $source) { Warn 'OptiPatcher 下载失败，且目录里没有离线副本。'; return $false }
+
+    $plugins = Join-Path $Dir 'plugins'
+    if (-not (Test-Path -LiteralPath $plugins)) { [void][IO.Directory]::CreateDirectory($plugins) }
+    Copy-Item -LiteralPath $source -Destination (Join-Path $plugins 'OptiPatcher.asi') -Force
+    if ($source -eq $tmp) { Remove-Item -LiteralPath $tmp -Force -EA 0 }
+
+    # Turn the loader on the same way the upstream installer does.
+    $ini = Join-Path $Dir 'OptiScaler.ini'
+    if (Test-Path -LiteralPath $ini) {
+        $t = Get-Content -LiteralPath $ini -Raw -Encoding UTF8
+        if ($t -match '(?m)^LoadAsiPlugins=') {
+            $t = $t -replace '(?m)^LoadAsiPlugins=.*$', 'LoadAsiPlugins=true'
+        } elseif ($t -match '(?m)^\[Plugins\]') {
+            $t = $t -replace '(?m)^(\[Plugins\][ \t]*)$', "`$1`r`nLoadAsiPlugins=true"
+        } else {
+            $t = $t.TrimEnd() + "`r`n`r`n[Plugins]`r`nLoadAsiPlugins=true`r`n"
+        }
+        [IO.File]::WriteAllText($ini, $t, (New-Object Text.UTF8Encoding($false)))
+    } else {
+        Warn '目录里没有 OptiScaler.ini，未写入 LoadAsiPlugins，请在游戏内手动开启。'
+    }
+    return $true
+}
+
 function Invoke-Switch([string] $targetName) {
     $targetPath = Join-Path $Dir ($targetName + '.dll')
     if (-not $loader) { Die '没找到 OptiScaler 宿主 DLL（候选名中没有大于 20 MB 的文件）。请用 -Current 指定。' }
@@ -462,9 +506,9 @@ function Invoke-Switch([string] $targetName) {
             Die "$targetName.dll 已存在（$([math]::Round($existing/1KB)) KB）且不是宿主。请先备份或换一个名字。"
         }
     } else {
-        if ($DryRun) { Step "DryRun：将把 $loaderName.dll 改名为 $targetName.dll"; return }
+        if ($DryRun) { Step "DryRun：将把 $loaderName.dll 切换为 $targetName.dll"; return }
         Move-Item -LiteralPath $loader -Destination $targetPath
-        Step "已改名：$loaderName.dll -> $targetName.dll"
+        Step "已切换：$loaderName.dll -> $targetName.dll"
     }
     Info '重启游戏生效。同一目录只能有一个加载器。'
 }
@@ -482,6 +526,18 @@ if ($Interactive) {
     $pick = 0
     if (-not [int]::TryParse($choice.Trim(), [ref]$pick) -or $pick -lt 1 -or $pick -gt 7) { Die "无效选择：$choice" }
     Invoke-Switch $candidates[$pick - 1]
+
+    # OptiPatcher is offered regardless of whether the wiki lists the game: the
+    # plugin decides at runtime (PatchResult), and an unlisted game simply falls back
+    # to spoofing.
+    Write-Host ''
+    $ans = Read-Host '是否安装/更新 OptiPatcher（从 GitHub 下载，并开启 ASI 插件）？[Y/n]'
+    if ([string]::IsNullOrWhiteSpace($ans) -or $ans -match '^(?i)y') {
+        if (Install-OptiPatcher) { Info 'OptiPatcher 已放入 plugins，LoadAsiPlugins=true。' }
+    } else {
+        Info '已跳过 OptiPatcher。'
+    }
+
     Wait-Key
     exit 0
 }
