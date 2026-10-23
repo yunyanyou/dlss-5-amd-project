@@ -423,13 +423,30 @@ foreach ($c in $candidates) {
     }
 }
 
+# Same rule as the upstream installer: the version resource names the build. A DLL
+# without one falls back to a SHA-256 match against OptiScaler.dll, so a renamed copy
+# is still recognised while a large third-party mod is not.
+function Test-IsOurInjection([string] $path) {
+    try {
+        $vi = (Get-Item -LiteralPath $path).VersionInfo
+        if ($vi.ProductName -eq 'OptiScaler' -or $vi.FileDescription -eq 'OptiScaler') { return $true }
+    } catch { }
+    foreach ($ref in @((Join-Path $Dir 'OptiScaler.dll'), (Join-Path $PSScriptRoot 'OptiScaler.dll'))) {
+        if ($ref -eq $path -or -not (Test-Path -LiteralPath $ref -PathType Leaf)) { continue }
+        try {
+            if ((Get-FileHash -LiteralPath $path).Hash -eq (Get-FileHash -LiteralPath $ref).Hash) { return $true }
+        } catch { }
+    }
+    return $false
+}
+
 $loader = $null
 if ($Current) {
     $cp = Join-Path $Dir ($Current + '.dll')
     if (-not (Test-Path -LiteralPath $cp -PathType Leaf)) { Die "目录里没有 $Current.dll" }
     $loader = $cp
 } else {
-    $hosts = @($present | Where-Object { $_.Bytes -gt 20MB })
+    $hosts = @($present | Where-Object { Test-IsOurInjection $_.Path })
     if ($hosts.Count -gt 1) { Die ('发现多个注入大小的 DLL（{0}），请用 -Current 指定。' -f (($hosts | ForEach-Object { $_.Name }) -join ', ')) }
     if ($hosts.Count -eq 1) { $loader = $hosts[0].Path }
 }
@@ -440,7 +457,7 @@ function Show-State {
     foreach ($p in $present) {
         # A host-sized entry is ours; anything smaller is a file this game or another
         # mod already owns, and must never be overwritten.
-        $state = if ($p.Bytes -gt 20MB) { '  <- 当前注入' }
+        $state = if (Test-IsOurInjection $p.Path) { '  <- 当前注入' }
                  else { '  <- 已被占用（游戏或其它 mod 的文件，切换时不会覆盖）' }
         Info ("{0}.dll  {1} MB{2}{3}" -f $p.Name, $p.MB, $state, (Get-Marks $p.Name))
     }
@@ -502,13 +519,13 @@ function Install-OptiPatcher {
 
 function Invoke-Switch([string] $targetName) {
     $targetPath = Join-Path $Dir ($targetName + '.dll')
-    if (-not $loader) { Die '没找到 OptiScaler 注入 DLL（候选名中没有大于 20 MB 的文件）。请用 -Current 指定。' }
+    if (-not $loader) { Die '没找到 OptiScaler 注入 DLL（没有版本信息为 OptiScaler 的文件）。请用 -Current 指定。' }
     $loaderName = [IO.Path]::GetFileNameWithoutExtension($loader)
     if ($loaderName -eq $targetName) { Info '已经是目标名称，无需更改。'; return $true }
 
     if (Test-Path -LiteralPath $targetPath -PathType Leaf) {
         $existing = (Get-Item -LiteralPath $targetPath).Length
-        if ($existing -gt 20MB) {
+        if (Test-IsOurInjection $targetPath) {
             Warn "$targetName.dll 已存在且是注入大小，将删除旧注入。"
             if ($DryRun) { Step 'DryRun：将删除旧加载器'; return $true }
             Remove-Item -LiteralPath $loader -Force
