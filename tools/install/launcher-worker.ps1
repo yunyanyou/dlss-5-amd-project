@@ -42,6 +42,7 @@ function New-Result([string]$status, [string]$error) {
         backends = $script:backends
         packageRoot = $script:packageRoot
         compatibility = $script:compatibility
+        mochizukiInstall = $script:mochizukiInstall
     }
 }
 function Fail-Result([string]$status, [string]$error, [int]$code) {
@@ -78,6 +79,7 @@ $script:needed = @()
 $script:notes = @()
 $script:fingerprint = $null
 $script:partial = $false
+$script:mochizukiInstall = $null
 $allowedProxy = @($CandidateNames)
 $allowedAction = @('inspect','install','update','uninstall','scan','repairXess','restoreXess','keepXess')
 $allowedBackend = @('auto','daniel','lmxxf','mochizuki','all')
@@ -188,6 +190,65 @@ $script:candidates = @($probe.candidates)
 $script:conflicts = @($probe.conflicts)
 $script:fingerprint = $probe.fingerprint
 $script:partial = [bool]$probe.partial
+
+# A Mochizuki (DLSSNR-AMD) installation of its own in the game folder. Only files that can
+# actually conflict are reported and later moved: his marker files (dlssnr_core.dll,
+# dlssnr_amd.addon64, OptiScaler.asi -- an OptiScaler or an ASI loader picks these up), his
+# proxy DLL when its name is one of this project's load-entry candidate names (both
+# installations would hook the same entry), and his dlssnr-amd-install.txt record (so the
+# detection clears together with the installation). The rest of his record is inert and
+# stays put: LICENSE, OptiScaler.ini (the installer's own ini decision owns that), his
+# disabled nvngx backups, and the dlssnr-amd\ model files this project shares. Read-only
+# here: the launcher warns, and only an explicit "remove" decision moves files aside.
+function Get-MochizukiInstall([string]$dir) {
+    $files = New-Object System.Collections.Generic.List[string]
+    $proxy = ''
+    $record = Join-Path $dir 'dlssnr-amd-install.txt'
+    $recorded = $false
+    if (Test-Path -LiteralPath $record -PathType Leaf) {
+        $lines = @()
+        try { $lines = [IO.File]::ReadAllLines($record) } catch { }
+        $entries = @()
+        foreach ($raw in $lines) {
+            $line = $raw.TrimStart([char]0xFEFF)
+            if ($line.Length -lt 3 -or $line[1] -ne ' ') { continue }
+            $rel = $line.Substring(2).Trim()
+            if (-not $rel -or [IO.Path]::IsPathRooted($rel) -or $rel -match '(^|[\\/])\.\.([\\/]|$)') { continue }
+            $entries += ,@($line[0], $rel)
+        }
+        # His record, not this project's: it names his core, his add-on or his ASI.
+        $recorded = @($entries | Where-Object { $_[0] -eq 'F' -and $_[1] -in @('dlssnr_core.dll','dlssnr_amd.addon64','OptiScaler.asi') }).Count -gt 0
+        if ($recorded) {
+            foreach ($e in $entries) {
+                if ($e[0] -ne 'F') { continue }
+                # Only a load-entry name can collide with this project's proxy; his other
+                # files (the nvngx pair, LICENSE, ini, dlssnr-amd\ models) are inert here.
+                if ($CandidateNames -notcontains $e[1].ToLowerInvariant()) { continue }
+                if (-not (Test-Path -LiteralPath (Join-Path $dir $e[1]) -PathType Leaf)) { continue }
+                $proxy = $e[1]
+                if (-not $files.Contains($e[1])) { $files.Add($e[1]) }
+            }
+            if (-not $files.Contains('dlssnr-amd-install.txt')) { $files.Add('dlssnr-amd-install.txt') }
+        }
+    }
+    foreach ($name in @('dlssnr_core.dll','OptiScaler.asi','dlssnr_amd.addon64')) {
+        if ((Test-Path -LiteralPath (Join-Path $dir $name) -PathType Leaf) -and -not $files.Contains($name)) { $files.Add($name) }
+    }
+    # Only the record (or nothing) is left: the installation is already dismantled and the
+    # remaining files are inert. Not a conflict -- no warning, no prompt, nothing to move.
+    if (@($files | Where-Object { $_ -ne 'dlssnr-amd-install.txt' }).Count -eq 0) { return $null }
+    return @{
+        detected = $true
+        recorded = $recorded
+        files = @($files)
+        proxy = $proxy
+    }
+}
+try { $script:mochizukiInstall = Get-MochizukiInstall $script:gameDir }
+catch { $script:notes += "Mochizuki installation check failed: $($_.Exception.Message)" }
+if ($script:mochizukiInstall) {
+    $script:notes += ('A Mochizuki (DLSSNR-AMD) installation is in the game folder: {0}. The same kind of NR mod twice can conflict; the installer leaves these files alone.' -f (@($script:mochizukiInstall.files) -join ', '))
+}
 $choice = [string]$req.proxyChoice
 if (-not $choice -or $choice -eq 'auto') {
     if ($probe.recommend) { $script:resolved = [string]$probe.recommend }

@@ -54,6 +54,19 @@ and third-party diagnostics retain their original text.
 The GUI also captures the worker's own stdout/stderr so startup/parse failures remain
 available when no result JSON was produced. Script stderr is included in the event log.
 
+`inspect` (and install/update) also return `mochizukiInstall` when the game folder holds a
+loadable Mochizuki installation. This is informational only: there is no decision, the
+installer never moves or deletes these files, and no install is refused because of them.
+Fields: `detected`, `recorded` (its `dlssnr-amd-install.txt` record names `dlssnr_core.dll`,
+`dlssnr_amd.addon64` or `OptiScaler.asi`), `files` (those three marker files when present,
+the recorded proxy DLL when its name is one of this project's load-entry candidate names,
+and the record itself) and `proxy` (the recorded proxy DLL, e.g. `dxgi.dll`). The rest of
+his record -- `LICENSE`, `OptiScaler.ini`, his disabled nvngx backups, the `dlssnr-amd/`
+model files this project shares -- is inert, not listed, never touched; when nothing
+loadable remains, the installation is not reported at all. A proxy name that collides with
+the resolved one is handled by the ordinary `foreignProxy` decision. Detection is read-only;
+the GUI shows a note after inspect.
+
 `inspect` also returns `compatibility`: `groups` (`sr`, `dx11`, `fg`), each with
 `ready`, `different`, and `files` (`name`, `gameVersion`, `packageVersion`,
 `state=missing|same|different`); `active`, `restoreFiles`, `fingerprint`, and

@@ -534,6 +534,89 @@ class LauncherWorkerTests(unittest.TestCase):
         ids = [x["id"] for x in result.get("requiredDecisions") or []]
         self.assertIn("foreignProxy", ids)
 
+    def test_mochizuki_install_is_informational_and_never_moved(self):
+        d = Path(tempfile.mkdtemp(prefix="launcher-mochi-"))
+        pkg = Path(tempfile.mkdtemp(prefix="launcher-pkg-"))
+        self.addCleanup(shutil.rmtree, d, True)
+        self.addCleanup(shutil.rmtree, pkg, True)
+        (pkg / "OptiScaler.dll").write_bytes(b"fixture")
+        (pkg / "Setup.ps1").write_text("# dummy", encoding="utf-8")
+        exe = d / "game.exe"
+        shutil.copy2(Path(os.environ["SystemRoot"]) / "System32/whoami.exe", exe)
+        theirs = ("dxgi.dll", "dlssnr_core.dll", "nvngx_dlssnr.dll")
+        for name in theirs:
+            (d / name).write_bytes(b"mochizuki")
+        (d / "dlssnr-amd").mkdir()
+        (d / "dlssnr-amd-install.txt").write_text(
+            "F dxgi.dll\nF dlssnr_core.dll\nF nvngx_dlssnr.dll\nD dlssnr-amd\nF ..\\outside.dll\n", encoding="utf-8")
+
+        code, result, events = self.invoke(WORKER, "inspect", exe, package_root=pkg)
+        self.assertEqual(code, 0, events)
+        found = result["mochizukiInstall"]
+        self.assertTrue(found["recorded"])
+        self.assertEqual(found["proxy"], "dxgi.dll")
+        self.assertEqual(sorted(found["files"]), sorted(("dxgi.dll", "dlssnr_core.dll", "dlssnr-amd-install.txt")))
+
+        # No mochizukiInstall decision exists. The only question is the ordinary
+        # foreignProxy one for his dxgi.dll at our chosen entry; his loadable and
+        # inert files alike are never moved by the installer.
+        code, result, events = self.invoke(WORKER, "install", exe, proxy="dxgi.dll", package_root=pkg)
+        self.assertEqual(code, 2, events)
+        ids = [x["id"] for x in result["requiredDecisions"]]
+        self.assertIn("foreignProxy", ids)
+        self.assertNotIn("mochizukiInstall", ids)
+        code, result, events = self.invoke(WORKER, "install", exe,
+                                           {"foreignProxy": {"dxgi.dll": "backup"}},
+                                           proxy="dxgi.dll", package_root=pkg)
+        self.assertNotEqual(result["status"], "needsInput", events)
+        self.assertTrue((d / "dlssnr_core.dll").exists(), events)
+        self.assertTrue((d / "nvngx_dlssnr.dll").exists(), events)
+        self.assertFalse((d / "OptiScaler-mochizuki-backup").exists(), events)
+
+    def test_mochizuki_own_install_and_inert_leftovers_are_not_reported(self):
+        d = Path(tempfile.mkdtemp(prefix="launcher-mochi-self-"))
+        pkg = Path(tempfile.mkdtemp(prefix="launcher-pkg-"))
+        self.addCleanup(shutil.rmtree, d, True)
+        self.addCleanup(shutil.rmtree, pkg, True)
+        (pkg / "OptiScaler.dll").write_bytes(b"fixture")
+        (pkg / "Setup.ps1").write_text("# dummy", encoding="utf-8")
+        exe = d / "game.exe"
+        shutil.copy2(Path(os.environ["SystemRoot"]) / "System32/whoami.exe", exe)
+
+        # This project's own installation: its proxy at a candidate name, its models in
+        # dlssnr-amd\ and its own ownership record. It must never be reported as a
+        # Mochizuki installation -- a reinstall or update must not prompt about itself.
+        (d / "dxgi.dll").write_bytes(b"ours")
+        (d / "mochizuki-owned.txt").write_text("shaders/example.hlsl\n", encoding="utf-8")
+        (d / "dlssnr-amd").mkdir()
+        (d / "dlssnr-amd" / "dlssnr.bin").write_bytes(b"model")
+        code, result, events = self.invoke(WORKER, "inspect", exe, package_root=pkg)
+        self.assertEqual(code, 0, events)
+        self.assertFalse(result.get("mochizukiInstall"), events)
+
+        # His inert leftovers beside ours: the nvngx pair, LICENSE, ini and his int4 model
+        # (which the installer reuses) are not loadable and not ours to move. Even his
+        # record naming a marker does not report anything while no loadable file exists.
+        for name in ("nvngx_dlssnr.dll", "nvngx.dll_dlssnr.dll", "LICENSE"):
+            (d / name).write_bytes(b"mochizuki")
+        (d / "dlssnr-amd" / "dlssnr-int4.bin").write_bytes(b"his-model")
+        (d / "dlssnr-amd-install.txt").write_text(
+            "F nvngx_dlssnr.dll\nF nvngx.dll_dlssnr.dll\nF LICENSE\nF OptiScaler.ini\n"
+            "F dlssnr-amd\\dlssnr-int4.bin\nF dlssnr_amd.addon64\nD dlssnr-amd\n", encoding="utf-8")
+        code, result, events = self.invoke(WORKER, "inspect", exe, package_root=pkg)
+        self.assertEqual(code, 0, events)
+        self.assertFalse(result.get("mochizukiInstall"), events)
+
+        # A loadable marker on disk is the conflict, record or not.
+        (d / "dlssnr_core.dll").write_bytes(b"mochizuki")
+        code, result, events = self.invoke(WORKER, "inspect", exe, package_root=pkg)
+        self.assertEqual(code, 0, events)
+        found = result["mochizukiInstall"]
+        self.assertTrue(found["detected"])
+        self.assertTrue(found["recorded"])
+        self.assertEqual(sorted(found["files"]), ["dlssnr-amd-install.txt", "dlssnr_core.dll"])
+        self.assertEqual(found["proxy"], "")
+
     def test_install_update_uninstall_isolated(self):
         pkg = Path(tempfile.mkdtemp(prefix="launcher-pkg-"))
         game = Path(tempfile.mkdtemp(prefix="launcher-game-"))

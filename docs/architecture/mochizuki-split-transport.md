@@ -1,5 +1,51 @@
 # Mochizuki split 共享颜色、motion 输入与纹理输出
 
+## 准入外分支改共享纹理（2026-10-22，feat/nr-bridge-opt，离线夹具通过；2026-10-23 巫师 3 实机功能/画面通过，性能仅目测）
+
+逐分支结论。证据为本分支源码位置；2026-10-23 已在 NUC 编译 runtime 并跑离线夹具（见本节末），
+**未进游戏**。
+
+| 分支 | 结论 | 依据 |
+|---|---|---|
+| DRS/bucket 颜色 | 已接入（源码） | 载体按网络尺寸 `geometry.width×height`（bucket）申请；`ImageInput::Capture` 对子矩形/更大的游戏分配改用 `CopyTextureRegion` 盒拷贝到左上角，整尺寸仍用 `CopyResource`；Vulkan 侧在 EXTERNAL acquire 后对导入 image 做与 buffer 路线相同的 `Pad`；`RecordOutputs`/旁路本来就按 `w×h` 盒拷回 |
+| DRS/bucket motion | 不接入，保留 buffer | Padded/Rescaled 路线把向量铺进 bucket 尺寸的 `motionScaled`（上传、blit 或 compute 缩放后 Pad），不是"整张原样消费"；共享 motion 仍只收整尺寸、`Uploaded`、非 bucket（`SharedMotionEligible` 显式加了这三条，保持原准入） |
+| 模型缩放 `net.scale≠1` | 已接入（源码） | 缩放在核心内完成；核心从两种载体得到的都是同一 `kImageUsage`、GENERAL 进/TRANSFER_SRC 出，读写同一 `frame.colour`；D3D12 捕获/回写与缩放无关 |
+| 多遍 `passes>1` | 已接入（源码），**首遍导出除外** | 同上，多遍循环在核心内对同一图像；`firstPass` 导出仍走 buffer：导出从 `firstOutput` buffer 下载，旁路 `RecordFallback` 也是 input buffer→firstOutput buffer 复制，共享载体没有这份数据 |
+| RenoDX | 已接入（源码） | `sf.colour = sf.output = frame.colour`；`kImageUsage` 不含 STORAGE，RenoDX 阶段走"复制进/复制出"（`nr_renodx.cpp` 的 borrow 条件不成立），与载体无关；RenoDX 本来就在图形队列，与共享载体同族 |
+| canonical 转换（Plan A） | 不接入，保留 buffer | `MakeBuffers` 中 `convert.Create(..., b.colourImage.image, ...)` 把转换描述符绑定在 buffer 载体的 image 上，换成共享载体后描述符仍指向旧 image；输出端 `DispatchUnconvert` 以 storage 写回 `colour`，共享载体只在 RGBA16F 且设备支持时才带 STORAGE。要接入须按载体重建转换描述符并要求所有翻转格式的 storage 导入，且 Plan A 只在格式翻转（如过场）期间出现，换载体需重新初始化，翻转帧大多仍会落在 buffer 上 |
+| Inline | 不动 | 冻结 |
+
+内部回滚：`MZ_TEST_SHARED_EXTENDED=0`（进程启动前设置）恢复 2026-10-19 的窄准入；
+`MZ_TEST_SHARED_INPUT=0` 仍整体回到 buffer。默认开启扩展准入，失败/预算/退避机制不变。
+
+离线夹具（2026-10-23 NUC，`tests/mochizuki/run.cmd shared-extended`，`shared_extended.cpp` +
+`shared_extended.py`）：256×256 RGBA16F 分配、小模型、native；每个场景默认与 `MZ_TEST_SHARED_EXTENDED=0`
+各跑一次（另手工跑了 `MZ_TEST_SHARED_INPUT=0` 与 D3D12 debug layer）。比较的是子矩形内的输出 hash
+（hash0 = ResetHistory 后首帧，hash1 = 下一帧时域输出），不是 Pad 后的中间图像。
+
+| 场景 | 默认路线（颜色/motion） | `EXTENDED=0` | `INPUT=0` | 输出 hash | wall 中位 ms 默认 / EXT0 / INPUT0 |
+|---|---|---|---|---|---|
+| 整尺寸（对照） | 共享/共享 | 共享/共享 | buffer | 三者相同 | 2.082 / 2.074 / 2.147 |
+| exact 子矩形 200×180 | 共享/buffer | buffer | buffer | 三者相同 | 2.136 / 2.155 / 2.167 |
+| bucket（drs_mode=1，200×180） | 共享/buffer | buffer | buffer | 三者相同 | 2.151 / 2.223 / 2.254 |
+| scale=0.5 | 共享/共享 | buffer | buffer | 三者相同 | 2.086 / 2.176 / 2.204 |
+| passes=2 | 共享/共享 | buffer | buffer | 三者相同 | 3.469 / 3.429 / 3.446 |
+| passes=3 | 共享/共享 | buffer | buffer | 三者相同 | 4.633 / 4.662 / 4.754 |
+| RenoDX（passes=1） | 共享/共享 | buffer | buffer | hash0 三者相同；hash1 同一路线两次也不同 | 2.088 / 2.130 / 2.200 |
+
+- D3D12 debug layer 下所有场景 0 条错误；dispatch 数各路线相同（71/142/213）。
+- RenoDX：`ResetHistory` 不清 RenoDX 的时域状态，同进程两次参考帧的 hash1 也不一致（buffer 路线同样），
+  所以只能比 hash0；这与载体无关，夹具对 reno 只报告 `repro=0` 不判失败。
+- 时间：每个变体单次 200 帧，差异约 0.1 ms 内，与运行间波动同量级；256×256 的拷贝量太小，
+  **不据此声称更快**。净收益仍按 PLAN.md 的游戏内 A/B 流程测。
+
+- 巫师 3 实机（2026-10-23，Steam 版 1.13.2-alpha6，1080p，split，RenoDX 开）：诊断轮 9101 帧
+  `missing recording proxy`=0、coverage 350/350 全录无拒绝；默认（A/A2 两轮）reno 帧走
+  shared、画面无异常；`MZ_TEST_SHARED_EXTENDED=0`（C 轮）精确只把 reno 帧打回 buffer；
+  `MZ_TEST_SHARED_INPUT=0`（B 轮重跑）全 buffer。网络耗时各轮 3.77–3.83 ms（p95 3.84–4.01）
+  持平。无 PresentMon 数据，性能结论仅为"目测无回退"，精确净收益仍待 PLAN.md 的游戏内
+  A/B（燕云）或补测。
+
 ## 最新进度核对（2026-10-21）
 
 符合现有共享颜色准入的 split 录制，输出直接从该录制持有的共享颜色纹理复制到原

@@ -2195,7 +2195,7 @@ namespace OptScalerNR.Launcher
             }
 
             // Decisions are valid only for this attempt and its explicit needsInput retries.
-            if (!keepModelChoice) _decisions.ForeignProxy.Clear();
+            if (!keepModelChoice) { _decisions.ForeignProxy.Clear(); }
             var dir = Path.GetDirectoryName(_selectedGame.Exe);
             if (!TryLockTarget(dir))
             {
@@ -2503,6 +2503,7 @@ namespace OptScalerNR.Launcher
                 foreach (var n in result.Notes) AppendLog(n);
             }
         }
+
 
         bool AskDecisions(LauncherResult result, string action)
         {

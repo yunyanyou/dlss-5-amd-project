@@ -61,6 +61,17 @@ namespace OptScalerNR.Launcher
         [DataMember(Name = "backends")] public BackendInfo[] Backends;
         [DataMember(Name = "packageRoot")] public string PackageRoot;
         [DataMember(Name = "compatibility")] public XessCompatibility Compatibility;
+        [DataMember(Name = "mochizukiInstall")] public MochizukiInstallInfo MochizukiInstall;
+    }
+
+    // A Mochizuki (DLSSNR-AMD) installation of its own found in the game folder (inspect is read-only).
+    [DataContract]
+    public sealed class MochizukiInstallInfo
+    {
+        [DataMember(Name = "detected")] public bool Detected;
+        [DataMember(Name = "recorded")] public bool Recorded;
+        [DataMember(Name = "files")] public string[] Files;
+        [DataMember(Name = "proxy")] public string Proxy;
     }
 
     [DataContract]
