@@ -510,7 +510,6 @@ function Invoke-Switch([string] $targetName) {
         Move-Item -LiteralPath $loader -Destination $targetPath
         Step "已切换：$loaderName.dll -> $targetName.dll"
     }
-    Info '重启游戏生效。同一目录只能有一个加载器。'
 }
 
 if ($Interactive) {
@@ -531,7 +530,7 @@ if ($Interactive) {
     # plugin decides at runtime (PatchResult), and an unlisted game simply falls back
     # to spoofing.
     Write-Host ''
-    $ans = Read-Host '是否安装/更新 OptiPatcher（从 GitHub 下载，并开启 ASI 插件）？[Y/n]'
+    $ans = Read-Host '是否安装 OptiPatcher（从 GitHub 下载）？[Y/n]'
     if ([string]::IsNullOrWhiteSpace($ans) -or $ans -match '^(?i)y') {
         if (Install-OptiPatcher) { Info 'OptiPatcher 已放入 plugins，LoadAsiPlugins=true。' }
     } else {
