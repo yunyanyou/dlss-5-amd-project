@@ -519,10 +519,18 @@ if ($Interactive) {
         Write-Host ("  {0}. {1}.dll{2}" -f ($i + 1), $n, (Get-Marks $n))
     }
     Write-Host ''
-    $choice = Read-Host '请选择（直接回车取消）'
-    if ([string]::IsNullOrWhiteSpace($choice)) { Info '已取消。'; Wait-Key; exit 0 }
+    # Re-ask on a bad number instead of exiting, like the upstream installer's do/while.
     $pick = 0
-    if (-not [int]::TryParse($choice.Trim(), [ref]$pick) -or $pick -lt 1 -or $pick -gt 7) { Die "无效选择：$choice" }
+    while ($true) {
+        $choice = Read-Host '请选择'
+        if ([string]::IsNullOrWhiteSpace($choice)) { Info '已取消。'; Wait-Key; exit 0 }
+        $parsed = 0
+        if ([int]::TryParse($choice.Trim(), [ref]$parsed) -and $parsed -ge 1 -and $parsed -le 7) {
+            $pick = $parsed
+            break
+        }
+        Warn ("无效选择：{0}（请输入 1-7）" -f $choice)
+    }
     Invoke-Switch $candidates[$pick - 1]
 
     # OptiPatcher is offered regardless of whether the wiki lists the game: the
