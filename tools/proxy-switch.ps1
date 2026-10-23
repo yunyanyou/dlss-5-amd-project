@@ -538,7 +538,7 @@ if ($Interactive) {
     # plugin decides at runtime (PatchResult), and an unlisted game simply falls back
     # to spoofing.
     Write-Host ''
-    $ans = Read-Host '是否安装 OptiPatcher？[Y/n]'
+    $ans = Read-Host '是否安装 OptiPatcher（免伪装启用 DLSS / DLSS-FG）？[Y/n]'
     if ([string]::IsNullOrWhiteSpace($ans) -or $ans -match '^(?i)y') {
         Write-Host '  正在下载 OptiPatcher...' -ForegroundColor DarkGray
         if (Install-OptiPatcher) { Step 'OptiPatcher 安装完成' }
