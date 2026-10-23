@@ -523,12 +523,13 @@ if ($Interactive) {
     $pick = 0
     while ($true) {
         $choice = Read-Host '请选择'
-        if ([string]::IsNullOrWhiteSpace($choice)) { Info '已取消。'; Wait-Key; exit 0 }
         $parsed = 0
         if ([int]::TryParse($choice.Trim(), [ref]$parsed) -and $parsed -ge 1 -and $parsed -le 7) {
             $pick = $parsed
             break
         }
+        # An empty line just asks again; only a typed-but-invalid value deserves a warning.
+        if ([string]::IsNullOrWhiteSpace($choice)) { continue }
         Warn ("无效选择：{0}（请输入 1-7）" -f $choice)
     }
     Invoke-Switch $candidates[$pick - 1]
