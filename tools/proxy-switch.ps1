@@ -430,7 +430,7 @@ if ($Current) {
     $loader = $cp
 } else {
     $hosts = @($present | Where-Object { $_.Bytes -gt 20MB })
-    if ($hosts.Count -gt 1) { Die ('发现多个宿主大小的 DLL（{0}），请用 -Current 指定。' -f (($hosts | ForEach-Object { $_.Name }) -join ', ')) }
+    if ($hosts.Count -gt 1) { Die ('发现多个注入大小的 DLL（{0}），请用 -Current 指定。' -f (($hosts | ForEach-Object { $_.Name }) -join ', ')) }
     if ($hosts.Count -eq 1) { $loader = $hosts[0].Path }
 }
 
@@ -438,7 +438,10 @@ function Show-State {
     Step "目录：$Dir"
     if ($present.Count -eq 0) { Info '没有任何候选 DLL' }
     foreach ($p in $present) {
-        Info ("{0}.dll  {1} MB{2}{3}" -f $p.Name, $p.MB, $(if ($p.Bytes -gt 20MB) { '  <- 当前注入' } else { '' }), (Get-Marks $p.Name))
+        # A host-sized entry is ours; anything smaller is a file this game or another
+        # mod already owns, and must never be overwritten.
+        $state = if ($p.Bytes -gt 20MB) { '  <- 当前注入' } else { '  <- 已被占用' }
+        Info ("{0}.dll  {1} MB{2}{3}" -f $p.Name, $p.MB, $state, (Get-Marks $p.Name))
     }
     Show-Advice
 }
@@ -498,49 +501,58 @@ function Install-OptiPatcher {
 
 function Invoke-Switch([string] $targetName) {
     $targetPath = Join-Path $Dir ($targetName + '.dll')
-    if (-not $loader) { Die '没找到 OptiScaler 宿主 DLL（候选名中没有大于 20 MB 的文件）。请用 -Current 指定。' }
+    if (-not $loader) { Die '没找到 OptiScaler 注入 DLL（候选名中没有大于 20 MB 的文件）。请用 -Current 指定。' }
     $loaderName = [IO.Path]::GetFileNameWithoutExtension($loader)
-    if ($loaderName -eq $targetName) { Info '已经是目标名称，无需更改。'; return }
+    if ($loaderName -eq $targetName) { Info '已经是目标名称，无需更改。'; return $true }
 
     if (Test-Path -LiteralPath $targetPath -PathType Leaf) {
         $existing = (Get-Item -LiteralPath $targetPath).Length
         if ($existing -gt 20MB) {
-            Warn "$targetName.dll 已存在且是宿主大小，将删除旧加载器。"
-            if ($DryRun) { Step 'DryRun：将删除旧加载器'; return }
+            Warn "$targetName.dll 已存在且是注入大小，将删除旧注入。"
+            if ($DryRun) { Step 'DryRun：将删除旧加载器'; return $true }
             Remove-Item -LiteralPath $loader -Force
             Step "已删除 $loaderName.dll"
         } else {
-            Die "$targetName.dll 已存在（$([math]::Round($existing/1KB)) KB）且不是宿主。请先备份或换一个名字。"
+            Warn "$targetName.dll 已存在（$([math]::Round($existing/1KB)) KB）且不是本项目的注入，不覆盖。请换一个名字。"
+            return $false
         }
     } else {
-        if ($DryRun) { Step "DryRun：将把 $loaderName.dll 切换为 $targetName.dll"; return }
+        if ($DryRun) { Step "DryRun：将把 $loaderName.dll 切换为 $targetName.dll"; return $true }
         Move-Item -LiteralPath $loader -Destination $targetPath
         Step "已切换：$loaderName.dll -> $targetName.dll"
     }
+    return $true
 }
 
 if ($Interactive) {
-    Show-State
-    Write-Host ''
-    for ($i = 0; $i -lt 7; $i++) {
-        $n = $candidates[$i]
-        Write-Host ("  {0}. {1}.dll{2}" -f ($i + 1), $n, (Get-Marks $n))
-    }
-    Write-Host ''
-    # Re-ask on a bad number instead of exiting, like the upstream installer's do/while.
-    $pick = 0
+    # A name the game or another mod already owns must not end the session: mark it in
+    # the list and let the user pick another one.
     while ($true) {
-        $choice = Read-Host '请选择'
-        $parsed = 0
-        if ([int]::TryParse($choice.Trim(), [ref]$parsed) -and $parsed -ge 1 -and $parsed -le 7) {
-            $pick = $parsed
-            break
+        Show-State
+        Write-Host ''
+        for ($i = 0; $i -lt 7; $i++) {
+            $n = $candidates[$i]
+            Write-Host ("  {0}. {1}.dll{2}" -f ($i + 1), $n, (Get-Marks $n))
         }
-        # An empty line just asks again; only a typed-but-invalid value deserves a warning.
-        if ([string]::IsNullOrWhiteSpace($choice)) { continue }
-        Warn ("无效选择：{0}（请输入 1-7）" -f $choice)
+        Write-Host ''
+
+        # Re-ask on a bad number instead of exiting, like the upstream installer's do/while.
+        $pick = 0
+        while ($true) {
+            $choice = Read-Host '请选择'
+            $parsed = 0
+            if ([int]::TryParse($choice.Trim(), [ref]$parsed) -and $parsed -ge 1 -and $parsed -le 7) {
+                $pick = $parsed
+                break
+            }
+            # An empty line just asks again; only a typed-but-invalid value deserves a warning.
+            if ([string]::IsNullOrWhiteSpace($choice)) { continue }
+            Warn ("无效选择：{0}（请输入 1-7）" -f $choice)
+        }
+
+        if (Invoke-Switch $candidates[$pick - 1]) { break }
+        Write-Host ''
     }
-    Invoke-Switch $candidates[$pick - 1]
 
     # OptiPatcher is offered regardless of whether the wiki lists the game: the
     # plugin decides at runtime (PatchResult), and an unlisted game simply falls back
@@ -561,4 +573,4 @@ if ($Interactive) {
 }
 
 if (-not $Name) { Die '请指定 -Name，或使用 -Interactive / -List。' }
-Invoke-Switch $Name
+if (-not (Invoke-Switch $Name)) { exit 1 }
