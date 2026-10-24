@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Markup;
@@ -21,6 +22,9 @@ namespace OptScalerNR.Launcher
 
         static Window _window;
         static string _dir;
+        static string _theme = "auto";
+        static ComboBox _themeCombo;
+        static TextBlock _hardwareText;
         static StackPanel _list;
         static TextBlock _gameText, _wikiText, _optiText, _topStatus, _bottomStatus, _shareHint;
         static System.Windows.Shapes.Ellipse _led, _bottomLed;
@@ -30,7 +34,7 @@ namespace OptScalerNR.Launcher
         public static Window Create(string dir)
         {
             _dir = dir;
-            LauncherTheme.Apply("dark");
+            LauncherTheme.Apply(_theme);
             var dialog = Program.LoadDialogTheme();
             if (Application.Current != null)
             {
@@ -57,6 +61,12 @@ namespace OptScalerNR.Launcher
             close.Click += (s, e) => _window.Close();
             var min = (Button)_window.FindName("MinBtn");
             min.Click += (s, e) => _window.WindowState = WindowState.Minimized;
+            _hardwareText = (TextBlock)_window.FindName("HardwareInfo");
+            _themeCombo = (ComboBox)_window.FindName("ThemeCombo");
+            InitThemeCombo();
+            ((Button)_window.FindName("RefreshBtn")).Click += (s, e) => Refresh();
+            Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnSystemThemeChanged;
+            _window.Closed += (s, e) => Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnSystemThemeChanged;
             var author = (TextBlock)_window.FindName("AuthorLink");
             author.MouseLeftButtonUp += (s, e) => OpenUrl("https://github.com/TheAutomatic/dlss-5-amd-project");
 
@@ -141,17 +151,53 @@ namespace OptScalerNR.Launcher
 
             var exe = GameExe();
             _gameText.Text = exe != null ? "游戏　" + exe.Name : "游戏　未找到 EXE";
-            _wikiText.Text = profile != null
-                ? "Wiki　首选 " + profile.Preferred + (profile.Alternatives != null && profile.Alternatives.Length > 0 ? "　备选 " + string.Join(" / ", profile.Alternatives) : "")
-                : "Wiki　无此游戏记录";
+            if (profile == null)
+                _wikiText.Text = "Wiki　无此游戏记录";
+            else if (string.IsNullOrEmpty(profile.Preferred))
+                _wikiText.Text = "Wiki　" + profile.GameName + "（未注明 DLL）";
+            else
+                _wikiText.Text = "Wiki　" + profile.GameName + " → 首选 " + profile.Preferred
+                    + (profile.Alternatives != null && profile.Alternatives.Length > 0
+                        ? "　备选 " + string.Join(" / ", profile.Alternatives) : string.Empty);
             _optiText.Text = HasOptiPatcher() ? "OptiPatcher　已安装" : "OptiPatcher　未安装";
 
             _topStatus.Text = current != null ? "已注入 " + current.Name + ".dll" : "未检测到注入";
             _led.Fill = current != null ? LauncherTheme.Brush("ThemeSuccess") : LauncherTheme.Brush("ThemeAccent");
             _bottomLed.Fill = _led.Fill;
             _bottomStatus.Text = Path.GetFileName(_dir.TrimEnd('\\', '/'));
+            RefreshHardware();
 
             ReloadPresets();
+        }
+
+        static string _hardwareDetails;
+
+        /// <summary>底栏的硬件信息：与启动器一样只报物理显卡名，不声称游戏在用哪块。</summary>
+        static void RefreshHardware()
+        {
+            if (_hardwareText == null) return;
+            if (_hardwareDetails == null)
+            {
+                try
+                {
+                    using (var searcher = new System.Management.ManagementObjectSearcher(
+                        "SELECT Name FROM Win32_VideoController"))
+                    {
+                        foreach (System.Management.ManagementObject mo in searcher.Get())
+                        {
+                            var name = Convert.ToString(mo["Name"]);
+                            if (string.IsNullOrWhiteSpace(name)) continue;
+                            if (name.IndexOf("virtual", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+                            if (name.IndexOf("basic", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+                            _hardwareDetails = name.Trim();
+                            break;
+                        }
+                    }
+                }
+                catch { }
+                if (_hardwareDetails == null) _hardwareDetails = "GPU 信息不可用";
+            }
+            _hardwareText.Text = _hardwareDetails;
         }
 
         static void ReloadPresets()
@@ -221,7 +267,7 @@ namespace OptScalerNR.Launcher
             {
                 if (IsOurs(dest))
                 {
-                    var answer = MessageBox.Show("旧的 " + target + ".dll 是我们之前的注入，删除它并改用当前这份？",
+                    var answer = DialogTheme.Show(_window, "旧的 " + target + ".dll 是我们之前的注入，删除它并改用当前这份？",
                         "确认", MessageBoxButton.YesNo, MessageBoxImage.Question);
                     if (answer != MessageBoxResult.Yes) return;
                     File.Delete(dest);
@@ -239,6 +285,30 @@ namespace OptScalerNR.Launcher
             }
             catch (Exception ex) { _shareHint.Text = "切换失败：" + ex.Message; }
             Refresh();
+        }
+
+        // ---------------------------------------------------------------- theme
+        // 与启动器一致：ThemeCombo 三选一，auto 跟随系统（SystemEvents 监听）。
+        static void InitThemeCombo()
+        {
+            if (_themeCombo == null) return;
+            _themeCombo.Items.Add(new ComboBoxItem { Content = "跟随系统", Tag = "auto" });
+            _themeCombo.Items.Add(new ComboBoxItem { Content = "亮色", Tag = "light" });
+            _themeCombo.Items.Add(new ComboBoxItem { Content = "暗色", Tag = "dark" });
+            _themeCombo.SelectedIndex = 0;
+            _themeCombo.SelectionChanged += (s, e) =>
+            {
+                var item = _themeCombo.SelectedItem as ComboBoxItem;
+                if (item == null) return;
+                _theme = (string)item.Tag;
+                LauncherTheme.Apply(_theme);
+            };
+        }
+
+        static void OnSystemThemeChanged(object sender, Microsoft.Win32.UserPreferenceChangedEventArgs e)
+        {
+            if (_theme != "auto" || _window == null) return;
+            _window.Dispatcher.BeginInvoke(new Action(() => LauncherTheme.Apply("auto")));
         }
 
         // ---------------------------------------------------------------- OptiPatcher
@@ -370,7 +440,7 @@ namespace OptScalerNR.Launcher
             catch (Exception ex) { _shareHint.Text = "分享码无效：" + ex.Message; return; }
 
             var summary = MochizukiShareCode.Summary(decoded, true);
-            var answer = MessageBox.Show("识别到：" + summary + "\n\n应用到当前游戏？", "确认",
+            var answer = DialogTheme.Show(_window, "识别到：" + summary + "\n\n应用到当前游戏？", "确认",
                 MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (answer != MessageBoxResult.Yes) return;
             try
@@ -412,7 +482,7 @@ namespace OptScalerNR.Launcher
         {
             var name = _presetCombo.SelectedItem as string;
             if (string.IsNullOrEmpty(name) || name.StartsWith("（", StringComparison.Ordinal)) { _shareHint.Text = "还没有可套用的预设。"; return; }
-            var answer = MessageBox.Show("套用「" + name + "」到当前游戏？\n\n当前 ini 会先备份。", "确认",
+            var answer = DialogTheme.Show(_window, "套用「" + name + "」到当前游戏？\n\n当前 ini 会先备份。", "确认",
                 MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (answer != MessageBoxResult.Yes) return;
             try
@@ -430,7 +500,7 @@ namespace OptScalerNR.Launcher
         {
             var name = _presetCombo.SelectedItem as string;
             if (string.IsNullOrEmpty(name) || name.StartsWith("（", StringComparison.Ordinal)) return;
-            var answer = MessageBox.Show("删除预设「" + name + "」？", "确认", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            var answer = DialogTheme.Show(_window, "删除预设「" + name + "」？", "确认", MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (answer != MessageBoxResult.Yes) return;
             try
             {
@@ -494,8 +564,44 @@ namespace OptScalerNR.Launcher
 
         sealed class ProfileEntry
         {
+            public string GameName;
             public string Preferred;
             public string[] Alternatives;
+        }
+
+        const string WikiUrl = "https://raw.githubusercontent.com/wiki/optiscaler/OptiScaler/Compatibility-List.md";
+
+        // Folder segments that say nothing about which game it is.
+        static readonly string[] GenericSegments =
+        {
+            "game", "games", "bin", "binaries", "win64", "win32", "x64", "x86", "client",
+            "content", "engine", "app", "apps", "rail_apps", "steamapps", "common",
+            "windowsnoeditor", "windows", "project", "build", "release", "shipping"
+        };
+
+        // Folders and the wiki disagree on spacing and punctuation
+        // ("GhostwireTokyo" vs "Ghostwire: Tokyo"), so compare without them.
+        static string Normalize(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return string.Empty;
+            var t = s.ToLowerInvariant();
+            foreach (var ch in new[] { ' ', '\t', ':', '-', '.', '(', ')', '\'', '"', '´', '\u2019' })
+                t = t.Replace(ch.ToString(), string.Empty);
+            return t;
+        }
+
+        static string Fetch(string url, int timeoutMs)
+        {
+            try
+            {
+                var request = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(url);
+                request.Timeout = timeoutMs;
+                request.UserAgent = "OptiScalerPanel";
+                using (var response = request.GetResponse())
+                using (var reader = new StreamReader(response.GetResponseStream()))
+                    return reader.ReadToEnd();
+            }
+            catch { return null; }
         }
 
         static ProfileEntry ProfileHitCache;
@@ -507,18 +613,57 @@ namespace OptScalerNR.Launcher
                 return ProfileHitCache;
             ProfileHitDir = _dir;
             ProfileHitCache = null;
-            try
+
+            var names = _dir.Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => System.Text.RegularExpressions.Regex.Replace(s, @"\s*\(\d+\)\s*$", string.Empty))
+                .Select(Normalize)
+                .Where(s => s.Length >= 4 && Array.IndexOf(GenericSegments, s) < 0)
+                .ToArray();
+            if (names.Length == 0) return null;
+
+            var text = Fetch(WikiUrl, 10000);
+            if (string.IsNullOrEmpty(text)) return null;
+
+            var rxLink = new System.Text.RegularExpressions.Regex(@"\[([^\]]+)\]\([^)]*\)");
+            var rxDll = new System.Text.RegularExpressions.Regex(@"(?i)\b(dxgi|winmm|d3d12|winhttp|wininet|dbghelp|version|d3d11|opengl32)\.dll\b");
+
+            foreach (var line in text.Split('\n'))
             {
-                using (var recommendations = new ProxyRecommendations(SettingsDir()))
+                var trimmed = line.Trim();
+                if (!trimmed.StartsWith("|", StringComparison.Ordinal)) continue;
+                var cells = trimmed.Trim('|').Split('|');
+                if (cells.Length < 2) continue;
+
+                var rawName = cells[0].Trim();
+                var link = rxLink.Match(rawName);
+                var name = link.Success ? link.Groups[1].Value.Trim() : rawName;
+                if (System.Text.RegularExpressions.Regex.IsMatch(name, @"(?i)^\s*GAME\s*NAME\s*$")) continue;
+
+                var nameNorm = Normalize(name);
+                if (nameNorm.Length < 4) continue;
+                if (!cells[1].Contains("✅")) continue;
+
+                var hit = false;
+                foreach (var n in names)
                 {
-                    var game = new GameInfo { Root = _dir };
-                    var profile = recommendations.Match(game);
-                    if (profile == null) return null;
-                    ProfileHitCache = new ProfileEntry { Preferred = profile.Preferred, Alternatives = profile.Alternatives };
-                    return ProfileHitCache;
+                    if (n.Contains(nameNorm) || nameNorm.Contains(n)) { hit = true; break; }
                 }
+                if (!hit) continue;
+
+                var dlls = rxDll.Matches(line).Cast<System.Text.RegularExpressions.Match>()
+                    .Select(m => m.Groups[1].Value.ToLowerInvariant() + ".dll")
+                    .Distinct()
+                    .ToArray();
+
+                ProfileHitCache = new ProfileEntry
+                {
+                    GameName = name,
+                    Preferred = dlls.Length > 0 ? dlls[0] : null,
+                    Alternatives = dlls.Skip(1).ToArray()
+                };
+                return ProfileHitCache;
             }
-            catch { return null; }
+            return null;
         }
 
         static void OpenUrl(string url)
@@ -533,28 +678,36 @@ namespace OptScalerNR.Launcher
 
         static string Prompt(string caption, string initial)
         {
-            var dialog = new Window
+            // 走启动器自己的对话框（DialogTheme.Create + Primary），风格与 Launcher 一致。
+            var dialog = DialogTheme.Create(_window, caption, 380);
+            var grid = new Grid();
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var box = new TextBox
             {
-                Title = caption,
-                Width = 380,
-                Height = 150,
-                WindowStyle = WindowStyle.ToolWindow,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Owner = _window,
-                Background = LauncherTheme.Brush("ThemeBackground"),
-                Foreground = LauncherTheme.Brush("ThemeInk")
+                Text = initial,
+                Height = 30,
+                Margin = new Thickness(0, 0, 0, 14),
+                Background = LauncherTheme.Brush("ThemeSubtle"),
+                Foreground = LauncherTheme.Brush("ThemeInk"),
+                BorderBrush = LauncherTheme.Brush("ThemeBorder"),
+                Padding = new Thickness(8, 4, 8, 4),
+                VerticalContentAlignment = VerticalAlignment.Center
             };
-            var grid = new Grid { Margin = new Thickness(16) };
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            var box = new TextBox { Text = initial, Height = 30, Margin = new Thickness(0, 0, 0, 12) };
-            var ok = new Button { Content = "确定", Width = 90, Height = 30, HorizontalAlignment = HorizontalAlignment.Right };
+
+            var ok = new Button { Content = "确定", Width = 92, Height = 30, HorizontalAlignment = HorizontalAlignment.Right };
+            DialogTheme.Primary(dialog, ok);
             ok.Click += (s, e) => { dialog.DialogResult = true; dialog.Close(); };
+
             Grid.SetRow(box, 0);
             Grid.SetRow(ok, 1);
             grid.Children.Add(box);
             grid.Children.Add(ok);
-            dialog.Content = grid;
+            DialogTheme.SetContent(dialog, grid);
+            box.Focus();
+            box.SelectAll();
+
             return dialog.ShowDialog() == true ? box.Text : null;
         }
     }

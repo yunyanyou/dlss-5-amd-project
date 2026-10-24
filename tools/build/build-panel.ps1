@@ -33,8 +33,9 @@ $cs = @(
     (Join-Path $launcher 'DialogTheme.cs'),
     (Join-Path $launcher 'MochizukiShareCode.cs'),
     (Join-Path $launcher 'IniProfiles.cs'),
-    (Join-Path $launcher 'ProxyRecommendations.cs'),
+    # IniProfiles uses JsonUtil; GamePaths references the recommendation catalog.
     (Join-Path $launcher 'Protocol.cs'),
+    (Join-Path $launcher 'ProxyRecommendations.cs'),
     (Join-Path $launcher 'GamePaths.cs')
 )
 
@@ -47,6 +48,7 @@ $refs = @(
     (Join-Path $wpf 'WindowsBase.dll'),
     (Join-Path $wpf 'PresentationCore.dll'),
     (Join-Path $wpf 'PresentationFramework.dll'),
+    (Join-Path $fw 'System.Management.dll'),
     (Join-Path $fw 'System.Drawing.dll')
 )
 
