@@ -487,7 +487,7 @@
         <DockPanel>
           <StackPanel DockPanel.Dock="Top" Margin="2,0,2,8">
             <TextBlock Text="注入代理" FontWeight="SemiBold" FontSize="12"/>
-            <TextBlock Text="点击切换，重启游戏生效" Foreground="{DynamicResource ThemeMuted}"
+            <TextBlock Text="点击切换，立即生效" Foreground="{DynamicResource ThemeMuted}"
                        FontSize="10.5" Margin="0,2,0,0"/>
           </StackPanel>
           <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -496,9 +496,11 @@
         </DockPanel>
       </Border>
 
-      <StackPanel Grid.Column="2">
-        <!-- 游戏卡：逐行照搬上游 MainWindow 的 HeroCard（名字 + 大图 + 渐变 + 底部进度条） -->
-        <Border x:Name="HeroCard" Background="#101522" CornerRadius="18" Height="166" ClipToBounds="True" Margin="0,0,0,12">
+      <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" Focusable="False" IsTabStop="False" FocusVisualStyle="{x:Null}">
+        <StackPanel>
+        <!-- 游戏卡：照搬上游 MainWindow 的 HeroCard（名字 + 大图 + 渐变 + 底部进度条）；
+             文字多时卡片随内容向下扩展，右列放在 ScrollViewer 里（同上游 DetailsScroll）。 -->
+        <Border x:Name="HeroCard" Background="#101522" CornerRadius="18" MinHeight="166" ClipToBounds="True" Margin="0,0,0,12">
           <Grid>
             <TextBlock x:Name="HeroMonogram" Text="N" FontSize="190" FontWeight="Black" Foreground="#26394C" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,-50,40,-50"/>
             <Image x:Name="HeroBgImage" Stretch="UniformToFill" Opacity="0.75"/>
@@ -512,8 +514,8 @@
                 <TextBlock x:Name="HeroPath" Foreground="#9BA8BA" FontSize="10" TextTrimming="CharacterEllipsis" Margin="0,6,0,0" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
               </StackPanel>
               <Grid Grid.Column="1">
-                <Button x:Name="OptiBtn" Content="安装 OptiPatcher（DLSS 伪装增强）" Style="{DynamicResource PrimaryButton}" Height="42" VerticalAlignment="Center" Padding="8,0"><Button.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,1"><GradientStop Color="#FF5A3C" Offset="0"/><GradientStop Color="#E3122B" Offset="1"/></LinearGradientBrush></Button.Background></Button>
-                <WrapPanel VerticalAlignment="Bottom" HorizontalAlignment="Right"><Button x:Name="LogBtn" Content="打开日志" Style="{DynamicResource HeroButton}" Height="27" Padding="8,0"/></WrapPanel>
+                <Button x:Name="OptiBtn" Content="安装 OptiPatcher（DLSS 伪装增强）" Style="{DynamicResource GhostButton}" VerticalAlignment="Center" Padding="10,0"/>
+                <WrapPanel VerticalAlignment="Bottom" HorizontalAlignment="Right"><Button x:Name="LogBtn" Content="打开日志" Style="{DynamicResource GhostButton}" Height="27" Padding="8,0"/></WrapPanel>
               </Grid>
             </Grid>
             <ProgressBar x:Name="HeroProgress" Height="3" VerticalAlignment="Bottom" Foreground="{DynamicResource ThemeAccent}" Background="#30405060" BorderThickness="0"/>
@@ -564,6 +566,7 @@
           </StackPanel>
         </Border>
       </StackPanel>
+      </ScrollViewer>
     </Grid>
   </DockPanel>
 </Window>
