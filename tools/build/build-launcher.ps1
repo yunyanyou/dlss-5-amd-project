@@ -38,7 +38,7 @@ $cs = @(
     'DialogTheme.cs', 'FolderGameScanner.cs', 'ProxyRecommendations.cs',
     'MainController.Library.cs', 'MainController.Recommendations.cs', 'LauncherTheme.cs', 'MainController.Presentation.cs',
     'MainController.Profiles.cs', 'MainController.ShareCode.cs', 'MainController.ModelImport.cs', 'MochizukiShareCode.cs', 'MainController.Diagnostics.cs', 'IniProfiles.cs', 'LocalArtwork.cs'
-    'MainController.UnlockerPlugin.cs', 'UnlockerPlugin.cs'
+    'MainController.UnlockerPlugin.cs', 'UnlockerPlugin.cs', 'SlimWindow.cs'
 ) | ForEach-Object { Join-Path $src $_ }
 $refs = @(
     (Join-Path $fw 'mscorlib.dll'),
@@ -56,6 +56,7 @@ $res = @(
     "/resource:`"$(Join-Path $src 'App.xaml')`",OptScalerNR.Launcher.App.xaml",
     "/resource:`"$(Join-Path $src 'MainWindow.xaml')`",OptScalerNR.Launcher.MainWindow.xaml",
     "/resource:`"$(Join-Path $src 'DialogTheme.xaml')`",OptScalerNR.Launcher.DialogTheme.xaml",
+    "/resource:`"$(Join-Path $src 'SlimWindow.xaml')`",OptScalerNR.Launcher.SlimWindow.xaml",
     "/resource:`"$(Join-Path $root 'assets/compatibility/proxy-profiles.json')`",OptScalerNR.Launcher.proxy-profiles.json"
 )
 $argFile = Join-Path $obj 'csc.rsp'

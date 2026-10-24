@@ -16,7 +16,26 @@ namespace OptScalerNR.Launcher
             StartedUtc = DateTime.UtcNow;
             var app = new Application();
             app.ShutdownMode = ShutdownMode.OnMainWindowClose;
-            var window = MainController.Create(args);
+            // --slim [目录]: 游戏目录里的精简面板，跳过游戏库/安装流程。
+            Window window;
+            try
+            {
+                if (args != null && args.Length >= 1 && string.Equals(args[0], "--slim", StringComparison.OrdinalIgnoreCase))
+                {
+                    var slimDir = args.Length >= 2 ? args[1] : AppDomain.CurrentDomain.BaseDirectory;
+                    window = SlimWindow.Create(slimDir);
+                }
+                else
+                {
+                    window = MainController.Create(args);
+                }
+            }
+            catch (Exception ex)
+            {
+                try { File.WriteAllText(Path.Combine(Path.GetTempPath(), "opti-slim-error.txt"), ex.ToString()); } catch { }
+                MessageBox.Show(ex.Message, "OptiScaler");
+                return 1;
+            }
             app.MainWindow = window;
             window.Show();
             return app.Run();
