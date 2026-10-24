@@ -802,6 +802,29 @@ namespace OptScalerNR.Launcher
             return report;
         }
 
+        // OptiPatcher 安装状态：文件在不在 + ini 的 LoadAsiPlugins 处于哪种模式。
+        static string DetectOptiPatcherState()
+        {
+            var installed = File.Exists(System.IO.Path.Combine(_dir, "plugins", "OptiPatcher.asi"))
+                || File.Exists(System.IO.Path.Combine(_dir, "OptiScaler", "plugins", "OptiPatcher.asi"));
+            if (!installed) return "OptiPatcher：未安装";
+            var mode = "auto";
+            try
+            {
+                var ini = System.IO.Path.Combine(_dir, "OptiScaler.ini");
+                if (File.Exists(ini))
+                {
+                    var match = System.Text.RegularExpressions.Regex.Match(File.ReadAllText(ini),
+                        @"(?im)^\s*LoadAsiPlugins\s*=\s*(true|false|auto)");
+                    if (match.Success) mode = match.Groups[1].Value.ToLowerInvariant();
+                }
+            }
+            catch { }
+            if (mode == "true") return "OptiPatcher：已安装，插件加载中";
+            if (mode == "false") return "OptiPatcher：已安装，已禁用（LoadAsiPlugins=false）";
+            return "OptiPatcher：已安装，未启用（LoadAsiPlugins=auto）";
+        }
+
         // 摘要文案与按钮可用性照抄上游 UpdateCompatibilitySummary。
         static void UpdateCompatUi(CompatReport report)
         {
@@ -812,6 +835,8 @@ namespace OptScalerNR.Launcher
             _compatSummary.Text = report.ScriptReady
                 ? "启动、插帧或 XeSS 异常时可检查配套运行库；正常使用无需修复。"
                 : "本目录缺少 compat-repair.ps1 / xess-compat.ps1，修复不可用（需完整拖入包）。";
+            // 状态行默认显示 OptiPatcher 安装状态；运行动作的消息会临时覆盖，刷新后回到这里。
+            CompatNote(DetectOptiPatcherState());
             if (_compatRepairBtn != null) _compatRepairBtn.IsEnabled = available;
             if (_compatRestoreBtn != null) _compatRestoreBtn.IsEnabled = available && report.Active;
         }

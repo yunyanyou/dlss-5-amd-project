@@ -521,13 +521,14 @@
           <StackPanel>
             <TextBlock Text="配置与运行库兼容诊断" Foreground="{DynamicResource ThemeMuted}" FontSize="11.5" Margin="0,0,0,10"/>
             <TextBlock x:Name="CompatSummary" TextWrapping="Wrap" Foreground="{DynamicResource ThemeMuted}" FontSize="10.5" Margin="0,0,0,9"/>
-            <TextBlock x:Name="CompatStatus" TextWrapping="Wrap" Foreground="{DynamicResource ThemeAccent}" FontSize="10.5" Margin="0,0,0,9"/>
-            <WrapPanel Margin="0,0,0,4">
+            <WrapPanel Margin="0,0,0,9">
               <Button x:Name="CompatRepairBtn" Content="兼容修复" Style="{DynamicResource GhostButton}" Height="27" FontSize="11" IsEnabled="False"/>
               <Button x:Name="CompatRestoreBtn" Content="恢复原文件" Style="{DynamicResource GhostButton}" Height="27" FontSize="11" Margin="8,0,0,0" IsEnabled="False"/>
               <Button x:Name="CompatHelpBtn" Content="?" Style="{DynamicResource GhostButton}" Width="27" Height="27" Padding="0" Margin="8,0,0,0"/>
             </WrapPanel>
-            <WrapPanel Margin="0,8,0,0">
+            <Border Height="1" Background="{DynamicResource ThemeBorder}" Margin="0,0,0,9"/>
+            <TextBlock x:Name="CompatStatus" TextWrapping="Wrap" Foreground="{DynamicResource ThemeAccent}" FontSize="10.5" Margin="0,0,0,9"/>
+            <WrapPanel Margin="0,0,0,0">
               <Button x:Name="OptiBtn" Content="安装 OptiPatcher（DLSS 伪装增强）" Style="{DynamicResource GhostButton}" Height="27" FontSize="11" Padding="12,0"/>
               <Button x:Name="LogBtn" Content="打开日志" Style="{DynamicResource GhostButton}" Height="27" FontSize="11" Padding="8,0" Margin="8,0,0,0"/>
             </WrapPanel>
