@@ -177,8 +177,24 @@ namespace OptScalerNR.Launcher
                     LocalArtwork.Load(_heroArtwork, hero, heroFromIcon ? 256 : 1000, heroFromIcon, !heroFromIcon, delegate(System.Windows.Media.ImageSource image)
                     {
                         _heroBgImage.Source = image;
-                        // 图标放大铺底会糊，压低不透明度当作水印；本地图保持上游的 0.75。
-                        _heroBgImage.Opacity = image == null ? 0.75 : heroFromIcon ? 0.5 : 0.75;
+                        if (heroFromIcon)
+                        {
+                            // 图标按原始大小贴在右侧，不拉伸铺底；藏掉字母水印避免重叠。
+                            _heroBgImage.Stretch = Stretch.None;
+                            _heroBgImage.HorizontalAlignment = HorizontalAlignment.Right;
+                            _heroBgImage.VerticalAlignment = VerticalAlignment.Center;
+                            _heroBgImage.Margin = new Thickness(0, 0, 40, 0);
+                            _heroBgImage.Opacity = 1.0;
+                            _heroMonogram.Visibility = image != null ? Visibility.Collapsed : Visibility.Visible;
+                        }
+                        else
+                        {
+                            _heroBgImage.Stretch = Stretch.UniformToFill;
+                            _heroBgImage.HorizontalAlignment = HorizontalAlignment.Stretch;
+                            _heroBgImage.VerticalAlignment = VerticalAlignment.Stretch;
+                            _heroBgImage.Margin = new Thickness(0);
+                            _heroBgImage.Opacity = 0.75;
+                        }
                     });
                 }));
             });
@@ -257,6 +273,11 @@ namespace OptScalerNR.Launcher
             }
             _heroBgImage.Source = null;
             _heroBgImage.Opacity = 0.75;
+            _heroBgImage.Stretch = Stretch.UniformToFill;
+            _heroBgImage.HorizontalAlignment = HorizontalAlignment.Stretch;
+            _heroBgImage.VerticalAlignment = VerticalAlignment.Stretch;
+            _heroBgImage.Margin = new Thickness(0);
+            _heroMonogram.Visibility = Visibility.Visible;
 
             _bottomLed.Fill = current != null ? LauncherTheme.Brush("ThemeSuccess") : LauncherTheme.Brush("ThemeWarning");
             _bottomStatus.Text = current != null
