@@ -22,6 +22,13 @@ namespace OptScalerNR.Launcher
             }
 
             var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
+            // 运行期未处理异常落盘而不是闪退，方便定位（对齐启动器的做法）。
+            app.DispatcherUnhandledException += delegate(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+            {
+                try { File.WriteAllText(Path.Combine(Path.GetTempPath(), "optiscaler-panel-error.txt"), e.Exception.ToString()); } catch { }
+                MessageBox.Show(e.Exception.Message, "OptiScaler");
+                e.Handled = true;
+            };
             Window window;
             try
             {
@@ -42,27 +49,28 @@ namespace OptScalerNR.Launcher
         public static Stream OpenXaml(string name)
         {
             var asm = Assembly.GetExecutingAssembly();
-            var stream = asm.GetManifestResourceStream("OptiScalerPanel." + name);
-            if (stream == null) throw new FileNotFoundException("Missing embedded XAML " + name);
-            return stream;
+            using (var stream = asm.GetManifestResourceStream("OptiScalerPanel." + name))
+            {
+                if (stream == null) throw new FileNotFoundException("Missing embedded XAML " + name);
+                // 上游 XAML（如 DialogTheme.xaml）里 xmlns:local 写死了 assembly=OptScalerNR.Launcher，
+                // 直接 XamlReader.Load 会因类型解析失败崩溃（对话框里的 Trigger 首当其冲）。
+                // 统一在这里换成面板自己的程序集名，DialogTheme.Resources() 与主窗口加载同路径。
+                using (var reader = new StreamReader(stream))
+                {
+                    var text = reader.ReadToEnd().Replace("assembly=OptScalerNR.Launcher", "assembly=OptiScalerPanel");
+                    return new MemoryStream(System.Text.Encoding.UTF8.GetBytes(text));
+                }
+            }
         }
 
         /// <summary>
-        /// DialogTheme.xaml 是上游文件，里面写死了 assembly=OptScalerNR.Launcher
-        /// （完整启动器的程序集名）。这里只在加载时把名字换成面板自己的，文件本身不动，
+        /// DialogTheme.xaml 是上游文件，加载时由 OpenXaml 统一替换程序集名，文件本身不动，
         /// 上游更新后仍然直接生效。
         /// </summary>
         public static ResourceDictionary LoadDialogTheme()
         {
             using (var stream = OpenXaml("DialogTheme.xaml"))
-            using (var reader = new StreamReader(stream))
-            {
-                var text = reader.ReadToEnd().Replace("assembly=OptScalerNR.Launcher", "assembly=OptiScalerPanel");
-                using (var buffer = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(text)))
-                {
-                    return (ResourceDictionary)System.Windows.Markup.XamlReader.Load(buffer);
-                }
-            }
+                return (ResourceDictionary)System.Windows.Markup.XamlReader.Load(stream);
         }
     }
 }

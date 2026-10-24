@@ -28,6 +28,7 @@ namespace OptScalerNR.Launcher
         static StackPanel _list;
         static TextBlock _heroKicker, _heroTitle, _heroMonogram, _bottomStatus;
         static System.Windows.Controls.StackPanel _heroFacts;
+        static System.Windows.Controls.ProgressBar _heroProgress;
         static System.Windows.Media.ImageBrush _heroBgBrush;
         static System.Windows.Shapes.Ellipse _bottomLed;
         static LocalArtwork.Scope _heroArtwork;
@@ -82,6 +83,7 @@ namespace OptScalerNR.Launcher
             _heroTitle = (TextBlock)_window.FindName("HeroTitle");
             _heroFacts = (System.Windows.Controls.StackPanel)_window.FindName("HeroFacts");
             _heroMonogram = (TextBlock)_window.FindName("HeroMonogram");
+            _heroProgress = (System.Windows.Controls.ProgressBar)_window.FindName("HeroProgress");
             _heroBgBrush = (System.Windows.Media.ImageBrush)_window.FindName("HeroBgBrush");
             _heroArtwork = new LocalArtwork.Scope(_window.Dispatcher);
             _bottomStatus = (TextBlock)_window.FindName("BottomStatus");
@@ -162,6 +164,8 @@ namespace OptScalerNR.Launcher
         static void Refresh()
         {
             RenderNow();
+            // 上游同款：扫描/检查期间名字栏底部的进度条进入加载动画，完成后停止。
+            if (_heroProgress != null) _heroProgress.IsIndeterminate = true;
             // 与上游启动器一致：窗口先渲染缓存，扫描 EXE、拉 Wiki、找封面都在后台做，完成后回填。
             var generation = ++_refreshGeneration;
             var dir = _dir;
@@ -196,6 +200,7 @@ namespace OptScalerNR.Launcher
                     if (generation != _refreshGeneration || !string.Equals(_dir, dir, StringComparison.OrdinalIgnoreCase)) return;
                     RenderNow();
                     UpdateCompatUi(compat);
+                    if (_heroProgress != null) _heroProgress.IsIndeterminate = false;
                     LocalArtwork.Load(_heroArtwork, hero, heroFromIcon ? 256 : 1000, heroFromIcon, !heroFromIcon, delegate(System.Windows.Media.ImageSource image)
                     {
                         _heroBgBrush.ImageSource = image;
@@ -292,16 +297,16 @@ namespace OptScalerNR.Launcher
             if (advice.Profile != null)
             {
                 var alt = advice.Profile.Alternatives != null ? string.Join(" / ", advice.Profile.Alternatives) : "";
-                return "精选档案 → 首选 " + advice.Profile.Preferred
+                return "Wiki 记录：首选 " + advice.Profile.Preferred
                     + (alt.Length > 0 ? "；备选 " + alt : "");
             }
             if (advice.WikiName != null)
             {
                 return advice.WikiProxies != null && advice.WikiProxies.Length > 0
-                    ? "兼容列表：" + advice.WikiName + " → " + string.Join(" / ", advice.WikiProxies)
-                    : "兼容列表：" + advice.WikiName + "（未注明 DLL，可任选尝试）";
+                    ? "Wiki 记录：" + advice.WikiName + " → " + string.Join(" / ", advice.WikiProxies)
+                    : "Wiki 记录：" + advice.WikiName + "（未注明 DLL，可任选尝试）";
             }
-            return "无此游戏记录";
+            return "Wiki 记录：无此游戏记录";
         }
         static string OptiFact(WikiAdvice advice)
         {
@@ -963,7 +968,13 @@ namespace OptScalerNR.Launcher
         static void RunCompatScript(string action, string groupsCsv, Action<bool, string> done)
         {
             var script = System.IO.Path.Combine(AppBase, "compat-repair.ps1");
-            if (!File.Exists(script)) { done(false, "目录里没有 compat-repair.ps1，无法执行。"); return; }
+            if (_heroProgress != null) _heroProgress.IsIndeterminate = true;
+            if (!File.Exists(script))
+            {
+                if (_heroProgress != null) _heroProgress.IsIndeterminate = false;
+                done(false, "目录里没有 compat-repair.ps1，无法执行。");
+                return;
+            }
             var dir = _dir;
             System.Threading.Tasks.Task.Run(delegate
             {
@@ -997,7 +1008,11 @@ namespace OptScalerNR.Launcher
                             : output.StartsWith("ERROR:", StringComparison.Ordinal) ? output.Substring(6).Trim()
                             : output;
                 var ok = code == 0;
-                _window.Dispatcher.BeginInvoke(new Action(delegate { done(ok, message); }));
+                _window.Dispatcher.BeginInvoke(new Action(delegate
+                {
+                    if (_heroProgress != null) _heroProgress.IsIndeterminate = false;
+                    done(ok, message);
+                }));
             });
         }
 
