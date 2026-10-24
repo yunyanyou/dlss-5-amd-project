@@ -36,7 +36,10 @@ $cs = @(
     # IniProfiles uses JsonUtil; GamePaths references the recommendation catalog.
     (Join-Path $launcher 'Protocol.cs'),
     (Join-Path $launcher 'ProxyRecommendations.cs'),
-    (Join-Path $launcher 'GamePaths.cs')
+    (Join-Path $launcher 'GamePaths.cs'),
+    # Upstream's recursive PE-analysing EXE scanner and its bounded artwork decoder.
+    (Join-Path $launcher 'FolderGameScanner.cs'),
+    (Join-Path $launcher 'LocalArtwork.cs')
 )
 
 $refs = @(

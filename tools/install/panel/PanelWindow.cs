@@ -26,8 +26,17 @@ namespace OptScalerNR.Launcher
         static Button _themeToggle, _maxBtn;
         static TextBlock _hardwareText;
         static StackPanel _list;
-        static TextBlock _gameText, _wikiText, _optiText, _bottomStatus;
+        static TextBlock _heroKicker, _heroTitle, _heroMeta, _heroPath, _heroMonogram, _bottomStatus;
+        static System.Windows.Controls.Image _heroBgImage;
         static System.Windows.Shapes.Ellipse _bottomLed;
+        static LocalArtwork.Scope _heroArtwork;
+        static int _refreshGeneration;
+
+        // 后台填充的扫描结果（FolderGameScanner 的最佳候选 + wiki 建议），按目录缓存。
+        static FileInfo _gameExeCache;
+        static string _gameExeDir;
+        static WikiAdvice AdviceHitCache;
+        static string AdviceHitDir;
 
         // ---- ini 共享配置：字段与流程逐行对齐 MainController.Profiles.cs ----
         static IniProfiles _iniProfiles;
@@ -63,9 +72,13 @@ namespace OptScalerNR.Launcher
                 _window = (Window)XamlReader.Load(stream);
 
             _list = (StackPanel)_window.FindName("LoaderList");
-            _gameText = (TextBlock)_window.FindName("GameText");
-            _wikiText = (TextBlock)_window.FindName("WikiText");
-            _optiText = (TextBlock)_window.FindName("OptiText");
+            _heroKicker = (TextBlock)_window.FindName("HeroKicker");
+            _heroTitle = (TextBlock)_window.FindName("HeroTitle");
+            _heroMeta = (TextBlock)_window.FindName("HeroMeta");
+            _heroPath = (TextBlock)_window.FindName("HeroPath");
+            _heroMonogram = (TextBlock)_window.FindName("HeroMonogram");
+            _heroBgImage = (System.Windows.Controls.Image)_window.FindName("HeroBgImage");
+            _heroArtwork = new LocalArtwork.Scope(_window.Dispatcher);
             _bottomStatus = (TextBlock)_window.FindName("BottomStatus");
             _bottomLed = (System.Windows.Shapes.Ellipse)_window.FindName("BottomLed");
 
@@ -128,11 +141,46 @@ namespace OptScalerNR.Launcher
         // ---------------------------------------------------------------- refresh
         static void Refresh()
         {
+            RenderNow();
+            // 与上游启动器一致：窗口先渲染缓存，扫描 EXE、拉 Wiki、找封面都在后台做，完成后回填。
+            var generation = ++_refreshGeneration;
+            var dir = _dir;
+            System.Threading.Tasks.Task.Run(delegate
+            {
+                if (!string.Equals(_gameExeDir, dir, StringComparison.OrdinalIgnoreCase))
+                {
+                    ExeCandidate best = null;
+                    try
+                    {
+                        var scan = FolderGameScanner.ScanAsync(dir, System.Threading.CancellationToken.None, null).Result;
+                        foreach (var candidate in scan.Candidates)
+                            if (!candidate.Auxiliary && (best == null || candidate.Rank < best.Rank)) best = candidate;
+                    }
+                    catch { }
+                    _gameExeCache = best == null ? null : new FileInfo(best.Path);
+                    _gameExeDir = dir;
+                }
+                var advice = AdviceHitFor(dir);
+                var hero = FindHeroImage(dir);
+                _window.Dispatcher.BeginInvoke(new Action(delegate
+                {
+                    if (generation != _refreshGeneration || !string.Equals(_dir, dir, StringComparison.OrdinalIgnoreCase)) return;
+                    RenderNow();
+                    LocalArtwork.Load(_heroArtwork, hero, 1000, false, true, delegate(System.Windows.Media.ImageSource image)
+                    {
+                        _heroBgImage.Source = image;
+                    });
+                }));
+            });
+        }
+
+        static void RenderNow()
+        {
             _list.Children.Clear();
             var current = CurrentInjection();
             var occupied = Occupied();
-            var advice = AdviceHit();
-            var recommend = advice.Recommended;
+            var advice = AdviceCached();
+            var recommend = advice != null ? advice.Recommended : null;
 
             foreach (var name in Candidates)
             {
@@ -174,27 +222,28 @@ namespace OptScalerNR.Launcher
                 _list.Children.Add(row);
             }
 
+            // Hero 卡：上游 MainWindow.SelectGame 的字段分工 —— Kicker=游戏程序，Title=游戏名，
+            // Meta=Wiki 行 + OptiPatcher 支持行（+ 档案中文备注），Path=目录。
             var exe = GameExe();
-            _gameText.Text = exe != null ? "游戏程序：" + exe.Name : "游戏程序：未找到（把游戏 EXE 拖进来可指定）";
-            if (advice.Profile != null)
+            var scanned = string.Equals(_gameExeDir, _dir, StringComparison.OrdinalIgnoreCase);
+            _heroKicker.Text = exe != null ? "游戏程序：" + exe.Name
+                : scanned ? "游戏程序：未找到（可把游戏 EXE 拖进窗口指定）"
+                : "正在扫描游戏程序…";
+            var title = advice != null && advice.WikiName != null ? advice.WikiName : Path.GetFileName(_dir.TrimEnd('\\', '/'));
+            _heroTitle.Text = title;
+            _heroMonogram.Text = string.IsNullOrEmpty(title) ? "N"
+                : title.Substring(0, 1).ToUpperInvariant();
+            if (advice == null)
             {
-                var alt = advice.Profile.Alternatives != null ? string.Join(" / ", advice.Profile.Alternatives) : "";
-                _wikiText.Text = "Wiki 档案：" + advice.Profile.Id + " → 首选 " + advice.Profile.Preferred
-                    + (alt.Length > 0 ? "；备选 " + alt : "");
-            }
-            else if (advice.WikiName != null)
-            {
-                _wikiText.Text = advice.WikiProxies != null && advice.WikiProxies.Length > 0
-                    ? "Wiki 兼容列表：" + advice.WikiName + " → " + string.Join(" / ", advice.WikiProxies)
-                    : "Wiki 兼容列表：" + advice.WikiName + "（未注明 DLL，可任选尝试）";
+                _heroMeta.Text = "正在获取 Wiki 与支持列表…";
             }
             else
             {
-                _wikiText.Text = "Wiki 档案：无此游戏记录";
+                _heroMeta.Text = WikiLine(advice) + "\n" + OptiLine(advice)
+                    + (!string.IsNullOrEmpty(advice.ProfileNotes) ? "\n" + advice.ProfileNotes : "");
             }
-            _optiText.Text = advice.OptiDlss != null
-                ? "OptiPatcher支持：Wiki 收录，支持 DLSS " + advice.OptiDlss + " / DLSS-FG " + advice.OptiFg
-                : "OptiPatcher支持：Wiki 未收录此游戏";
+            _heroPath.Text = _dir;
+            _heroBgImage.Source = null;
 
             _bottomLed.Fill = current != null ? LauncherTheme.Brush("ThemeSuccess") : LauncherTheme.Brush("ThemeWarning");
             _bottomStatus.Text = current != null
@@ -203,6 +252,29 @@ namespace OptScalerNR.Launcher
             RefreshHardware();
 
             SelectGameProfiles();
+        }
+
+        static string WikiLine(WikiAdvice advice)
+        {
+            if (advice.Profile != null)
+            {
+                var alt = advice.Profile.Alternatives != null ? string.Join(" / ", advice.Profile.Alternatives) : "";
+                return "Wiki 档案：" + advice.Profile.Id + " → 首选 " + advice.Profile.Preferred
+                    + (alt.Length > 0 ? "；备选 " + alt : "");
+            }
+            if (advice.WikiName != null)
+            {
+                return advice.WikiProxies != null && advice.WikiProxies.Length > 0
+                    ? "Wiki 兼容列表：" + advice.WikiName + " → " + string.Join(" / ", advice.WikiProxies)
+                    : "Wiki 兼容列表：" + advice.WikiName + "（未注明 DLL，可任选尝试）";
+            }
+            return "Wiki 档案：无此游戏记录";
+        }
+        static string OptiLine(WikiAdvice advice)
+        {
+            return advice.OptiDlss != null
+                ? "OptiPatcher支持：Wiki 收录，支持 DLSS " + advice.OptiDlss + " / DLSS-FG " + advice.OptiFg
+                : "OptiPatcher支持：Wiki 未收录此游戏";
         }
 
         static string _hardwareDetails;
@@ -1185,48 +1257,10 @@ namespace OptScalerNR.Launcher
         }
 
         // ---------------------------------------------------------------- helpers
-        static readonly string[] ExeExcludeStart =
-        {
-            "setup", "install", "unins", "crash", "unitycrash", "vc_redist", "dxsetup",
-            "easyanticheat", "eac_", "battleye", "beclient", "beservice", "unrealcef",
-            "webview", "cefsubprocess", "shadercompile", "bugsplat", "crs-",
-            "redprelauncher", "larilauncher", "2klauncher"
-        };
-        static readonly string[] ExeExcludeEnd =
-        {
-            "prelauncher", "launcher", "crashreport", "crashhandler", "crs-handler",
-            "errorreporter", "updater", "patcher", "uninstaller", "benchmark", "dedicatedserver"
-        };
-        static readonly string[] ExeExcludeName = { "gamelaunchhelper", "person-worker", "activationui", "cleanup", "touchup", "config" };
-
+        // EXE 识别走上游 FolderGameScanner（PE 导入表 + 目录优先级递归扫描），后台填充缓存。
         static FileInfo GameExe()
         {
-            try
-            {
-                var files = new DirectoryInfo(_dir).GetFiles("*.exe");
-                FileInfo best = null;
-                var bestRank = 99;
-                foreach (var f in files)
-                {
-                    var n = f.Name.ToLowerInvariant();
-                    var stem = System.IO.Path.GetFileNameWithoutExtension(n);
-                    var skip = false;
-                    foreach (var s in ExeExcludeStart) if (n.StartsWith(s, StringComparison.Ordinal)) { skip = true; break; }
-                    if (!skip) foreach (var s in ExeExcludeEnd) if (stem.EndsWith(s, StringComparison.Ordinal)) { skip = true; break; }
-                    if (!skip) foreach (var s in ExeExcludeName) if (stem == s) { skip = true; break; }
-                    if (skip) continue;
-                    var rank = n.EndsWith("wingdk-shipping.exe", StringComparison.Ordinal) ? 0
-                             : n.EndsWith("-win64-shipping.exe", StringComparison.Ordinal) ? 1
-                             : n.EndsWith("shipping.exe", StringComparison.Ordinal) ? 2 : 3;
-                    if (rank < bestRank || (rank == bestRank && best != null && f.Length > best.Length))
-                    {
-                        best = f;
-                        bestRank = rank;
-                    }
-                }
-                return best;
-            }
-            catch { return null; }
+            return string.Equals(_gameExeDir, _dir, StringComparison.OrdinalIgnoreCase) ? _gameExeCache : null;
         }
 
         // ---- wiki 检测：照搬 tools/proxy-switch.ps1 的两级检测 + OptiPatcher 支持列表 ----
@@ -1243,11 +1277,13 @@ namespace OptScalerNR.Launcher
             [System.Runtime.Serialization.DataMember(Name = "pathSegments")] public string[] PathSegments;
             [System.Runtime.Serialization.DataMember(Name = "preferred")] public string Preferred;
             [System.Runtime.Serialization.DataMember(Name = "alternatives")] public string[] Alternatives;
+            [System.Runtime.Serialization.DataMember(Name = "notesZh")] public string NotesZh;
         }
 
         sealed class WikiAdvice
         {
             public PanelProxyProfile Profile;
+            public string ProfileNotes;
             public string WikiName;
             public string[] WikiProxies;
             public string OptiDlss, OptiFg;
@@ -1427,23 +1463,105 @@ namespace OptScalerNR.Launcher
             }
         }
 
-        static WikiAdvice AdviceHitCache;
-        static string AdviceHitDir;
-
-        static WikiAdvice AdviceHit()
+        // UI 线程读缓存；后台线程用 AdviceHitFor 拉取（打开窗口后异步执行，不阻塞渲染）。
+        static WikiAdvice AdviceCached()
         {
             if (AdviceHitCache != null && string.Equals(AdviceHitDir, _dir, StringComparison.OrdinalIgnoreCase))
                 return AdviceHitCache;
-            AdviceHitDir = _dir;
+            return null;
+        }
+
+        static WikiAdvice AdviceHitFor(string dir)
+        {
+            if (AdviceHitCache != null && string.Equals(AdviceHitDir, dir, StringComparison.OrdinalIgnoreCase))
+                return AdviceHitCache;
+            AdviceHitDir = dir;
             var advice = new WikiAdvice();
-            advice.Profile = FindProfileIn(LoadProfileCatalog(), _dir);
+            advice.Profile = FindProfileIn(LoadProfileCatalog(), dir);
             if (advice.Profile == null)
             {
-                GetWikiEntry(advice, _dir);
-                GetOptiSupport(advice, _dir);
+                GetWikiEntry(advice, dir);
+                GetOptiSupport(advice, dir);
+            }
+            if (advice.Profile != null && !string.IsNullOrEmpty(advice.Profile.NotesZh))
+            {
+                var notes = advice.Profile.NotesZh;
+                if (notes.Length > 200) notes = notes.Substring(0, 200).TrimEnd() + "…";
+                advice.ProfileNotes = notes;
             }
             AdviceHitCache = advice;
             return advice;
+        }
+
+        // hero 背景图：照上游 library-scan 的思路，在游戏目录里找 Steam library_hero / header /
+        // 启动图，命名命中优先、否则按分辨率挑最佳横图；找不到回落到单字母 monogram。
+        static string FindHeroImage(string dir)
+        {
+            try
+            {
+                var best = ""; long bestScore = 0;
+                var queue = new Queue<KeyValuePair<string, int>>();
+                queue.Enqueue(new KeyValuePair<string, int>(dir, 0));
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var images = 0;
+                while (queue.Count > 0 && images < 400)
+                {
+                    var item = queue.Dequeue();
+                    if (!seen.Add(item.Key)) continue;
+                    string[] files;
+                    try { files = Directory.GetFiles(item.Key); } catch { continue; }
+                    foreach (var file in files)
+                    {
+                        var ext = System.IO.Path.GetExtension(file);
+                        if (!string.Equals(ext, ".jpg", StringComparison.OrdinalIgnoreCase) &&
+                            !string.Equals(ext, ".jpeg", StringComparison.OrdinalIgnoreCase) &&
+                            !string.Equals(ext, ".png", StringComparison.OrdinalIgnoreCase)) continue;
+                        if (++images >= 400) break;
+                        var name = System.IO.Path.GetFileName(file);
+                        var named = System.Text.RegularExpressions.Regex.IsMatch(
+                            name, @"(?i)^(?:\d+_)?(?:library_)?(?:hero|header)|splashscreen");
+                        long area;
+                        if (!TryImageSize(file, out area) && !named) continue;
+                        var score = (named ? 100000000L : 0) + area;
+                        if (score > bestScore) { bestScore = score; best = file; }
+                    }
+                    if (item.Value >= 3) continue;
+                    string[] subs;
+                    try { subs = Directory.GetDirectories(item.Key); } catch { continue; }
+                    foreach (var sub in subs)
+                    {
+                        var low = System.IO.Path.GetFileName(sub).ToLowerInvariant();
+                        if (low == "paks" || low == "shadercache" || low == ".git" || low == "node_modules" ||
+                            low == "optiscaler" || low == "person-model" || low == "dlssnr-amd" ||
+                            low == "redist" || low == "_commonredist" || low == "__installer" || low == "plugins") continue;
+                        queue.Enqueue(new KeyValuePair<string, int>(sub, item.Value + 1));
+                    }
+                }
+                return bestScore > 0 ? best : null;
+            }
+            catch { return null; }
+        }
+
+        static bool TryImageSize(string path, out long area)
+        {
+            area = 0;
+            try
+            {
+                using (var stream = File.OpenRead(path))
+                {
+                    var frame = System.Windows.Media.Imaging.BitmapFrame.Create(stream,
+                        System.Windows.Media.Imaging.BitmapCreateOptions.DelayCreation,
+                        System.Windows.Media.Imaging.BitmapCacheOption.None);
+                    var width = frame.PixelWidth;
+                    var height = frame.PixelHeight;
+                    if (width < 480 || height < 160) return false;
+                    var ratio = (double)width / height;
+                    if (ratio < 1.5 || ratio > 4.0) return false;
+                    area = (long)width * height;
+                    return true;
+                }
+            }
+            catch { return false; }
         }
 
         static void OpenUrl(string url)
