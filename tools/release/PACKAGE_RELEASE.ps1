@@ -811,7 +811,7 @@ if not exist "%~dp0OptiScalerPanel.exe" (
   exit /b 1
 )
 start "" "%~dp0OptiScalerPanel.exe" "%~dp0."
-'@) | Set-Content -LiteralPath (Join-Path $stage 'OptiScaler面板.bat') -Encoding ASCII
+'@) | Set-Content -LiteralPath (Join-Path $stage 'OptiScaler代理切换.bat') -Encoding ASCII
 (@'
 @echo off
 setlocal
