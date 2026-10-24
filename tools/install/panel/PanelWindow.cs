@@ -771,21 +771,10 @@ namespace OptScalerNR.Launcher
             _compatReport = report;
             if (_compatSummary == null) return;
             var available = report.ScriptReady && !_panelBusy;
-            if (!report.ScriptReady)
-                _compatSummary.Text = "本目录缺少 compat-repair.ps1 / xess-compat.ps1，修复不可用（需完整拖入包）。";
-            else if (report.Active)
-                _compatSummary.Text = "已有修复备份，可恢复原文件；游戏更新后的处理选项见恢复窗口。";
-            else
-            {
-                var names = new List<string>();
-                foreach (var group in report.Groups)
-                    foreach (var file in group.Files)
-                        if (!file.Same) names.Add(file.Name);
-                _compatSummary.Text = names.Count > 0
-                    ? "游戏目录与包内配套文件不同：" + string.Join(", ", names.ToArray())
-                        + "。不同不等于故障；仅在启动或插帧异常时尝试修复。"
-                    : "启动、插帧或 XeSS 异常时可检查配套运行库；正常使用无需修复。";
-            }
+            // 与上游一致：摘要固定一句；面板仅在包不完整（脚本缺失）时说明原因。
+            _compatSummary.Text = report.ScriptReady
+                ? "启动、插帧或 XeSS 异常时可检查配套运行库；正常使用无需修复。"
+                : "本目录缺少 compat-repair.ps1 / xess-compat.ps1，修复不可用（需完整拖入包）。";
             if (_compatRepairBtn != null) _compatRepairBtn.IsEnabled = available;
             if (_compatRestoreBtn != null) _compatRestoreBtn.IsEnabled = available && report.Active;
         }

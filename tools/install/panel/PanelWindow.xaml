@@ -511,10 +511,6 @@
               <TextBlock x:Name="HeroKicker" Foreground="#9BA8BA" FontSize="10" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
               <TextBlock x:Name="HeroTitle" FontSize="25" FontWeight="Bold" Foreground="White" Margin="0,4,0,7" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
               <StackPanel x:Name="HeroFacts"/>
-              <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                <Button x:Name="OptiBtn" Content="安装 OptiPatcher（DLSS 伪装增强）" Style="{DynamicResource GhostButton}" Padding="12,0"/>
-                <Button x:Name="LogBtn" Content="打开日志" Style="{DynamicResource GhostButton}" Height="27" Padding="8,0" Margin="8,0,0,0"/>
-              </StackPanel>
             </StackPanel>
             <ProgressBar x:Name="HeroProgress" Height="3" VerticalAlignment="Bottom" Foreground="{DynamicResource ThemeAccent}" Background="#30405060" BorderThickness="0"/>
           </Grid>
@@ -529,6 +525,10 @@
               <Button x:Name="CompatRepairBtn" Content="兼容修复" Style="{DynamicResource GhostButton}" Height="27" FontSize="11" IsEnabled="False"/>
               <Button x:Name="CompatRestoreBtn" Content="恢复原文件" Style="{DynamicResource GhostButton}" Height="27" FontSize="11" Margin="8,0,0,0" IsEnabled="False"/>
               <Button x:Name="CompatHelpBtn" Content="?" Style="{DynamicResource GhostButton}" Width="27" Height="27" Padding="0" Margin="8,0,0,0"/>
+            </WrapPanel>
+            <WrapPanel Margin="0,8,0,0">
+              <Button x:Name="OptiBtn" Content="安装 OptiPatcher（DLSS 伪装增强）" Style="{DynamicResource GhostButton}" Height="27" FontSize="11" Padding="12,0"/>
+              <Button x:Name="LogBtn" Content="打开日志" Style="{DynamicResource GhostButton}" Height="27" FontSize="11" Padding="8,0" Margin="8,0,0,0"/>
             </WrapPanel>
           </StackPanel>
         </Border>
