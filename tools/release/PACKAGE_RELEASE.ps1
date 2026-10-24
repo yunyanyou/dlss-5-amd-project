@@ -785,6 +785,17 @@ Copy-Item -LiteralPath (Join-Path $root 'tools/install/xess-compat.ps1') -Destin
 Copy-Item -LiteralPath (Join-Path $root 'tools/install/proxy-probe.ps1') -Destination $stage -Force
 Copy-Item -LiteralPath (Join-Path $root 'tools/install/library-scan.ps1') -Destination $stage -Force
 Copy-Item -LiteralPath (Join-Path $root 'tools/install/install-capabilities.ps1') -Destination $stage -Force
+# Drag-and-drop installer: a thin WinForms shell over launcher-worker.ps1, plus the
+# frozen key table its look-code codec needs.
+Copy-Item -LiteralPath (Join-Path $root 'tools/quick-launcher.ps1') -Destination $stage -Force
+Copy-Item -LiteralPath (Join-Path $root 'tools/mz-keys.psd1') -Destination $stage -Force
+(@'
+@echo off
+setlocal
+cd /d "%~dp0"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0quick-launcher.ps1" %*
+if errorlevel 1 pause
+'@) | Set-Content -LiteralPath (Join-Path $stage 'OptiScaler快速安装.bat') -Encoding ASCII
 (@'
 @echo off
 setlocal
@@ -919,7 +930,7 @@ try {
             finally { $stream.Dispose(); $sha.Dispose() }
             if ($actual -ne $expectedEntries[$relative]) { throw "Archive checksum mismatch: $relative" }
         }
-        foreach ($required in @('OptiScaler.dll', 'LmxxfNrRuntime.dll', 'MochizukiNrRuntime.dll', 'OptiScaler.ini', 'Setup.ps1', 'Setup.bat', 'lmxxf-module-package.ps1', 'OptScalerNR.Launcher.exe', 'launcher-worker.ps1', 'proxy-probe.ps1', 'library-scan.ps1', 'install-capabilities.ps1', 'xess-compat.ps1', 'proxy-profiles.json', 'Licenses/OptiScaler-wiki-profiles.md') + @($expectedEntries.Keys)) {
+        foreach ($required in @('OptiScaler.dll', 'LmxxfNrRuntime.dll', 'MochizukiNrRuntime.dll', 'OptiScaler.ini', 'Setup.ps1', 'Setup.bat', 'lmxxf-module-package.ps1', 'OptScalerNR.Launcher.exe', 'launcher-worker.ps1', 'proxy-probe.ps1', 'library-scan.ps1', 'install-capabilities.ps1', 'xess-compat.ps1', 'proxy-profiles.json', 'quick-launcher.ps1', 'mz-keys.psd1', 'Licenses/OptiScaler-wiki-profiles.md') + @($expectedEntries.Keys)) {
             if (-not $seen.ContainsKey($required)) { throw "Package archive missing required component: $required" }
         }
     } finally {
