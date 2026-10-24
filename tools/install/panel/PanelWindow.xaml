@@ -500,7 +500,7 @@
         <StackPanel>
         <!-- 游戏卡：上游 HeroCard 的底子（深底 + 大图 + 渐变 + monogram），内容区自排：
              路径 → 大字游戏名 → 分组说明行（标签+内容）→ 底部横排按钮。文字多时向下扩展。 -->
-        <Border x:Name="HeroCard" Background="#101522" CornerRadius="18" MinHeight="150" ClipToBounds="True" Margin="0,0,0,12">
+        <Border x:Name="HeroCard" Background="#101522" CornerRadius="18" MinHeight="170" ClipToBounds="True" Margin="0,0,0,12">
           <Grid>
             <TextBlock x:Name="HeroMonogram" Text="N" FontSize="190" FontWeight="Black" Foreground="#26394C" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,-50,40,-50"/>
             <!-- 背景用 ImageBrush 而不是 Image 控件：画刷不参与布局测量，图片怎么放大都撑不高卡片 -->
@@ -517,10 +517,11 @@
         </Border>
 
         <!-- 兼容修复：结构与文案照抄上游“配置与运行库兼容诊断”区的 compat 部分 -->
-        <Border Style="{StaticResource Surface}" Padding="15,12" Margin="0,12,0,12">
+        <Border Style="{StaticResource Surface}" Padding="15,12" Margin="0,0,0,12">
           <StackPanel>
             <TextBlock Text="配置与运行库兼容诊断" Foreground="{DynamicResource ThemeMuted}" FontSize="11.5" Margin="0,0,0,10"/>
             <TextBlock x:Name="CompatSummary" TextWrapping="Wrap" Foreground="{DynamicResource ThemeMuted}" FontSize="10.5" Margin="0,0,0,9"/>
+            <TextBlock x:Name="CompatStatus" TextWrapping="Wrap" Foreground="{DynamicResource ThemeAccent}" FontSize="10.5" Margin="0,0,0,9"/>
             <WrapPanel Margin="0,0,0,4">
               <Button x:Name="CompatRepairBtn" Content="兼容修复" Style="{DynamicResource GhostButton}" Height="27" FontSize="11" IsEnabled="False"/>
               <Button x:Name="CompatRestoreBtn" Content="恢复原文件" Style="{DynamicResource GhostButton}" Height="27" FontSize="11" Margin="8,0,0,0" IsEnabled="False"/>

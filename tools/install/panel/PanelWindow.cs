@@ -35,9 +35,15 @@ namespace OptScalerNR.Launcher
         static int _refreshGeneration;
 
         // ---- 兼容修复：检查结果缓存 + 控件 ----
-        static TextBlock _compatSummary;
+        static TextBlock _compatSummary, _compatStatus;
         static Button _compatRepairBtn, _compatRestoreBtn, _compatHelpBtn;
         static CompatReport _compatReport;
+
+        // 本栏（兼容诊断）触发的运行消息显示在本栏，不再挤到分享栏的状态行。
+        static void CompatNote(string text)
+        {
+            if (_compatStatus != null) _compatStatus.Text = text ?? "";
+        }
 
         // 后台填充的扫描结果（FolderGameScanner 的最佳候选 + wiki 建议），按目录缓存。
         static FileInfo _gameExeCache;
@@ -131,6 +137,7 @@ namespace OptScalerNR.Launcher
             ((Button)_window.FindName("OptiBtn")).Click += (s, e) => InstallOptiPatcher();
             ((Button)_window.FindName("LogBtn")).Click += (s, e) => OpenLog();
             _compatSummary = (TextBlock)_window.FindName("CompatSummary");
+            _compatStatus = (TextBlock)_window.FindName("CompatStatus");
             _compatRepairBtn = (Button)_window.FindName("CompatRepairBtn");
             _compatRestoreBtn = (Button)_window.FindName("CompatRestoreBtn");
             _compatHelpBtn = (Button)_window.FindName("CompatHelpBtn");
@@ -578,7 +585,7 @@ namespace OptScalerNR.Launcher
         static void SetAsiPlugins(string value)
         {
             var ini = System.IO.Path.Combine(_dir, "OptiScaler.ini");
-            if (!File.Exists(ini)) { PanelStatus("目录里没有 OptiScaler.ini，无法写入 LoadAsiPlugins。"); return; }
+            if (!File.Exists(ini)) { CompatNote("目录里没有 OptiScaler.ini，无法写入 LoadAsiPlugins。"); return; }
             var text = File.ReadAllText(ini);
             if (System.Text.RegularExpressions.Regex.IsMatch(text, "(?m)^LoadAsiPlugins="))
                 text = System.Text.RegularExpressions.Regex.Replace(text, "(?m)^LoadAsiPlugins=.*$", "LoadAsiPlugins=" + value);
@@ -597,10 +604,10 @@ namespace OptScalerNR.Launcher
             if (answer != MessageBoxResult.Yes)
             {
                 SetAsiPlugins("auto");
-                PanelStatus("已跳过 OptiPatcher（LoadAsiPlugins=auto，插件不会加载）。");
+                CompatNote("已跳过 OptiPatcher（LoadAsiPlugins=auto，插件不会加载）。");
                 return;
             }
-            PanelStatus("正在下载 OptiPatcher...");
+            CompatNote("正在下载 OptiPatcher...");
             _window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
 
             string downloaded = null;
@@ -636,7 +643,7 @@ namespace OptScalerNR.Launcher
             }
             if (source == null)
             {
-                PanelStatus("OptiPatcher 下载失败，目录里也没有离线副本。");
+                CompatNote("OptiPatcher 下载失败，目录里也没有离线副本。");
                 return;
             }
 
@@ -646,9 +653,9 @@ namespace OptScalerNR.Launcher
                 if (!Directory.Exists(plugins)) Directory.CreateDirectory(plugins);
                 File.Copy(source, System.IO.Path.Combine(plugins, "OptiPatcher.asi"), true);
                 SetAsiPlugins("true");
-                PanelStatus("OptiPatcher 安装完成。");
+                CompatNote("OptiPatcher 安装完成。");
             }
-            catch (Exception ex) { PanelStatus("安装失败：" + ex.Message); }
+            catch (Exception ex) { CompatNote("安装失败：" + ex.Message); }
             finally
             {
                 if (source == downloaded)
@@ -663,7 +670,7 @@ namespace OptScalerNR.Launcher
         {
             var log = System.IO.Path.Combine(_dir, "OptiScaler.log");
             if (File.Exists(log)) { try { Process.Start(new ProcessStartInfo(log) { UseShellExecute = true }); } catch { } }
-            else PanelStatus("还没有日志（进过一次游戏才会有 OptiScaler.log）。");
+            else CompatNote("还没有日志（进过一次游戏才会有 OptiScaler.log）。");
         }
 
         // ---------------------------------------------------------------- compat repair
@@ -870,10 +877,10 @@ namespace OptScalerNR.Launcher
             DialogTheme.SetContent(dialog, panel);
             if (dialog.ShowDialog() != true) return;
             var ids = string.Join(",", (string[])dialog.Tag);
-            PanelStatus("正在备份并修复配套库…");
+            CompatNote("正在备份并修复配套库…");
             RunCompatScript("Repair", ids, delegate(bool ok, string message)
             {
-                PanelStatus(message);
+                CompatNote(message);
                 RefreshCompat();
             });
         }
@@ -902,10 +909,10 @@ namespace OptScalerNR.Launcher
             DialogTheme.SetContent(dialog, panel);
             if (dialog.ShowDialog() != true) return;
             var keepChosen = dialog.Uid == "keep";
-            PanelStatus(keepChosen ? "正在结束修复记录…" : "正在恢复原文件…");
+            CompatNote(keepChosen ? "正在结束修复记录…" : "正在恢复原文件…");
             RunCompatScript(keepChosen ? "Keep" : "Restore", null, delegate(bool ok, string message)
             {
-                PanelStatus(message);
+                CompatNote(message);
                 RefreshCompat();
             });
         }
