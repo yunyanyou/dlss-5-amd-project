@@ -161,14 +161,24 @@ namespace OptScalerNR.Launcher
                     _gameExeDir = dir;
                 }
                 var advice = AdviceHitFor(dir);
+                // hero 背景：本地封面图优先（Steam library_hero / header / 启动图），
+                // 没有就用扫描到的游戏 EXE 的 Shell 图标。全部离线，不联网拉图。
                 var hero = FindHeroImage(dir);
+                var heroFromIcon = false;
+                if (hero == null && _gameExeCache != null && File.Exists(_gameExeCache.FullName))
+                {
+                    hero = _gameExeCache.FullName;
+                    heroFromIcon = true;
+                }
                 _window.Dispatcher.BeginInvoke(new Action(delegate
                 {
                     if (generation != _refreshGeneration || !string.Equals(_dir, dir, StringComparison.OrdinalIgnoreCase)) return;
                     RenderNow();
-                    LocalArtwork.Load(_heroArtwork, hero, 1000, false, true, delegate(System.Windows.Media.ImageSource image)
+                    LocalArtwork.Load(_heroArtwork, hero, heroFromIcon ? 256 : 1000, heroFromIcon, !heroFromIcon, delegate(System.Windows.Media.ImageSource image)
                     {
                         _heroBgImage.Source = image;
+                        // 图标放大铺底会糊，压低不透明度当作水印；本地图保持上游的 0.75。
+                        _heroBgImage.Opacity = image == null ? 0.75 : heroFromIcon ? 0.5 : 0.75;
                     });
                 }));
             });
@@ -226,7 +236,9 @@ namespace OptScalerNR.Launcher
             var exe = GameExe();
             var scanned = string.Equals(_gameExeDir, _dir, StringComparison.OrdinalIgnoreCase);
             _heroKicker.Text = _dir;
-            var title = advice != null && advice.WikiName != null ? advice.WikiName : Path.GetFileName(_dir.TrimEnd('\\', '/'));
+            var title = advice != null
+                ? (advice.WikiName ?? FirstProfileName(advice.Profile)) : null;
+            if (string.IsNullOrEmpty(title)) title = Path.GetFileName(_dir.TrimEnd('\\', '/'));
             _heroTitle.Text = title;
             _heroMonogram.Text = string.IsNullOrEmpty(title) ? "N"
                 : title.Substring(0, 1).ToUpperInvariant();
@@ -242,9 +254,9 @@ namespace OptScalerNR.Launcher
             {
                 AddHeroFact("Wiki", WikiFact(advice), 1);
                 AddHeroFact("OptiPatcher", OptiFact(advice), 2);
-                if (!string.IsNullOrEmpty(advice.ProfileNotes)) AddHeroFact("备注", advice.ProfileNotes, 3);
             }
             _heroBgImage.Source = null;
+            _heroBgImage.Opacity = 0.75;
 
             _bottomLed.Fill = current != null ? LauncherTheme.Brush("ThemeSuccess") : LauncherTheme.Brush("ThemeWarning");
             _bottomStatus.Text = current != null
@@ -287,14 +299,12 @@ namespace OptScalerNR.Launcher
                 System.Windows.Media.Color.FromRgb(0x2A, 0x3A, 0x4F),
                 System.Windows.Media.Color.FromRgb(0x23, 0x40, 0x2F),
                 System.Windows.Media.Color.FromRgb(0x46, 0x32, 0x1F),
-                System.Windows.Media.Color.FromRgb(0x3A, 0x2F, 0x45),
             }[palette];
             var fore = new[]
             {
                 System.Windows.Media.Color.FromRgb(0xA9, 0xC4, 0xE8),
                 System.Windows.Media.Color.FromRgb(0x9B, 0xD8, 0xB4),
                 System.Windows.Media.Color.FromRgb(0xE8, 0xC6, 0x9A),
-                System.Windows.Media.Color.FromRgb(0xCB, 0xB8, 0xE8),
             }[palette];
             var badgeBack = new System.Windows.Media.SolidColorBrush(back); badgeBack.Freeze();
             var badgeFore = new System.Windows.Media.SolidColorBrush(fore); badgeFore.Freeze();
@@ -1320,16 +1330,15 @@ namespace OptScalerNR.Launcher
         sealed class PanelProxyProfile
         {
             [System.Runtime.Serialization.DataMember(Name = "id")] public string Id;
+            [System.Runtime.Serialization.DataMember(Name = "names")] public string[] Names;
             [System.Runtime.Serialization.DataMember(Name = "pathSegments")] public string[] PathSegments;
             [System.Runtime.Serialization.DataMember(Name = "preferred")] public string Preferred;
             [System.Runtime.Serialization.DataMember(Name = "alternatives")] public string[] Alternatives;
-            [System.Runtime.Serialization.DataMember(Name = "notesZh")] public string NotesZh;
         }
 
         sealed class WikiAdvice
         {
             public PanelProxyProfile Profile;
-            public string ProfileNotes;
             public string WikiName;
             public string[] WikiProxies;
             public string OptiDlss, OptiFg;
@@ -1529,12 +1538,6 @@ namespace OptScalerNR.Launcher
                 GetWikiEntry(advice, dir);
                 GetOptiSupport(advice, dir);
             }
-            if (advice.Profile != null && !string.IsNullOrEmpty(advice.Profile.NotesZh))
-            {
-                var notes = advice.Profile.NotesZh;
-                if (notes.Length > 200) notes = notes.Substring(0, 200).TrimEnd() + "…";
-                advice.ProfileNotes = notes;
-            }
             AdviceHitCache = advice;
             return advice;
         }
@@ -1608,6 +1611,14 @@ namespace OptScalerNR.Launcher
                 }
             }
             catch { return false; }
+        }
+
+        static string FirstProfileName(PanelProxyProfile profile)
+        {
+            if (profile == null || profile.Names == null) return null;
+            foreach (var name in profile.Names)
+                if (!string.IsNullOrWhiteSpace(name)) return name.Trim();
+            return null;
         }
 
         static void OpenUrl(string url)
