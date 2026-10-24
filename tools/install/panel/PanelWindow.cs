@@ -33,7 +33,6 @@ namespace OptScalerNR.Launcher
         static IniProfiles _iniProfiles;
         static ComboBox _iniProfileCombo;
         static TextBox _iniSearchBox;
-        static CheckBox _iniPluginToggle;
         static TextBlock _iniProfileStatus;
         static Button _iniSaveButton, _iniQuickSaveButton, _iniImportButton, _iniRenameButton, _iniDeleteButton, _iniApplyButton, _iniFolderButton;
         static string[] _iniProfileNames = new string[0];
@@ -132,8 +131,8 @@ namespace OptScalerNR.Launcher
             _list.Children.Clear();
             var current = CurrentInjection();
             var occupied = Occupied();
-            var profile = ProfileHit();
-            var recommend = profile != null ? profile.Preferred : null;
+            var advice = AdviceHit();
+            var recommend = advice.Recommended;
 
             foreach (var name in Candidates)
             {
@@ -176,16 +175,26 @@ namespace OptScalerNR.Launcher
             }
 
             var exe = GameExe();
-            _gameText.Text = exe != null ? "游戏　" + exe.Name : "游戏　未找到 EXE";
-            if (profile == null)
-                _wikiText.Text = "Wiki　无此游戏记录";
-            else if (string.IsNullOrEmpty(profile.Preferred))
-                _wikiText.Text = "Wiki　" + profile.GameName + "（未注明 DLL）";
+            _gameText.Text = exe != null ? "游戏程序：" + exe.Name : "游戏程序：未找到（把游戏 EXE 拖进来可指定）";
+            if (advice.Profile != null)
+            {
+                var alt = advice.Profile.Alternatives != null ? string.Join(" / ", advice.Profile.Alternatives) : "";
+                _wikiText.Text = "Wiki 档案：" + advice.Profile.Id + " → 首选 " + advice.Profile.Preferred
+                    + (alt.Length > 0 ? "；备选 " + alt : "");
+            }
+            else if (advice.WikiName != null)
+            {
+                _wikiText.Text = advice.WikiProxies != null && advice.WikiProxies.Length > 0
+                    ? "Wiki 兼容列表：" + advice.WikiName + " → " + string.Join(" / ", advice.WikiProxies)
+                    : "Wiki 兼容列表：" + advice.WikiName + "（未注明 DLL，可任选尝试）";
+            }
             else
-                _wikiText.Text = "Wiki　" + profile.GameName + " → 首选 " + profile.Preferred
-                    + (profile.Alternatives != null && profile.Alternatives.Length > 0
-                        ? "　备选 " + string.Join(" / ", profile.Alternatives) : string.Empty);
-            _optiText.Text = HasOptiPatcher() ? "OptiPatcher　已安装" : "OptiPatcher　未安装";
+            {
+                _wikiText.Text = "Wiki 档案：无此游戏记录";
+            }
+            _optiText.Text = advice.OptiDlss != null
+                ? "OptiPatcher支持：Wiki 收录，支持 DLSS " + advice.OptiDlss + " / DLSS-FG " + advice.OptiFg
+                : "OptiPatcher支持：Wiki 未收录此游戏";
 
             _bottomLed.Fill = current != null ? LauncherTheme.Brush("ThemeSuccess") : LauncherTheme.Brush("ThemeWarning");
             _bottomStatus.Text = current != null
@@ -426,6 +435,15 @@ namespace OptScalerNR.Launcher
 
         static void InstallOptiPatcher()
         {
+            // 命令行版流程：只有明确的 是/否 才生效；否 = 插件留在磁盘但不再加载（auto 读作 false）。
+            var answer = DialogTheme.Show(_window, "是否安装 OptiPatcher（DLSS 伪装增强）？", "OptiPatcher",
+                MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (answer != MessageBoxResult.Yes)
+            {
+                SetAsiPlugins("auto");
+                PanelStatus("已跳过 OptiPatcher（LoadAsiPlugins=auto，插件不会加载）。");
+                return;
+            }
             PanelStatus("正在下载 OptiPatcher...");
             _window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
 
@@ -507,7 +525,6 @@ namespace OptScalerNR.Launcher
             _iniInitialized = true;
             _iniProfileCombo = _window.FindName("IniProfileCombo") as ComboBox;
             _iniSearchBox = _window.FindName("IniSearchBox") as TextBox;
-            _iniPluginToggle = _window.FindName("PluginToggle") as CheckBox;
             _iniProfileStatus = _window.FindName("IniProfileStatus") as TextBlock;
             _iniSaveButton = _window.FindName("IniSaveButton") as Button;
             _iniQuickSaveButton = _window.FindName("IniQuickSaveButton") as Button;
@@ -521,11 +538,6 @@ namespace OptScalerNR.Launcher
             catch (Exception ex) { IniFailure(ex); }
             if (_iniProfileCombo != null) _iniProfileCombo.SelectionChanged += delegate { IniSelectionChanged(); };
             if (_iniSearchBox != null) _iniSearchBox.TextChanged += delegate { if (!_iniUpdating) PopulateIniProfiles(); };
-            if (_iniPluginToggle != null)
-            {
-                _iniPluginToggle.Checked += delegate { IniPluginsChanged(); };
-                _iniPluginToggle.Unchecked += delegate { IniPluginsChanged(); };
-            }
             if (_iniSaveButton != null) _iniSaveButton.Click += delegate { PromptSaveIniProfile(); };
             if (_iniQuickSaveButton != null) _iniQuickSaveButton.Click += delegate {
                 var game = CaptureIniGame();
@@ -550,8 +562,7 @@ namespace OptScalerNR.Launcher
         static void RefreshProfilesLanguage()
         {
             SetLabelText("IniHeading", "OptiScaler.ini 共享配置（整文件）");
-            SetLabelText("IniSelectHint", "选择配置后点击“应用所选配置”。仅更改插件时请选择“当前游戏 INI”。");
-            SetLabelText("PluginHeading", "第三方插件");
+            SetLabelText("IniSelectHint", "选择配置后点击“应用所选配置”。");
             if (_iniSaveButton != null) _iniSaveButton.Content = "保存…";
             if (_iniQuickSaveButton != null) _iniQuickSaveButton.Content = "快速保存";
             if (_iniImportButton != null) _iniImportButton.Content = "导入…";
@@ -560,10 +571,6 @@ namespace OptScalerNR.Launcher
             if (_iniApplyButton != null) _iniApplyButton.Content = "应用所选配置";
             if (_iniFolderButton != null) _iniFolderButton.Content = "配置文件夹";
             if (_iniSearchBox != null) _iniSearchBox.ToolTip = "搜索共享配置";
-            if (_iniPluginToggle != null) {
-                _iniPluginToggle.Content = "加载 ASI 插件";
-                _iniPluginToggle.ToolTip = "随“应用所选配置”写入 [Plugins] LoadAsiPlugins。";
-            }
             RefreshShareCodeLanguage();
             PopulateIniProfiles();
             RenderIniStatus();
@@ -590,7 +597,6 @@ namespace OptScalerNR.Launcher
                 _iniStatusDetail = "";
                 if (_iniProfileCombo != null) { _iniProfileCombo.SelectedIndex = -1; _iniProfileCombo.Items.Clear(); }
                 if (_iniSearchBox != null) _iniSearchBox.Text = "";
-                if (_iniPluginToggle != null) _iniPluginToggle.IsChecked = false;
                 if (_iniProfiles != null)
                 {
                     _iniProfileNames = _iniProfiles.List();
@@ -600,7 +606,6 @@ namespace OptScalerNR.Launcher
                         var saved = _iniProfiles.GetSelection(game.Key);
                         _iniSelectedProfile = FindIniName(saved);
                         _iniPluginsEnabled = _iniProfiles.GetPluginsForGame(game.Key, game.Directory);
-                        if (_iniPluginToggle != null) _iniPluginToggle.IsChecked = _iniPluginsEnabled;
                     }
                 }
             }
@@ -629,7 +634,6 @@ namespace OptScalerNR.Launcher
             if (_iniDeleteButton != null) _iniDeleteButton.IsEnabled = selected;
             if (_iniApplyButton != null) _iniApplyButton.IsEnabled = hasIni;
             if (_iniFolderButton != null) _iniFolderButton.IsEnabled = available;
-            if (_iniPluginToggle != null) _iniPluginToggle.IsEnabled = hasGame;
         }
 
         static bool IniBusy() { return _panelBusy; }
@@ -677,7 +681,7 @@ namespace OptScalerNR.Launcher
             {
                 var query = _iniSearchBox == null ? "" : _iniSearchBox.Text.Trim();
                 _iniProfileCombo.Items.Clear();
-                var current = new ComboBoxItem { Content = "当前游戏 INI（仅插件设置）", Tag = "" };
+                var current = new ComboBoxItem { Content = "当前游戏 INI", Tag = "" };
                 _iniProfileCombo.Items.Add(current);
                 ComboBoxItem chosen = string.IsNullOrEmpty(_iniSelectedProfile) ? current : null;
                 foreach (var name in _iniProfileNames)
@@ -709,24 +713,6 @@ namespace OptScalerNR.Launcher
             }
             catch (Exception ex) { PopulateIniProfiles(); IniFailure(ex); }
             RefreshProfileActions();
-        }
-        static void IniPluginsChanged()
-        {
-            if (_iniUpdating || _iniPluginToggle == null) return;
-            var game = CaptureIniGame();
-            var enabled = _iniPluginToggle.IsChecked == true;
-            if (CanUseIniGame(game))
-            {
-                try {
-                    _iniProfiles.SetPlugins(game.Key, enabled);
-                    _iniPluginsEnabled = enabled;
-                    SetIniStatus("pending", "");
-                    return;
-                } catch (Exception ex) { IniFailure(ex); }
-            }
-            _iniUpdating = true;
-            try { _iniPluginToggle.IsChecked = _iniPluginsEnabled; }
-            finally { _iniUpdating = false; }
         }
 
         static string PromptIniName(string title, string initial)
@@ -1243,22 +1229,85 @@ namespace OptScalerNR.Launcher
             catch { return null; }
         }
 
-        static bool HasOptiPatcher()
+        // ---- wiki 检测：照搬 tools/proxy-switch.ps1 的两级检测 + OptiPatcher 支持列表 ----
+
+        [System.Runtime.Serialization.DataContract]
+        sealed class PanelProxyDoc
         {
-            return File.Exists(System.IO.Path.Combine(_dir, "plugins", "OptiPatcher.asi"))
-                || File.Exists(System.IO.Path.Combine(_dir, "OptiScaler", "plugins", "OptiPatcher.asi"));
+            [System.Runtime.Serialization.DataMember(Name = "profiles")] public PanelProxyProfile[] Profiles;
+        }
+        [System.Runtime.Serialization.DataContract]
+        sealed class PanelProxyProfile
+        {
+            [System.Runtime.Serialization.DataMember(Name = "id")] public string Id;
+            [System.Runtime.Serialization.DataMember(Name = "pathSegments")] public string[] PathSegments;
+            [System.Runtime.Serialization.DataMember(Name = "preferred")] public string Preferred;
+            [System.Runtime.Serialization.DataMember(Name = "alternatives")] public string[] Alternatives;
         }
 
-        sealed class ProfileEntry
+        sealed class WikiAdvice
         {
-            public string GameName;
-            public string Preferred;
-            public string[] Alternatives;
+            public PanelProxyProfile Profile;
+            public string WikiName;
+            public string[] WikiProxies;
+            public string OptiDlss, OptiFg;
+            public string Recommended
+            {
+                get
+                {
+                    if (Profile != null && !string.IsNullOrEmpty(Profile.Preferred)) return Profile.Preferred;
+                    if (WikiProxies != null && WikiProxies.Length > 0) return WikiProxies[0];
+                    return null;
+                }
+            }
         }
 
+        const string ProfileCatalogUrl = "https://raw.githubusercontent.com/TheAutomatic/dlss-5-amd-project/main/assets/compatibility/proxy-profiles.json";
         const string WikiUrl = "https://raw.githubusercontent.com/wiki/optiscaler/OptiScaler/Compatibility-List.md";
+        const string OptiSupportUrl = "https://raw.githubusercontent.com/optiscaler/OptiPatcher/main/GameSupport.md";
 
-        // Folder segments that say nothing about which game it is.
+        // Remote only for the catalogue: nothing is written to disk, and the copy embedded in
+        // this EXE is the fallback when the network is unavailable - same as proxy-switch.ps1.
+        static PanelProxyDoc LoadProfileCatalog()
+        {
+            var text = Fetch(ProfileCatalogUrl, 5000);
+            if (!string.IsNullOrEmpty(text))
+            {
+                try { return JsonUtil.Read<PanelProxyDoc>(text); } catch { }
+            }
+            try
+            {
+                using (var stream = typeof(PanelWindow).Assembly.GetManifestResourceStream("OptiScalerPanel.proxy-profiles.json"))
+                using (var reader = new StreamReader(stream))
+                    return JsonUtil.Read<PanelProxyDoc>(reader.ReadToEnd());
+            }
+            catch { return null; }
+        }
+
+        // Profiles identify a game by (case-insensitive) folder-name segment containment, the
+        // same rule as proxy-switch.ps1's Find-Profile: store launchers append the app id to
+        // the folder ("Wuthering Waves(2002137)"), so containment is required; short segments
+        // are skipped to avoid false hits.
+        static PanelProxyProfile FindProfileIn(PanelProxyDoc doc, string folder)
+        {
+            if (doc == null || doc.Profiles == null) return null;
+            var segments = folder.Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var profile in doc.Profiles)
+            {
+                if (profile == null || profile.PathSegments == null) continue;
+                foreach (var segment in profile.PathSegments)
+                {
+                    var needle = segment;
+                    if (string.IsNullOrEmpty(needle) || needle.Length < 4) continue;
+                    foreach (var actual in segments)
+                        if (actual.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0) return profile;
+                }
+            }
+            return null;
+        }
+
+        // Folder segments that say nothing about which game it is; matching on them would
+        // hit unrelated rows (a folder called "game" would match any title containing it).
         static readonly string[] GenericSegments =
         {
             "game", "games", "bin", "binaries", "win64", "win32", "x64", "x86", "client",
@@ -1277,6 +1326,15 @@ namespace OptScalerNR.Launcher
             return t;
         }
 
+        static string[] GameNameCandidates(string folder)
+        {
+            return folder.Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => System.Text.RegularExpressions.Regex.Replace(s, @"\s*\(\d+\)\s*$", string.Empty))
+                .Select(Normalize)
+                .Where(s => s.Length >= 4 && Array.IndexOf(GenericSegments, s) < 0)
+                .ToArray();
+        }
+
         static string Fetch(string url, int timeoutMs)
         {
             try
@@ -1291,26 +1349,13 @@ namespace OptScalerNR.Launcher
             catch { return null; }
         }
 
-        static ProfileEntry ProfileHitCache;
-        static string ProfileHitDir;
-
-        static ProfileEntry ProfileHit()
+        // The catalogue only covers a handful of games, while the OptiScaler wiki lists every
+        // tested one. Pull the proxy names out of the note column when no profile matched.
+        static void GetWikiEntry(WikiAdvice advice, string folder)
         {
-            if (ProfileHitCache != null && string.Equals(ProfileHitDir, _dir, StringComparison.OrdinalIgnoreCase))
-                return ProfileHitCache;
-            ProfileHitDir = _dir;
-            ProfileHitCache = null;
-
-            var names = _dir.Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries)
-                .Select(s => System.Text.RegularExpressions.Regex.Replace(s, @"\s*\(\d+\)\s*$", string.Empty))
-                .Select(Normalize)
-                .Where(s => s.Length >= 4 && Array.IndexOf(GenericSegments, s) < 0)
-                .ToArray();
-            if (names.Length == 0) return null;
-
             var text = Fetch(WikiUrl, 10000);
-            if (string.IsNullOrEmpty(text)) return null;
-
+            if (string.IsNullOrEmpty(text)) return;
+            var names = GameNameCandidates(folder);
             var rxLink = new System.Text.RegularExpressions.Regex(@"\[([^\]]+)\]\([^)]*\)");
             var rxDll = new System.Text.RegularExpressions.Regex(@"(?i)\b(dxgi|winmm|d3d12|winhttp|wininet|dbghelp|version|d3d11|opengl32)\.dll\b");
 
@@ -1342,15 +1387,63 @@ namespace OptScalerNR.Launcher
                     .Distinct()
                     .ToArray();
 
-                ProfileHitCache = new ProfileEntry
-                {
-                    GameName = name,
-                    Preferred = dlls.Length > 0 ? dlls[0] : null,
-                    Alternatives = dlls.Skip(1).ToArray()
-                };
-                return ProfileHitCache;
+                // Keep the entry even without a DLL: "listed but no proxy recorded" is more
+                // useful than "no record at all".
+                advice.WikiName = name;
+                advice.WikiProxies = dlls;
+                return;
             }
-            return null;
+        }
+
+        // OptiPatcher support list. Upstream decides at runtime: the plugin's PatchResult()
+        // returns true and OptiScaler then disables Dxgi/Vulkan spoofing itself. The table is
+        // documentation only, so this is an advisory check, not a guarantee.
+        static void GetOptiSupport(WikiAdvice advice, string folder)
+        {
+            var text = Fetch(OptiSupportUrl, 10000);
+            if (string.IsNullOrEmpty(text)) return;
+            var names = GameNameCandidates(folder);
+            foreach (var line in text.Split('\n'))
+            {
+                var trimmed = line.Trim();
+                if (!trimmed.StartsWith("|", StringComparison.Ordinal)) continue;
+                var cells = trimmed.Trim('|').Split('|');
+                if (cells.Length < 4) continue;
+                var name = cells[0].Trim();
+                // Skip the table header and the commented-out "GAME NAME" template row.
+                if (System.Text.RegularExpressions.Regex.IsMatch(name, @"(?i)^game(\s+name)?$") ||
+                    System.Text.RegularExpressions.Regex.IsMatch(name, @"^[-:\s]+$")) continue;
+                var nameNorm = Normalize(name);
+                if (nameNorm.Length < 4) continue;
+                var hit = false;
+                foreach (var n in names)
+                {
+                    if (n.Contains(nameNorm) || nameNorm.Contains(n)) { hit = true; break; }
+                }
+                if (!hit) continue;
+                advice.OptiDlss = cells[1].Trim();
+                advice.OptiFg = cells[2].Trim();
+                return;
+            }
+        }
+
+        static WikiAdvice AdviceHitCache;
+        static string AdviceHitDir;
+
+        static WikiAdvice AdviceHit()
+        {
+            if (AdviceHitCache != null && string.Equals(AdviceHitDir, _dir, StringComparison.OrdinalIgnoreCase))
+                return AdviceHitCache;
+            AdviceHitDir = _dir;
+            var advice = new WikiAdvice();
+            advice.Profile = FindProfileIn(LoadProfileCatalog(), _dir);
+            if (advice.Profile == null)
+            {
+                GetWikiEntry(advice, _dir);
+                GetOptiSupport(advice, _dir);
+            }
+            AdviceHitCache = advice;
+            return advice;
         }
 
         static void OpenUrl(string url)
