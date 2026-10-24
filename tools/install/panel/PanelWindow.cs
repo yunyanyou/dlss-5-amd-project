@@ -176,25 +176,9 @@ namespace OptScalerNR.Launcher
                     RenderNow();
                     LocalArtwork.Load(_heroArtwork, hero, heroFromIcon ? 256 : 1000, heroFromIcon, !heroFromIcon, delegate(System.Windows.Media.ImageSource image)
                     {
+                        // 统一 UniformToFill 铺满：只在卡片现有空间内放大裁剪，不撑高卡片，
+                        // 超出部分被圆角边框裁掉，就是“放大 + 边缘自然消隐”的效果。
                         _heroBgImage.Source = image;
-                        if (heroFromIcon)
-                        {
-                            // 图标按原始大小贴在右侧，不拉伸铺底；藏掉字母水印避免重叠。
-                            _heroBgImage.Stretch = Stretch.None;
-                            _heroBgImage.HorizontalAlignment = HorizontalAlignment.Right;
-                            _heroBgImage.VerticalAlignment = VerticalAlignment.Center;
-                            _heroBgImage.Margin = new Thickness(0, 0, 40, 0);
-                            _heroBgImage.Opacity = 1.0;
-                            _heroMonogram.Visibility = image != null ? Visibility.Collapsed : Visibility.Visible;
-                        }
-                        else
-                        {
-                            _heroBgImage.Stretch = Stretch.UniformToFill;
-                            _heroBgImage.HorizontalAlignment = HorizontalAlignment.Stretch;
-                            _heroBgImage.VerticalAlignment = VerticalAlignment.Stretch;
-                            _heroBgImage.Margin = new Thickness(0);
-                            _heroBgImage.Opacity = 0.75;
-                        }
                     });
                 }));
             });
