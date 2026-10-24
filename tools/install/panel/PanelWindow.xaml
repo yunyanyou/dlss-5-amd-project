@@ -3,8 +3,8 @@
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:local="clr-namespace:OptScalerNR.Launcher;assembly=OptiScalerPanel"
         Title="OptiScaler代理切换"
-        Width="1150" Height="620"
-        MinWidth="1020" MinHeight="620"
+        Width="900" Height="620"
+        MinWidth="900" MinHeight="620"
         Background="{DynamicResource ThemeBackground}"
         Foreground="{DynamicResource ThemeInk}"
         FontFamily="Segoe UI, Microsoft YaHei UI" FontSize="13"
@@ -475,12 +475,10 @@
       </DockPanel>
     </Border>
 
-    <!-- 主体：左注入列表 240 + 间距 + 中兼容修复 230 + 间距 + 右内容 -->
+    <!-- 主体：左注入列表 240 + 间距 + 右内容（游戏卡 / 兼容修复 / ini 共享配置） -->
     <Grid Margin="16">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="240"/>
-        <ColumnDefinition Width="14"/>
-        <ColumnDefinition Width="230"/>
         <ColumnDefinition Width="14"/>
         <ColumnDefinition Width="*"/>
       </Grid.ColumnDefinitions>
@@ -498,35 +496,7 @@
         </DockPanel>
       </Border>
 
-      <!-- 兼容修复：调包内 xess-compat 事务库替换游戏自带的旧配套运行库 -->
-      <Border Grid.Column="2" Style="{StaticResource Surface}" Padding="10">
-        <DockPanel>
-          <StackPanel DockPanel.Dock="Top" Margin="2,0,2,8">
-            <TextBlock Text="兼容修复" FontWeight="SemiBold" FontSize="12"/>
-            <TextBlock Text="帧生成 / XeSS / FSR 开不了或闪退时，替换游戏自带的旧配套库（先备份，可随时恢复）"
-                       Foreground="{DynamicResource ThemeMuted}" FontSize="10.5" TextWrapping="Wrap"
-                       Margin="0,3,0,0"/>
-          </StackPanel>
-          <StackPanel DockPanel.Dock="Bottom">
-            <Button x:Name="CompatRepairBtn" Content="备份并修复" Style="{DynamicResource GhostButton}"
-                    Height="28" Margin="0,0,0,6"/>
-            <Button x:Name="CompatRestoreBtn" Content="恢复原文件" Style="{DynamicResource GhostButton}"
-                    Height="28" Margin="0,0,0,6"/>
-            <Button x:Name="CompatKeepBtn" Content="保留当前并结束" Style="{DynamicResource GhostButton}"
-                    Height="26"/>
-          </StackPanel>
-          <ScrollViewer VerticalScrollBarVisibility="Auto">
-            <StackPanel>
-              <TextBlock x:Name="CompatSummary" Foreground="{DynamicResource ThemeMuted}" FontSize="10.5"
-                         TextWrapping="Wrap" Margin="0,2,0,8"/>
-              <Button x:Name="CompatDetailBtn" Content="查看各组状态…" Style="{DynamicResource GhostButton}"
-                      Height="26" HorizontalAlignment="Left"/>
-            </StackPanel>
-          </ScrollViewer>
-        </DockPanel>
-      </Border>
-
-      <ScrollViewer Grid.Column="4" VerticalScrollBarVisibility="Auto" Focusable="False" IsTabStop="False" FocusVisualStyle="{x:Null}">
+      <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" Focusable="False" IsTabStop="False" FocusVisualStyle="{x:Null}">
         <StackPanel>
         <!-- 游戏卡：上游 HeroCard 的底子（深底 + 大图 + 渐变 + monogram），内容区自排：
              路径 → 大字游戏名 → 分组说明行（标签+内容）→ 底部横排按钮。文字多时向下扩展。 -->
@@ -548,6 +518,19 @@
             </StackPanel>
             <ProgressBar x:Name="HeroProgress" Height="3" VerticalAlignment="Bottom" Foreground="{DynamicResource ThemeAccent}" Background="#30405060" BorderThickness="0"/>
           </Grid>
+        </Border>
+
+        <!-- 兼容修复：结构与文案照抄上游“配置与运行库兼容诊断”区的 compat 部分 -->
+        <Border Style="{StaticResource Surface}" Padding="15,12" Margin="0,12,0,12">
+          <StackPanel>
+            <TextBlock Text="配置与运行库兼容诊断" Foreground="{DynamicResource ThemeMuted}" FontSize="11.5" Margin="0,0,0,10"/>
+            <TextBlock x:Name="CompatSummary" TextWrapping="Wrap" Foreground="{DynamicResource ThemeMuted}" FontSize="10.5" Margin="0,0,0,9"/>
+            <WrapPanel Margin="0,0,0,4">
+              <Button x:Name="CompatRepairBtn" Content="兼容修复" Style="{DynamicResource GhostButton}" Height="27" FontSize="11" IsEnabled="False"/>
+              <Button x:Name="CompatRestoreBtn" Content="恢复原文件" Style="{DynamicResource GhostButton}" Height="27" FontSize="11" Margin="8,0,0,0" IsEnabled="False"/>
+              <Button x:Name="CompatHelpBtn" Content="?" Style="{DynamicResource GhostButton}" Width="27" Height="27" Padding="0" Margin="8,0,0,0"/>
+            </WrapPanel>
+          </StackPanel>
         </Border>
 
         <!-- ini 共享配置卡片：逐行照搬上游 MainWindow 的同名区块 -->

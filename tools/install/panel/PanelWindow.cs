@@ -35,7 +35,7 @@ namespace OptScalerNR.Launcher
 
         // ---- 兼容修复：检查结果缓存 + 控件 ----
         static TextBlock _compatSummary;
-        static Button _compatRepairBtn, _compatRestoreBtn, _compatKeepBtn, _compatDetailBtn;
+        static Button _compatRepairBtn, _compatRestoreBtn, _compatHelpBtn;
         static CompatReport _compatReport;
 
         // 后台填充的扫描结果（FolderGameScanner 的最佳候选 + wiki 建议），按目录缓存。
@@ -131,12 +131,10 @@ namespace OptScalerNR.Launcher
             _compatSummary = (TextBlock)_window.FindName("CompatSummary");
             _compatRepairBtn = (Button)_window.FindName("CompatRepairBtn");
             _compatRestoreBtn = (Button)_window.FindName("CompatRestoreBtn");
-            _compatKeepBtn = (Button)_window.FindName("CompatKeepBtn");
-            _compatDetailBtn = (Button)_window.FindName("CompatDetailBtn");
+            _compatHelpBtn = (Button)_window.FindName("CompatHelpBtn");
             if (_compatRepairBtn != null) _compatRepairBtn.Click += delegate { CompatRepair(); };
             if (_compatRestoreBtn != null) _compatRestoreBtn.Click += delegate { CompatRestore(); };
-            if (_compatKeepBtn != null) _compatKeepBtn.Click += delegate { CompatKeep(); };
-            if (_compatDetailBtn != null) _compatDetailBtn.Click += delegate { CompatDetail(); };
+            if (_compatHelpBtn != null) _compatHelpBtn.Click += delegate { CompatHelp(); };
             InitProfiles();
 
             _window.DragOver += (s, e) =>
@@ -661,29 +659,39 @@ namespace OptScalerNR.Launcher
         }
 
         // ---------------------------------------------------------------- compat repair
-        // 上游“兼容修复”的只读检查在面板里做（哈希对比），修复/恢复/保留全部交给包内
-        // xess-compat.ps1 的事务逻辑（备份 journal、原子替换、自动回滚），不重复造轮子。
+        // 上游“兼容修复”：面板做只读检查（哈希对比），修复/恢复/保留交给包内 xess-compat.ps1
+        // 的事务逻辑（备份 journal、原子替换、自动回滚）。布局、文案、对话框照抄上游。
         static readonly string[][] CompatGroups =
         {
-            new[] { "sr", "XeSS 超分", "libxess.dll" },
-            new[] { "dx11", "XeSS DX11", "libxess_dx11.dll" },
-            new[] { "fg", "XeSS 帧生成", "libxess_fg.dll", "libxell.dll" },
-            new[] { "fsr_fg", "FSR 帧生成", "amd_fidelityfx_framegeneration_dx12.dll" },
-            new[] { "fsr_upscaler", "FSR 超分", "amd_fidelityfx_upscaler_dx12.dll" },
-            new[] { "fsr_loader", "FSR 加载器", "amd_fidelityfx_loader_dx12.dll" },
-            new[] { "fsr_vk", "FSR Vulkan", "amd_fidelityfx_vk.dll" },
+            new[] { "sr", "XeSS 超分（DX12 / Vulkan）", "libxess.dll" },
+            new[] { "dx11", "XeSS 超分（DX11）", "libxess_dx11.dll" },
+            new[] { "fg", "XeSS 插帧 + XeLL（配套替换）", "libxess_fg.dll", "libxell.dll" },
+            new[] { "fsr_fg", "AMD FidelityFX 帧生成（DX12）", "amd_fidelityfx_framegeneration_dx12.dll" },
+            new[] { "fsr_upscaler", "AMD FidelityFX 超分（DX12）", "amd_fidelityfx_upscaler_dx12.dll" },
+            new[] { "fsr_loader", "AMD FidelityFX 加载器（DX12）", "amd_fidelityfx_loader_dx12.dll" },
+            new[] { "fsr_vk", "AMD FidelityFX 运行库（Vulkan）", "amd_fidelityfx_vk.dll" },
         };
 
+        sealed class CompatFileState
+        {
+            public string Name, GameVersion, PackageVersion;
+            public bool Same;
+        }
         sealed class CompatGroupState
         {
-            public string Id, Label, State, GameVersion, PackageVersion;
-            public bool Repairable { get { return State == "different"; } }
+            public string Id, Label;
+            public bool Ready;
+            public List<CompatFileState> Files = new List<CompatFileState>();
+            public bool Different
+            {
+                get { foreach (var file in Files) if (!file.Same) return true; return false; }
+            }
         }
         sealed class CompatReport
         {
             public List<CompatGroupState> Groups = new List<CompatGroupState>();
             public bool Active, ScriptReady;
-            public string Note = "";
+            public List<string> RestoreFiles = new List<string>();
         }
 
         static string AppBase
@@ -720,97 +728,151 @@ namespace OptScalerNR.Launcher
                 && File.Exists(System.IO.Path.Combine(AppBase, "xess-compat.ps1"));
             foreach (var definition in CompatGroups)
             {
-                var group = new CompatGroupState { Id = definition[0], Label = definition[1] };
-                var packMissing = false;
-                var mismatch = false;
-                var gameVersions = new List<string>();
-                var packageVersions = new List<string>();
+                var group = new CompatGroupState { Id = definition[0], Label = definition[1], Ready = true };
                 for (var i = 2; i < definition.Length; i++)
                 {
                     var name = definition[i];
-                    var gameHash = Sha256File(System.IO.Path.Combine(gameDir, name));
-                    var packageHash = Sha256File(System.IO.Path.Combine(packageDir, name));
-                    if (packageHash == null) packMissing = true;
-                    if (gameHash != packageHash) mismatch = true;
-                    gameVersions.Add(gameHash == null ? "无" : (VersionOf(System.IO.Path.Combine(gameDir, name))));
-                    packageVersions.Add(packageHash == null ? "缺" : (VersionOf(System.IO.Path.Combine(packageDir, name))));
+                    var gamePath = System.IO.Path.Combine(gameDir, name);
+                    var packagePath = System.IO.Path.Combine(packageDir, name);
+                    var gameHash = Sha256File(gamePath);
+                    var packageHash = Sha256File(packagePath);
+                    if (packageHash == null) group.Ready = false;
+                    group.Files.Add(new CompatFileState
+                    {
+                        Name = name,
+                        GameVersion = File.Exists(gamePath) ? VersionOf(gamePath) : null,
+                        PackageVersion = File.Exists(packagePath) ? VersionOf(packagePath) : null,
+                        Same = gameHash != null && gameHash == packageHash
+                    });
                 }
-                group.State = packMissing ? "packMissing" : mismatch ? "different" : "same";
-                group.GameVersion = string.Join(" / ", gameVersions);
-                group.PackageVersion = string.Join(" / ", packageVersions);
                 report.Groups.Add(group);
             }
             try
             {
-                var journal = System.IO.Path.Combine(System.IO.Path.Combine(gameDir, "OptiScaler-compat-backup"), "active.json");
-                if (File.Exists(journal) &&
-                    System.Text.RegularExpressions.Regex.IsMatch(File.ReadAllText(journal), @"""state""\s*:\s*""(pending|applied)"""))
-                    report.Active = true;
+                var journalPath = System.IO.Path.Combine(System.IO.Path.Combine(gameDir, "OptiScaler-compat-backup"), "active.json");
+                if (File.Exists(journalPath))
+                {
+                    var journalText = File.ReadAllText(journalPath);
+                    if (System.Text.RegularExpressions.Regex.IsMatch(journalText, @"""state""\s*:\s*""(pending|applied)"""))
+                    {
+                        report.Active = true;
+                        foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(journalText, @"""name""\s*:\s*""([^""]+)"""))
+                            report.RestoreFiles.Add(match.Groups[1].Value);
+                    }
+                }
             }
             catch { }
             return report;
         }
 
+        // 摘要文案与按钮可用性照抄上游 UpdateCompatibilitySummary。
         static void UpdateCompatUi(CompatReport report)
         {
             _compatReport = report;
             if (_compatSummary == null) return;
-            var pending = report.Groups.FindAll(group => group.Repairable);
+            var available = report.ScriptReady && !_panelBusy;
             if (!report.ScriptReady)
                 _compatSummary.Text = "本目录缺少 compat-repair.ps1 / xess-compat.ps1，修复不可用（需完整拖入包）。";
             else if (report.Active)
-                _compatSummary.Text = "已有修复备份：可恢复原文件，或保留当前文件并结束修复。";
-            else if (pending.Count > 0)
-                _compatSummary.Text = pending.Count + " 组与包内不同（可修复）：" + string.Join("、", pending.ConvertAll(group => group.Label).ToArray())
-                    + "。不同不等于故障，仅在启动或插帧异常时修复。";
+                _compatSummary.Text = "已有修复备份，可恢复原文件；游戏更新后的处理选项见恢复窗口。";
             else
-                _compatSummary.Text = "配套运行库与包内一致，无需修复。";
-            var busy = !report.ScriptReady || _panelBusy;
-            if (_compatRepairBtn != null) _compatRepairBtn.IsEnabled = !busy && !report.Active && pending.Count > 0;
-            if (_compatRestoreBtn != null) _compatRestoreBtn.IsEnabled = !busy && report.Active;
-            if (_compatKeepBtn != null) _compatKeepBtn.IsEnabled = !busy && report.Active;
-        }
-
-        static void CompatDetail()
-        {
-            if (_compatReport == null) return;
-            var dialog = DialogTheme.Create(_window, "兼容修复 · 配套库状态", 560);
-            var panel = new StackPanel { Margin = new Thickness(22) };
-            foreach (var group in _compatReport.Groups)
             {
-                var state = group.State == "packMissing" ? "包内缺少" : group.Repairable ? "不同 / 缺失" : "一致";
-                panel.Children.Add(new TextBlock
-                {
-                    Text = group.Label + "　" + state,
-                    FontWeight = FontWeights.SemiBold,
-                    Margin = new Thickness(0, 8, 0, 2)
-                });
-                panel.Children.Add(new TextBlock
-                {
-                    Text = "游戏目录：" + (group.GameVersion.Length == 0 ? "未知" : group.GameVersion)
-                         + "　包内：" + (group.PackageVersion.Length == 0 ? "未知" : group.PackageVersion),
-                    FontSize = 11,
-                    Foreground = LauncherTheme.Brush("ThemeMuted"),
-                    TextWrapping = TextWrapping.Wrap
-                });
+                var names = new List<string>();
+                foreach (var group in report.Groups)
+                    foreach (var file in group.Files)
+                        if (!file.Same) names.Add(file.Name);
+                _compatSummary.Text = names.Count > 0
+                    ? "游戏目录与包内配套文件不同：" + string.Join(", ", names.ToArray())
+                        + "。不同不等于故障；仅在启动或插帧异常时尝试修复。"
+                    : "启动、插帧或 XeSS 异常时可检查配套运行库；正常使用无需修复。";
             }
-            var ok = new Button { Content = "关闭", IsCancel = true, MinWidth = 90, Margin = new Thickness(4), HorizontalAlignment = HorizontalAlignment.Right };
-            panel.Children.Add(ok);
-            DialogTheme.SetContent(dialog, panel);
-            dialog.ShowDialog();
+            if (_compatRepairBtn != null) _compatRepairBtn.IsEnabled = available;
+            if (_compatRestoreBtn != null) _compatRestoreBtn.IsEnabled = available && report.Active;
         }
 
+        // 修复对话框：照抄上游 CreateCompatibilityDialog（非 restore 模式）。
         static void CompatRepair()
         {
             var report = _compatReport;
-            if (report == null) return;
-            var pending = report.Groups.FindAll(group => group.Repairable);
-            if (pending.Count == 0 || report.Active) return;
-            var names = string.Join("、", pending.ConvertAll(group => group.Label).ToArray());
-            if (DialogTheme.Show(_window, "关闭游戏后，把以下配套库替换为包内验证版本？\n\n" + names
-                + "\n\n原文件会先备份到 OptiScaler-compat-backup，可随时恢复。",
-                "备份并修复", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-            var ids = string.Join(",", pending.ConvertAll(group => group.Id).ToArray());
+            if (report == null || !report.ScriptReady) return;
+            var dialog = DialogTheme.Create(_window, "兼容修复与配套库替换", 650);
+            var panel = new StackPanel { Margin = new Thickness(22) };
+            Action<string> text = value => panel.Children.Add(new TextBlock { Text = value, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
+            text(_dir);
+            text("关闭游戏后，将自动把游戏目录中的配套运行库（XeSS、AMD FidelityFX 等）安全备份到 OptiScaler-compat-backup，并替换为本工具箱经过验证的最新配套组件。\n解决部分游戏中设置里无法开启 DLSS 帧生成 / FSR / XeSS，或因游戏自带 DLL 老旧冲突导致的异常。\n无改善可随时点击“恢复原文件”一键还原。");
+            var selections = new Dictionary<string, System.Windows.Controls.CheckBox>();
+            var proceed = new Button { Content = "备份并尝试修复", IsEnabled = false, MinWidth = 150, Margin = new Thickness(4) };
+            DialogTheme.Primary(dialog, proceed);
+            if (report.Active)
+            {
+                text("请先打开“恢复游戏原文件”，恢复上次修复，或保留当前文件并结束旧修复，再尝试其他组件。");
+            }
+            else
+            {
+                if (report.Groups.Count > 1)
+                {
+                    var selectAll = new Button
+                    {
+                        Content = "全选所有就绪组件",
+                        HorizontalAlignment = HorizontalAlignment.Left,
+                        Margin = new Thickness(0, 0, 0, 8),
+                        Padding = new Thickness(8, 4, 8, 4)
+                    };
+                    selectAll.Click += delegate
+                    {
+                        var any = false;
+                        foreach (var item in selections.Values)
+                        {
+                            if (!item.IsEnabled) continue;
+                            item.IsChecked = true;
+                            any = true;
+                        }
+                        if (any) proceed.IsEnabled = true;
+                    };
+                    panel.Children.Add(selectAll);
+                }
+                foreach (var group in report.Groups)
+                {
+                    var check = new System.Windows.Controls.CheckBox
+                    {
+                        Content = group.Label,
+                        IsEnabled = group.Ready,
+                        Margin = new Thickness(0, 6, 0, 6)
+                    };
+                    selections[group.Id] = check;
+                    RoutedEventHandler changed = delegate
+                    {
+                        var any = false;
+                        foreach (var item in selections.Values) if (item.IsChecked == true) any = true;
+                        proceed.IsEnabled = any;
+                    };
+                    check.Checked += changed;
+                    check.Unchecked += changed;
+                    panel.Children.Add(check);
+                    if (!group.Ready) text("安装包缺少有效配套文件，请重新解压完整包。");
+                    foreach (var file in group.Files)
+                    {
+                        var gameVersion = file.GameVersion == null ? "无" : (file.GameVersion.Length == 0 ? "版本未知" : file.GameVersion);
+                        var packageVersion = file.PackageVersion == null ? "无" : (file.PackageVersion.Length == 0 ? "版本未知" : file.PackageVersion);
+                        text(file.Name + "\n游戏目录：" + gameVersion + "    包内：" + packageVersion
+                            + (file.Same ? "（文件相同）" : "（文件不同或缺失）"));
+                    }
+                }
+            }
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            buttons.Children.Add(new Button { Content = "取消", IsCancel = true, MinWidth = 90, Margin = new Thickness(4) });
+            proceed.Click += delegate
+            {
+                var chosen = new List<string>();
+                foreach (var item in selections) if (item.Value.IsChecked == true) chosen.Add(item.Key);
+                dialog.Tag = chosen.ToArray();
+                dialog.DialogResult = true;
+            };
+            buttons.Children.Add(proceed);
+            panel.Children.Add(buttons);
+            DialogTheme.SetContent(dialog, panel);
+            if (dialog.ShowDialog() != true) return;
+            var ids = string.Join(",", (string[])dialog.Tag);
             PanelStatus("正在备份并修复配套库…");
             RunCompatScript("Repair", ids, delegate(bool ok, string message)
             {
@@ -819,44 +881,94 @@ namespace OptScalerNR.Launcher
             });
         }
 
+        // 恢复对话框：照抄上游 restore 模式（含“保留当前文件并结束修复”分支）。
         static void CompatRestore()
         {
-            if (_compatReport == null || !_compatReport.Active) return;
-            if (DialogTheme.Show(_window, "关闭游戏后恢复修复前的原文件？（游戏更新过的文件不会被覆盖）",
-                "恢复原文件", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-            PanelStatus("正在恢复原文件…");
-            RunCompatScript("Restore", null, delegate(bool ok, string message)
+            var report = _compatReport;
+            if (report == null || !report.ScriptReady || !report.Active) return;
+            var dialog = DialogTheme.Create(_window, "恢复游戏原文件", 650);
+            var panel = new StackPanel { Margin = new Thickness(22) };
+            Action<string> text = value => panel.Children.Add(new TextBlock { Text = value, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
+            text(_dir);
+            text("关闭游戏后恢复上次修复前的文件，并移除修复时新增的文件。游戏更新过的文件不会被覆盖。若游戏已更新或希望保留现状，可选“保留当前文件并结束修复”：不恢复任何 DLL，保留全部备份，并允许再次修复。");
+            if (report.RestoreFiles.Count > 0) text(string.Join("\n", report.RestoreFiles.ToArray()));
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            buttons.Children.Add(new Button { Content = "取消", IsCancel = true, MinWidth = 90, Margin = new Thickness(4) });
+            var keep = new Button { Content = "保留当前文件并结束修复", Margin = new Thickness(4) };
+            keep.Click += delegate { dialog.Uid = "keep"; dialog.DialogResult = true; };
+            buttons.Children.Add(keep);
+            var restore = new Button { Content = "恢复原文件", IsDefault = true, MinWidth = 150, Margin = new Thickness(4) };
+            DialogTheme.Primary(dialog, restore);
+            restore.Click += delegate { dialog.DialogResult = true; };
+            buttons.Children.Add(restore);
+            panel.Children.Add(buttons);
+            DialogTheme.SetContent(dialog, panel);
+            if (dialog.ShowDialog() != true) return;
+            var keepChosen = dialog.Uid == "keep";
+            PanelStatus(keepChosen ? "正在结束修复记录…" : "正在恢复原文件…");
+            RunCompatScript(keepChosen ? "Keep" : "Restore", null, delegate(bool ok, string message)
             {
                 PanelStatus(message);
                 RefreshCompat();
             });
         }
 
-        static void CompatKeep()
+        // 帮助对话框：照抄上游 CreateCompatibilityHelpDialog 的 Q&A。
+        static void CompatHelp()
         {
-            if (_compatReport == null || !_compatReport.Active) return;
-            if (DialogTheme.Show(_window, "保留当前文件并结束本次修复？\n\n不会改动任何 DLL，备份保留，之后可以再次修复。",
-                "保留当前并结束", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-            PanelStatus("正在结束修复记录…");
-            RunCompatScript("Keep", null, delegate(bool ok, string message)
+            var report = _compatReport;
+            var dialog = DialogTheme.Create(_window, "关于兼容修复与配套库", 620);
+            var panel = new StackPanel { Margin = new Thickness(22) };
+            var statusBox = new Border
             {
-                PanelStatus(message);
-                RefreshCompat();
-            });
-        }
-
-        static void RefreshCompat()
-        {
-            var dir = _dir;
-            System.Threading.Tasks.Task.Run(delegate
+                Background = LauncherTheme.Brush("ThemeSubtle"),
+                BorderBrush = LauncherTheme.Brush("ThemeBorder"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(14, 10, 14, 10),
+                Margin = new Thickness(0, 0, 0, 16)
+            };
+            var statusStack = new StackPanel();
+            statusStack.Children.Add(new TextBlock
             {
-                var report = CheckCompat(dir);
-                _window.Dispatcher.BeginInvoke(new Action(delegate
-                {
-                    if (!string.Equals(_dir, dir, StringComparison.OrdinalIgnoreCase)) return;
-                    UpdateCompatUi(report);
-                }));
+                Text = "当前游戏配套文件状态",
+                Foreground = LauncherTheme.Brush("ThemeSuccess"),
+                FontWeight = FontWeights.SemiBold,
+                FontSize = 12,
+                Margin = new Thickness(0, 0, 0, 4)
             });
+            statusStack.Children.Add(new TextBlock
+            {
+                Text = report != null && _compatSummary != null && _compatSummary.Text.Length > 0 ? _compatSummary.Text
+                    : "选择游戏文件夹后自动检查配套运行库文件。",
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 12
+            });
+            statusBox.Child = statusStack;
+            panel.Children.Add(statusBox);
+            panel.Children.Add(new TextBlock
+            {
+                Text =
+                    "【兼容修复常见问题 Q&A】\n\n" +
+                    "1. 什么时候需要使用兼容修复？\n" +
+                    "   • 游戏设置中的 DLSS 帧生成 / XeSS / FSR 选项灰显、无法开启或提示硬件不支持（部分游戏自带了较旧的配套 DLL）。\n" +
+                    "   • 开启插帧后游戏闪退、报错，或插帧倍率受限。\n" +
+                    "   • 游戏更新后自带的文件与 OptiScaler 补丁发生版本冲突。\n\n" +
+                    "2. 兼容修复做了什么？\n" +
+                    "   • 自动备份：将游戏目录中原有的配套 DLL（libxess.dll、amd_fidelityfx_*.dll 等）完整备份到游戏目录下的 OptiScaler-compat-backup 文件夹中。\n" +
+                    "   • 配套替换：将本工具箱经过实测验证的配套运行库一键部署到游戏目录，替换厂商未更新的老旧文件，使补丁与游戏运行库完美协同。\n\n" +
+                    "3. 如何还原或应对游戏更新？\n" +
+                    "   • 若修复后没有改善或出现异常，随时点击“恢复原文件”即可一键无损还原。\n" +
+                    "   • 游戏更新后若正常运行，可在还原窗口中选择“保留当前文件并结束修复”，安全清理旧记录。",
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 20)
+            });
+            var ok = new Button { Content = "确定", IsDefault = true, MinWidth = 90, Margin = new Thickness(4), HorizontalAlignment = HorizontalAlignment.Right };
+            DialogTheme.Primary(dialog, ok);
+            ok.Click += delegate { dialog.DialogResult = true; };
+            panel.Children.Add(ok);
+            DialogTheme.SetContent(dialog, panel);
+            dialog.ShowDialog();
         }
 
         static void RunCompatScript(string action, string groupsCsv, Action<bool, string> done)
@@ -897,6 +1009,20 @@ namespace OptScalerNR.Launcher
                             : output;
                 var ok = code == 0;
                 _window.Dispatcher.BeginInvoke(new Action(delegate { done(ok, message); }));
+            });
+        }
+
+        static void RefreshCompat()
+        {
+            var dir = _dir;
+            System.Threading.Tasks.Task.Run(delegate
+            {
+                var report = CheckCompat(dir);
+                _window.Dispatcher.BeginInvoke(new Action(delegate
+                {
+                    if (!string.Equals(_dir, dir, StringComparison.OrdinalIgnoreCase)) return;
+                    UpdateCompatUi(report);
+                }));
             });
         }
 
