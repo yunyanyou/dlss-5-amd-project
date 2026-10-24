@@ -12,7 +12,6 @@
   <ItemGroup>
     <Compile Include="Program.cs"/>
     <Compile Include="MainWindow.cs"/>
-    <Compile Include="SlimWindow.cs"/>
     <Compile Include="Protocol.cs"/>
     <Compile Include="WorkerClient.cs"/>
     <Compile Include="GamePaths.cs"/>
@@ -33,7 +32,6 @@
     <Compile Include="IniProfiles.cs"/>
     <Compile Include="LocalArtwork.cs"/>
     <EmbeddedResource Include="MainWindow.xaml"><LogicalName>OptScalerNR.Launcher.MainWindow.xaml</LogicalName></EmbeddedResource>
-    <EmbeddedResource Include="SlimWindow.xaml"><LogicalName>OptScalerNR.Launcher.SlimWindow.xaml</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="App.xaml"><LogicalName>OptScalerNR.Launcher.App.xaml</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="DialogTheme.xaml"><LogicalName>OptScalerNR.Launcher.DialogTheme.xaml</LogicalName></EmbeddedResource>
     <EmbeddedResource Include="../../../assets/compatibility/proxy-profiles.json"><LogicalName>OptScalerNR.Launcher.proxy-profiles.json</LogicalName></EmbeddedResource>
