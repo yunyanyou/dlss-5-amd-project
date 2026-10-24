@@ -778,6 +778,11 @@ Copy-Item -LiteralPath (Join-Path $root 'tools/lmxxf-module-package.ps1') -Desti
 $launcherExe = Join-Path $root 'exports/launcher/OptScalerNR.Launcher.exe'
 if (!(Test-Path -LiteralPath $launcherExe)) { throw "Launcher EXE was not produced" }
 Copy-Item -LiteralPath $launcherExe -Destination (Join-Path $stage 'OptScalerNR.Launcher.exe') -Force
+# 精简面板：同一套主题与分享码/预设代码，独立 exe，放进游戏目录用。
+& (Join-Path $root 'tools/build/build-panel.ps1') -OutDir (Join-Path $root 'exports/panel')
+$panelExe = Join-Path $root 'exports/panel/OptiScalerPanel.exe'
+if (!(Test-Path -LiteralPath $panelExe)) { throw 'Panel EXE was not produced' }
+Copy-Item -LiteralPath $panelExe -Destination (Join-Path $stage 'OptiScalerPanel.exe') -Force
 Copy-Item -LiteralPath (Join-Path $root 'assets/compatibility/proxy-profiles.json') -Destination $stage -Force
 Copy-Item -LiteralPath (Join-Path $root 'assets/compatibility/README.md') -Destination (Join-Path $stage 'Licenses/OptiScaler-wiki-profiles.md') -Force
 Copy-Item -LiteralPath (Join-Path $root 'tools/install/launcher-worker.ps1') -Destination $stage -Force
@@ -796,6 +801,17 @@ cd /d "%~dp0"
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0quick-launcher.ps1" %*
 if errorlevel 1 pause
 '@) | Set-Content -LiteralPath (Join-Path $stage 'OptiScaler快速安装.bat') -Encoding ASCII
+(@'
+@echo off
+setlocal
+cd /d "%~dp0"
+if not exist "%~dp0OptiScalerPanel.exe" (
+  echo OptiScalerPanel.exe is missing. Unzip the full package again.
+  pause
+  exit /b 1
+)
+start "" "%~dp0OptiScalerPanel.exe" "%~dp0."
+'@) | Set-Content -LiteralPath (Join-Path $stage 'OptiScaler面板.bat') -Encoding ASCII
 (@'
 @echo off
 setlocal
@@ -930,7 +946,7 @@ try {
             finally { $stream.Dispose(); $sha.Dispose() }
             if ($actual -ne $expectedEntries[$relative]) { throw "Archive checksum mismatch: $relative" }
         }
-        foreach ($required in @('OptiScaler.dll', 'LmxxfNrRuntime.dll', 'MochizukiNrRuntime.dll', 'OptiScaler.ini', 'Setup.ps1', 'Setup.bat', 'lmxxf-module-package.ps1', 'OptScalerNR.Launcher.exe', 'launcher-worker.ps1', 'proxy-probe.ps1', 'library-scan.ps1', 'install-capabilities.ps1', 'xess-compat.ps1', 'proxy-profiles.json', 'quick-launcher.ps1', 'mz-keys.psd1', 'Licenses/OptiScaler-wiki-profiles.md') + @($expectedEntries.Keys)) {
+        foreach ($required in @('OptiScaler.dll', 'LmxxfNrRuntime.dll', 'MochizukiNrRuntime.dll', 'OptiScaler.ini', 'Setup.ps1', 'Setup.bat', 'lmxxf-module-package.ps1', 'OptScalerNR.Launcher.exe', 'launcher-worker.ps1', 'proxy-probe.ps1', 'library-scan.ps1', 'install-capabilities.ps1', 'xess-compat.ps1', 'proxy-profiles.json', 'quick-launcher.ps1', 'mz-keys.psd1', 'OptiScalerPanel.exe', 'Licenses/OptiScaler-wiki-profiles.md') + @($expectedEntries.Keys)) {
             if (-not $seen.ContainsKey($required)) { throw "Package archive missing required component: $required" }
         }
     } finally {
