@@ -23,7 +23,29 @@ namespace OptScalerNR.Launcher
         static Window _window;
         static string _dir;
         static string _theme = "auto";
+        static string _language = "zh";
         static Button _themeToggle, _maxBtn;
+
+        // 上游同款双语：L(中文, English)，语言持久化到设置目录。
+        static string L(string zh, string en) { return _language == "zh" ? zh : en; }
+        static string LanguagePath()
+        {
+            return System.IO.Path.Combine(SettingsDir(), "panel-language.txt");
+        }
+        static string LoadLanguage()
+        {
+            try
+            {
+                var value = File.ReadAllText(LanguagePath()).Trim();
+                if (value == "zh" || value == "en") return value;
+            }
+            catch { }
+            return "zh";
+        }
+        static void SaveLanguage(string value)
+        {
+            try { Directory.CreateDirectory(SettingsDir()); File.WriteAllText(LanguagePath(), value); } catch { }
+        }
         static TextBlock _hardwareText;
         static StackPanel _list;
         static TextBlock _heroKicker, _heroTitle, _heroMonogram, _bottomStatus;
@@ -36,7 +58,7 @@ namespace OptScalerNR.Launcher
 
         // ---- 兼容修复：检查结果缓存 + 控件 ----
         static TextBlock _compatSummary, _compatStatus;
-        static Button _compatRepairBtn, _compatRestoreBtn, _compatHelpBtn;
+        static Button _compatRepairBtn, _compatRestoreBtn, _compatHelpBtn, _optiButton, _logButton;
         static CompatReport _compatReport;
 
         // 本栏（兼容诊断）触发的运行消息显示在本栏，不再挤到分享栏的状态行。
@@ -118,6 +140,11 @@ namespace OptScalerNR.Launcher
             _hardwareText = (TextBlock)_window.FindName("HardwareInfo");
             _themeToggle = (Button)_window.FindName("ThemeToggle");
             InitThemeToggle();
+            _language = LoadLanguage();
+            var langZh = (Button)_window.FindName("LangZh");
+            var langEn = (Button)_window.FindName("LangEn");
+            if (langZh != null) langZh.Click += delegate { SetLanguage("zh"); };
+            if (langEn != null) langEn.Click += delegate { SetLanguage("en"); };
             // 上游同款：圆角卡片靠显式 Clip 裁掉溢出的内容（Border.CornerRadius 不裁子元素）。
             var heroCard = _window.FindName("HeroCard") as System.Windows.Controls.Border;
             if (heroCard != null)
@@ -126,18 +153,18 @@ namespace OptScalerNR.Launcher
                     heroCard.Clip = new System.Windows.Media.RectangleGeometry(
                         new Rect(0, 0, heroCard.ActualWidth, heroCard.ActualHeight), 18, 18);
                 };
-            ((Button)_window.FindName("RefreshBtn")).Click += (s, e) => Refresh();
             ((Button)_window.FindName("QuickLogButton")).Click += (s, e) => OpenLog();
             Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnSystemThemeChanged;
             _window.Closed += (s, e) => Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnSystemThemeChanged;
-            ((System.Windows.Documents.Run)_window.FindName("AuthorCaption")).Text = " · 来源：";
             var author = (System.Windows.Documents.Hyperlink)_window.FindName("AuthorLink");
             author.RequestNavigate += (s, e) => { OpenUrl("https://github.com/TheAutomatic/dlss-5-amd-project"); e.Handled = true; };
             var pack = (System.Windows.Documents.Hyperlink)_window.FindName("PackLink");
             if (pack != null) pack.RequestNavigate += (s, e) => { OpenUrl("https://space.bilibili.com/166753728"); e.Handled = true; };
 
-            ((Button)_window.FindName("OptiBtn")).Click += (s, e) => InstallOptiPatcher();
-            ((Button)_window.FindName("LogBtn")).Click += (s, e) => OpenLog();
+            _optiButton = (Button)_window.FindName("OptiBtn");
+            _logButton = (Button)_window.FindName("LogBtn");
+            if (_optiButton != null) _optiButton.Click += (s, e) => InstallOptiPatcher();
+            if (_logButton != null) _logButton.Click += (s, e) => OpenLog();
             _compatSummary = (TextBlock)_window.FindName("CompatSummary");
             _compatStatus = (TextBlock)_window.FindName("CompatStatus");
             _compatRepairBtn = (Button)_window.FindName("CompatRepairBtn");
@@ -165,6 +192,7 @@ namespace OptScalerNR.Launcher
                 }
             };
 
+            RefreshPanelLanguage();
             Refresh();
             return _window;
         }
@@ -255,7 +283,7 @@ namespace OptScalerNR.Launcher
                                : isRec ? LauncherTheme.Brush("ThemeAccent")
                                : LauncherTheme.Brush("ThemeInk")
                 });
-                var state = isOurs ? "当前注入" : isOcc ? "被占用" : isRec ? "Wiki 推荐" : "备用";
+                var state = isOurs ? L("当前注入", "active") : isOcc ? L("被占用", "occupied") : isRec ? L("Wiki 推荐", "wiki pick") : L("备用", "spare");
                 stack.Children.Add(new TextBlock
                 {
                     Text = state,
@@ -280,25 +308,25 @@ namespace OptScalerNR.Launcher
             _heroMonogram.Text = string.IsNullOrEmpty(title) ? "N"
                 : title.Substring(0, 1).ToUpperInvariant();
             _heroFacts.Children.Clear();
-            AddHeroFact("程序", exe != null ? exe.Name
-                : scanned ? "未找到（可把游戏 EXE 拖进窗口指定）"
-                : "正在扫描…", 0);
+            AddHeroFact(L("程序", "exe"), exe != null ? exe.Name
+                : scanned ? L("未找到（可拖入 EXE 指定）", "not found (drop the EXE here)")
+                : L("正在扫描…", "scanning…"), 0);
             if (advice == null)
             {
-                AddHeroFact("Wiki", "正在获取 Wiki 与支持列表…", 1);
+                AddHeroFact("Wiki", L("正在获取 Wiki 与支持列表…", "fetching wiki data…"), 1);
             }
             else
             {
                 AddHeroFact("Wiki", WikiFact(advice), 1);
-                AddHeroFact("OptiPatcher支持", OptiFact(advice), 2);
+                AddHeroFact(L("OptiPatcher支持", "OptiPatcher"), OptiFact(advice), 2);
             }
             // 刷新时保留当前背景图：LocalArtwork 有缓存，同目录刷新返回同一实例不会重绘；
             // 清空再加载会闪。换目录时由新结果（或 null）自然替换。
 
             _bottomLed.Fill = current != null ? LauncherTheme.Brush("ThemeSuccess") : LauncherTheme.Brush("ThemeWarning");
             _bottomStatus.Text = current != null
-                ? "已注入 " + current.Name + ".dll"
-                : "未检测到注入";
+                ? L("已注入 ", "active: ") + current.Name + ".dll"
+                : L("未检测到注入", "no injection detected");
             RefreshHardware();
 
             SelectGameProfiles();
@@ -309,22 +337,22 @@ namespace OptScalerNR.Launcher
             if (advice.Profile != null)
             {
                 var alt = advice.Profile.Alternatives != null ? string.Join(" / ", advice.Profile.Alternatives) : "";
-                return "Wiki 记录：首选 " + advice.Profile.Preferred
-                    + (alt.Length > 0 ? "；备选 " + alt : "");
+                return L("首选 ", "preferred ") + advice.Profile.Preferred
+                    + (alt.Length > 0 ? L("；备选 ", "; alternatives ") + alt : "");
             }
             if (advice.WikiName != null)
             {
                 return advice.WikiProxies != null && advice.WikiProxies.Length > 0
-                    ? "Wiki 记录：" + advice.WikiName + " → " + string.Join(" / ", advice.WikiProxies)
-                    : "Wiki 记录：" + advice.WikiName + "（未注明 DLL，可任选尝试）";
+                    ? advice.WikiName + " → " + string.Join(" / ", advice.WikiProxies)
+                    : advice.WikiName + L("（未注明 DLL，可任选尝试）", " (no proxy recorded, any name may work)");
             }
-            return "Wiki 记录：无此游戏记录";
+            return L("无此游戏记录", "no record for this game");
         }
         static string OptiFact(WikiAdvice advice)
         {
             return advice.OptiDlss != null
-                ? "Wiki 收录，支持 DLSS " + advice.OptiDlss + " / DLSS-FG " + advice.OptiFg
-                : "Wiki 未收录此游戏";
+                ? L("Wiki 收录，支持 DLSS ", "listed: DLSS ") + advice.OptiDlss + L(" / DLSS-FG ", " / DLSS-FG ") + advice.OptiFg
+                : L("Wiki 未收录此游戏", "not listed for this game");
         }
 
         // hero 卡说明行：左侧彩色小标签，右侧内容铺满剩余宽度并自动换行；
@@ -380,7 +408,7 @@ namespace OptScalerNR.Launcher
             if (_hardwareDetails == null)
             {
                 var adapter = ReadPhysicalAdapter();
-                if (adapter == null) _hardwareDetails = "GPU 信息不可用";
+                if (adapter == null) _hardwareDetails = L("GPU 信息不可用", "GPU unavailable");
                 else
                 {
                     _hardwareDetails = adapter.Name
@@ -389,8 +417,8 @@ namespace OptScalerNR.Launcher
                 }
             }
             _hardwareText.Text = _hardwareDetails;
-            _hardwareText.ToolTip = "检测到的物理显卡；不代表游戏当前使用的渲染显卡。"
-                + (string.IsNullOrWhiteSpace(_hardwareDriver) ? "" : "\nWindows 驱动版本：" + _hardwareDriver);
+            _hardwareText.ToolTip = L("检测到的物理显卡；不代表游戏当前使用的渲染显卡。", "Detected physical GPU; not a claim about the game's rendering adapter.")
+                + (string.IsNullOrWhiteSpace(_hardwareDriver) ? "" : L("\nWindows 驱动版本：", "\nWindows driver version: ") + _hardwareDriver);
         }
 
         sealed class PanelHardwareAdapter
@@ -523,10 +551,10 @@ namespace OptScalerNR.Launcher
         static void SwitchTo(string target)
         {
             var cur = CurrentInjection();
-            if (cur == null) { PanelStatus("目录里没有找到 OptiScaler 的注入。"); return; }
+            if (cur == null) { PanelStatus(L("目录里没有找到 OptiScaler 的注入。", "No OptiScaler injection found in this folder.")); return; }
             if (string.Equals(cur.Name, target, StringComparison.OrdinalIgnoreCase))
             {
-                PanelStatus("已经是这个注入名了。");
+                PanelStatus(L("已经是这个注入名了。", "Already on this proxy name."));
                 return;
             }
             var dest = System.IO.Path.Combine(_dir, target + ".dll");
@@ -541,17 +569,62 @@ namespace OptScalerNR.Launcher
                 }
                 else
                 {
-                    PanelStatus(target + ".dll 被游戏或其它 mod 占用，不覆盖。");
+                    PanelStatus(target + L(".dll 被游戏或其它 mod 占用，不覆盖。", ".dll is owned by the game or another mod; not overwritten."));
                     return;
                 }
             }
             try
             {
                 File.Move(cur.Path, dest);
-                PanelStatus("已切换到 " + target + ".dll，重启游戏生效。");
+                PanelStatus(L("已切换到 ", "Switched to ") + target + L(".dll，立即生效。", ".dll, effective immediately."));
             }
-            catch (Exception ex) { PanelStatus("切换失败：" + ex.Message); }
+            catch (Exception ex) { PanelStatus(L("切换失败：", "Switch failed: ") + ex.Message); }
             Refresh();
+        }
+
+        // ---------------------------------------------------------------- language
+        static void SetLanguage(string language)
+        {
+            if (language != "zh" && language != "en") return;
+            if (language == _language) return;
+            _language = language;
+            SaveLanguage(language);
+            RefreshPanelLanguage();
+        }
+
+        static void SetText(string name, string text)
+        {
+            var block = _window.FindName(name) as TextBlock;
+            if (block != null) block.Text = text;
+        }
+
+        // 上游 RefreshPresentationLanguage 的面板版：切换语言时全量刷新界面文案。
+        static void RefreshPanelLanguage()
+        {
+            var zh = _language == "zh";
+            _window.Title = L("OptiScaler代理切换", "OptiScaler Proxy Switch");
+            var langZh = _window.FindName("LangZh") as Button;
+            var langEn = _window.FindName("LangEn") as Button;
+            if (langZh != null)
+            {
+                langZh.Content = "中";
+                langZh.Background = LauncherTheme.Brush(zh ? "ThemeSurface" : "ThemeSubtle");
+            }
+            if (langEn != null) langEn.Background = LauncherTheme.Brush(zh ? "ThemeSubtle" : "ThemeSurface");
+            SetText("ProxyHeading", L("注入代理", "Injection proxy"));
+            SetText("ProxyHint", L("点击切换，立即生效", "Click to switch, effective immediately"));
+            SetText("DiagnosticsHeading", L("配置与运行库兼容诊断", "Configuration & Runtime Compatibility"));
+            if (_compatRepairBtn != null) _compatRepairBtn.Content = L("兼容修复", "Compat Repair");
+            if (_compatRestoreBtn != null) _compatRestoreBtn.Content = L(L("恢复原文件", "Restore originals"), "Restore Files");
+            if (_compatHelpBtn != null) _compatHelpBtn.Content = "?";
+            if (_optiButton != null) _optiButton.Content = L("安装 OptiPatcher（DLSS 伪装增强）", "Install OptiPatcher (DLSS spoofing)");
+            if (_logButton != null) _logButton.Content = L("打开日志", "Open Log");
+            ((System.Windows.Documents.Run)_window.FindName("PackCaption")).Text = L("整合：", "Pack: ");
+            ((System.Windows.Documents.Run)_window.FindName("AuthorCaption")).Text = L(" · 来源：", " · Source: ");
+            RefreshThemeToggle();
+            RefreshProfilesLanguage();
+            if (_compatReport != null) UpdateCompatUi(_compatReport);
+            RenderNow();
         }
 
         // ---------------------------------------------------------------- theme
@@ -575,12 +648,12 @@ namespace OptScalerNR.Launcher
         {
             if (_themeToggle == null) return;
             _themeToggle.Content = _theme == "auto" ? "◐" : _theme == "light" ? "☀" : "☾";
-            _themeToggle.ToolTip = "主题：" + ThemeName(_theme) + "（点击切换）";
+            _themeToggle.ToolTip = L("主题：", "Theme: ") + ThemeName(_theme) + L("（点击切换）", " (click to cycle)");
         }
 
         static string ThemeName(string theme)
         {
-            return theme == "light" ? "浅色" : theme == "dark" ? "深色" : "跟随系统";
+            return theme == "light" ? L("浅色", "Light") : theme == "dark" ? L("深色", "Dark") : L("跟随系统", "System (auto)");
         }
 
         static void OnSystemThemeChanged(object sender, Microsoft.Win32.UserPreferenceChangedEventArgs e)
@@ -609,7 +682,7 @@ namespace OptScalerNR.Launcher
         static void SetAsiPlugins(string value)
         {
             var ini = System.IO.Path.Combine(_dir, "OptiScaler.ini");
-            if (!File.Exists(ini)) { CompatNote("目录里没有 OptiScaler.ini，无法写入 LoadAsiPlugins。"); return; }
+            if (!File.Exists(ini)) { CompatNote(L("目录里没有 OptiScaler.ini，无法写入 LoadAsiPlugins。", "No OptiScaler.ini here; cannot write LoadAsiPlugins.")); return; }
             var text = File.ReadAllText(ini);
             if (System.Text.RegularExpressions.Regex.IsMatch(text, "(?m)^LoadAsiPlugins="))
                 text = System.Text.RegularExpressions.Regex.Replace(text, "(?m)^LoadAsiPlugins=.*$", "LoadAsiPlugins=" + value);
@@ -623,15 +696,15 @@ namespace OptScalerNR.Launcher
         static void InstallOptiPatcher()
         {
             // 命令行版流程：只有明确的 是/否 才生效；否 = 插件留在磁盘但不再加载（auto 读作 false）。
-            var answer = DialogTheme.Show(_window, "是否安装 OptiPatcher（DLSS 伪装增强）？", "OptiPatcher",
+            var answer = DialogTheme.Show(_window, L("是否安装 OptiPatcher（DLSS 伪装增强）？", "Install OptiPatcher (DLSS spoofing enhancement)?"), "OptiPatcher",
                 MessageBoxButton.YesNo, MessageBoxImage.Question);
             if (answer != MessageBoxResult.Yes)
             {
                 SetAsiPlugins("auto");
-                CompatNote("已跳过 OptiPatcher（LoadAsiPlugins=auto，插件不会加载）。");
+                CompatNote(L("已跳过 OptiPatcher（LoadAsiPlugins=auto，插件不会加载）。", "Skipped OptiPatcher (LoadAsiPlugins=auto, plugins stay unloaded)."));
                 return;
             }
-            CompatNote("正在下载 OptiPatcher...");
+            CompatNote(L("正在下载 OptiPatcher...", "Downloading OptiPatcher…"));
             _window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
 
             string downloaded = null;
@@ -689,7 +762,7 @@ namespace OptScalerNR.Launcher
             }
             if (source == null)
             {
-                CompatNote("OptiPatcher 下载失败，目录里也没有离线副本。");
+                CompatNote(L("OptiPatcher 下载失败，目录里也没有离线副本。", "Download failed and no offline copy exists in this folder."));
                 return;
             }
 
@@ -699,9 +772,9 @@ namespace OptScalerNR.Launcher
                 if (!Directory.Exists(plugins)) Directory.CreateDirectory(plugins);
                 File.Copy(source, System.IO.Path.Combine(plugins, "OptiPatcher.asi"), true);
                 SetAsiPlugins("true");
-                CompatNote("OptiPatcher 安装完成。");
+                CompatNote(L("OptiPatcher 安装完成。", "OptiPatcher installed."));
             }
-            catch (Exception ex) { CompatNote("安装失败：" + ex.Message); }
+            catch (Exception ex) { CompatNote(L("安装失败：", "Install failed: ") + ex.Message); }
             finally
             {
                 if (source == downloaded)
@@ -716,7 +789,7 @@ namespace OptScalerNR.Launcher
         {
             var log = System.IO.Path.Combine(_dir, "OptiScaler.log");
             if (File.Exists(log)) { try { Process.Start(new ProcessStartInfo(log) { UseShellExecute = true }); } catch { } }
-            else CompatNote("还没有日志（进过一次游戏才会有 OptiScaler.log）。");
+            else CompatNote(L("还没有日志（进过一次游戏才会有 OptiScaler.log）。", "No log yet (OptiScaler.log appears after one game run)."));
         }
 
         // ---------------------------------------------------------------- compat repair
@@ -831,7 +904,7 @@ namespace OptScalerNR.Launcher
         {
             var installed = File.Exists(System.IO.Path.Combine(_dir, "plugins", "OptiPatcher.asi"))
                 || File.Exists(System.IO.Path.Combine(_dir, "OptiScaler", "plugins", "OptiPatcher.asi"));
-            if (!installed) return "OptiPatcher：未安装";
+            if (!installed) return L("OptiPatcher：未安装", "OptiPatcher: not installed");
             var mode = "auto";
             try
             {
@@ -844,9 +917,9 @@ namespace OptScalerNR.Launcher
                 }
             }
             catch { }
-            if (mode == "true") return "OptiPatcher：已安装，插件加载中";
-            if (mode == "false") return "OptiPatcher：已安装，已禁用（LoadAsiPlugins=false）";
-            return "OptiPatcher：已安装，未启用（LoadAsiPlugins=auto）";
+            if (mode == "true") return L("OptiPatcher：已安装，插件加载中", "OptiPatcher: installed, plugins loading");
+            if (mode == "false") return L("OptiPatcher：已安装，已禁用（LoadAsiPlugins=false）", "OptiPatcher: installed, disabled (LoadAsiPlugins=false)");
+            return L("OptiPatcher：已安装，未启用（LoadAsiPlugins=auto）", "OptiPatcher: installed, not enabled (LoadAsiPlugins=auto)");
         }
 
         // 摘要文案与按钮可用性照抄上游 UpdateCompatibilitySummary。
@@ -857,8 +930,8 @@ namespace OptScalerNR.Launcher
             var available = report.ScriptReady && !_panelBusy;
             // 与上游一致：摘要固定一句；面板仅在包不完整（脚本缺失）时说明原因。
             _compatSummary.Text = report.ScriptReady
-                ? "启动、插帧或 XeSS 异常时可检查配套运行库；正常使用无需修复。"
-                : "本目录缺少 compat-repair.ps1 / xess-compat.ps1，修复不可用（需完整拖入包）。";
+                ? L("启动、插帧或 XeSS 异常时可检查配套运行库；正常使用无需修复。", "Check companion runtimes for startup, frame-generation or XeSS issues; no repair is needed when working normally.")
+                : L("本目录缺少 compat-repair.ps1 / xess-compat.ps1，修复不可用（需完整拖入包）。", "compat-repair.ps1 / xess-compat.ps1 missing here; repair needs the full drag-in package.");
             // 状态行默认显示 OptiPatcher 安装状态；运行动作的消息会临时覆盖，刷新后回到这里。
             CompatNote(DetectOptiPatcherState());
             if (_compatRepairBtn != null) _compatRepairBtn.IsEnabled = available;
@@ -870,17 +943,17 @@ namespace OptScalerNR.Launcher
         {
             var report = _compatReport;
             if (report == null || !report.ScriptReady) return;
-            var dialog = DialogTheme.Create(_window, "兼容修复与配套库替换", 650);
+            var dialog = DialogTheme.Create(_window, L("兼容修复与配套库替换", "Compatibility repair & companion replacement"), 650);
             var panel = new StackPanel { Margin = new Thickness(22) };
             Action<string> text = value => panel.Children.Add(new TextBlock { Text = value, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
             text(_dir);
-            text("关闭游戏后，将自动把游戏目录中的配套运行库（XeSS、AMD FidelityFX 等）安全备份到 OptiScaler-compat-backup，并替换为本工具箱经过验证的最新配套组件。\n解决部分游戏中设置里无法开启 DLSS 帧生成 / FSR / XeSS，或因游戏自带 DLL 老旧冲突导致的异常。\n无改善可随时点击“恢复原文件”一键还原。");
+            text(L("关闭游戏后，将自动把游戏目录中的配套运行库（XeSS、AMD FidelityFX 等）安全备份到 OptiScaler-compat-backup，并替换为本工具箱经过验证的最新配套组件。\n解决部分游戏中设置里无法开启 DLSS 帧生成 / FSR / XeSS，或因游戏自带 DLL 老旧冲突导致的异常。\n无改善可随时点击“恢复原文件”一键还原。", "Close the game first. Safely back up game companion runtime libraries (XeSS, AMD FidelityFX, etc.) into OptiScaler-compat-backup, and replace them with tested companion components bundled with this toolbox.\nSolves issues in some games where in-game DLSS-FG / FSR / XeSS cannot be toggled on or conflicts with outdated bundled DLLs.\nIf it does not help, you can restore original files at any time."));
             var selections = new Dictionary<string, System.Windows.Controls.CheckBox>();
-            var proceed = new Button { Content = "备份并尝试修复", IsEnabled = false, MinWidth = 150, Margin = new Thickness(4) };
+            var proceed = new Button { Content = L("备份并尝试修复", "Back up and try repair"), IsEnabled = false, MinWidth = 150, Margin = new Thickness(4) };
             DialogTheme.Primary(dialog, proceed);
             if (report.Active)
             {
-                text("请先打开“恢复游戏原文件”，恢复上次修复，或保留当前文件并结束旧修复，再尝试其他组件。");
+                text(L("请先打开“恢复游戏原文件”，恢复上次修复，或保留当前文件并结束旧修复，再尝试其他组件。", "Open Restore game files first: restore the previous repair, or keep current files and finish it before trying other components."));
             }
             else
             {
@@ -888,7 +961,7 @@ namespace OptScalerNR.Launcher
                 {
                     var selectAll = new Button
                     {
-                        Content = "全选所有就绪组件",
+                        Content = L("全选所有就绪组件", "Select all ready components"),
                         HorizontalAlignment = HorizontalAlignment.Left,
                         Margin = new Thickness(0, 0, 0, 8),
                         Padding = new Thickness(8, 4, 8, 4)
@@ -924,18 +997,18 @@ namespace OptScalerNR.Launcher
                     check.Checked += changed;
                     check.Unchecked += changed;
                     panel.Children.Add(check);
-                    if (!group.Ready) text("安装包缺少有效配套文件，请重新解压完整包。");
+                    if (!group.Ready) text(L("安装包缺少有效配套文件，请重新解压完整包。", "Valid companion files are missing from this package. Extract a complete package again."));
                     foreach (var file in group.Files)
                     {
-                        var gameVersion = file.GameVersion == null ? "无" : (file.GameVersion.Length == 0 ? "版本未知" : file.GameVersion);
-                        var packageVersion = file.PackageVersion == null ? "无" : (file.PackageVersion.Length == 0 ? "版本未知" : file.PackageVersion);
-                        text(file.Name + "\n游戏目录：" + gameVersion + "    包内：" + packageVersion
-                            + (file.Same ? "（文件相同）" : "（文件不同或缺失）"));
+                        var gameVersion = file.GameVersion == null ? L("无", "absent") : (file.GameVersion.Length == 0 ? L("版本未知", "unknown version") : file.GameVersion);
+                        var packageVersion = file.PackageVersion == null ? L("无", "absent") : (file.PackageVersion.Length == 0 ? L("版本未知", "unknown version") : file.PackageVersion);
+                        text(file.Name + L("\n游戏目录：", "\nGame folder: ") + gameVersion + L("    包内：", "    Package: ") + packageVersion
+                            + (file.Same ? L("（文件相同）", " (identical)") : L("（文件不同或缺失）", " (different or absent)")));
                     }
                 }
             }
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-            buttons.Children.Add(new Button { Content = "取消", IsCancel = true, MinWidth = 90, Margin = new Thickness(4) });
+            buttons.Children.Add(new Button { Content = L("取消", "Cancel"), IsCancel = true, MinWidth = 90, Margin = new Thickness(4) });
             proceed.Click += delegate
             {
                 var chosen = new List<string>();
@@ -948,7 +1021,7 @@ namespace OptScalerNR.Launcher
             DialogTheme.SetContent(dialog, panel);
             if (dialog.ShowDialog() != true) return;
             var ids = string.Join(",", (string[])dialog.Tag);
-            CompatNote("正在备份并修复配套库…");
+            CompatNote(L("正在备份并修复配套库…", "Backing up and repairing companions…"));
             RunCompatScript("Repair", ids, delegate(bool ok, string message)
             {
                 CompatNote(message);
@@ -961,18 +1034,18 @@ namespace OptScalerNR.Launcher
         {
             var report = _compatReport;
             if (report == null || !report.ScriptReady || !report.Active) return;
-            var dialog = DialogTheme.Create(_window, "恢复游戏原文件", 650);
+            var dialog = DialogTheme.Create(_window, L("恢复游戏原文件", "Restore game files"), 650);
             var panel = new StackPanel { Margin = new Thickness(22) };
             Action<string> text = value => panel.Children.Add(new TextBlock { Text = value, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) });
             text(_dir);
-            text("关闭游戏后恢复上次修复前的文件，并移除修复时新增的文件。游戏更新过的文件不会被覆盖。若游戏已更新或希望保留现状，可选“保留当前文件并结束修复”：不恢复任何 DLL，保留全部备份，并允许再次修复。");
+            text(L("关闭游戏后恢复上次修复前的文件，并移除修复时新增的文件。游戏更新过的文件不会被覆盖。若游戏已更新或希望保留现状，可选“保留当前文件并结束修复”：不恢复任何 DLL，保留全部备份，并允许再次修复。", "Close the game first. Restore files from before the last repair and remove files added by it. Files changed by game updates will be preserved. Alternatively, Keep current files and finish repair changes no DLLs, retains all backups and allows a new repair."));
             if (report.RestoreFiles.Count > 0) text(string.Join("\n", report.RestoreFiles.ToArray()));
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-            buttons.Children.Add(new Button { Content = "取消", IsCancel = true, MinWidth = 90, Margin = new Thickness(4) });
-            var keep = new Button { Content = "保留当前文件并结束修复", Margin = new Thickness(4) };
+            buttons.Children.Add(new Button { Content = L("取消", "Cancel"), IsCancel = true, MinWidth = 90, Margin = new Thickness(4) });
+            var keep = new Button { Content = L("保留当前文件并结束修复", "Keep current files and finish repair"), Margin = new Thickness(4) };
             keep.Click += delegate { dialog.Uid = "keep"; dialog.DialogResult = true; };
             buttons.Children.Add(keep);
-            var restore = new Button { Content = "恢复原文件", IsDefault = true, MinWidth = 150, Margin = new Thickness(4) };
+            var restore = new Button { Content = L("恢复原文件", "Restore originals"), IsDefault = true, MinWidth = 150, Margin = new Thickness(4) };
             DialogTheme.Primary(dialog, restore);
             restore.Click += delegate { dialog.DialogResult = true; };
             buttons.Children.Add(restore);
@@ -980,7 +1053,7 @@ namespace OptScalerNR.Launcher
             DialogTheme.SetContent(dialog, panel);
             if (dialog.ShowDialog() != true) return;
             var keepChosen = dialog.Uid == "keep";
-            CompatNote(keepChosen ? "正在结束修复记录…" : "正在恢复原文件…");
+            CompatNote(keepChosen ? L("正在结束修复记录…", "Finishing the repair record…") : L("正在恢复原文件…", "Restoring original files…"));
             RunCompatScript(keepChosen ? "Keep" : "Restore", null, delegate(bool ok, string message)
             {
                 CompatNote(message);
@@ -992,7 +1065,7 @@ namespace OptScalerNR.Launcher
         static void CompatHelp()
         {
             var report = _compatReport;
-            var dialog = DialogTheme.Create(_window, "关于兼容修复与配套库", 620);
+            var dialog = DialogTheme.Create(_window, L("关于兼容修复与配套库", "About Compatibility Repair & Companion Libraries"), 620);
             var panel = new StackPanel { Margin = new Thickness(22) };
             var statusBox = new Border
             {
@@ -1006,7 +1079,7 @@ namespace OptScalerNR.Launcher
             var statusStack = new StackPanel();
             statusStack.Children.Add(new TextBlock
             {
-                Text = "当前游戏配套文件状态",
+                Text = L("当前游戏配套文件状态", "Current Game Companion Library Status"),
                 Foreground = LauncherTheme.Brush("ThemeSuccess"),
                 FontWeight = FontWeights.SemiBold,
                 FontSize = 12,
@@ -1021,24 +1094,36 @@ namespace OptScalerNR.Launcher
             });
             statusBox.Child = statusStack;
             panel.Children.Add(statusBox);
+            var qa = L(
+                "【兼容修复常见问题 Q&A】\n\n" +
+                "1. 什么时候需要使用兼容修复？\n" +
+                "   • 游戏设置中的 DLSS 帧生成 / XeSS / FSR 选项灰显、无法开启或提示硬件不支持（部分游戏自带了较旧的配套 DLL）。\n" +
+                "   • 开启插帧后游戏闪退、报错，或插帧倍率受限。\n" +
+                "   • 游戏更新后自带的文件与 OptiScaler 补丁发生版本冲突。\n\n" +
+                "2. 兼容修复做了什么？\n" +
+                "   • 自动备份：将游戏目录中原有的配套 DLL（libxess.dll、amd_fidelityfx_*.dll 等）完整备份到游戏目录下的 OptiScaler-compat-backup 文件夹中。\n" +
+                "   • 配套替换：将本工具箱经过实测验证的配套运行库一键部署到游戏目录，替换厂商未更新的老旧文件，使补丁与游戏运行库完美协同。\n\n" +
+                "3. 如何还原或应对游戏更新？\n" +
+                "   • 若修复后没有改善或出现异常，随时点击“恢复原文件”即可一键无损还原。\n" +
+                "   • 游戏更新后若正常运行，可在还原窗口中选择“保留当前文件并结束修复”，安全清理旧记录。",
+                "[Compatibility Repair Q&A]\n\n" +
+                "1. When should you use Compatibility Repair?\n" +
+                "   • In-game DLSS Frame Generation / XeSS / FSR options are greyed out, cannot be toggled on, or show hardware unsupported errors (some games bundle outdated companion DLLs).\n" +
+                "   • Game crashes or throws errors when frame generation is enabled, or frame rate multipliers are limited.\n" +
+                "   • Game updates introduced conflicting companion libraries.\n\n" +
+                "2. What does Compatibility Repair do?\n" +
+                "   • Automatic Backup: Safely backs up original companion DLLs (libxess.dll, amd_fidelityfx_*.dll, etc.) to the OptiScaler-compat-backup folder inside the game directory.\n" +
+                "   • Companion Replacement: Deploys validated runtime libraries bundled with this toolbox, replacing stale vendor files so the mod and game work seamlessly together.\n\n" +
+                "3. How to restore or handle game updates?\n" +
+                "   • If repair does not help, click 'Restore Files' anytime for one-click lossless rollback.\n" +
+                "   • After a game update, you can choose 'Keep current files and finish repair' to safely keep the latest files.");
             panel.Children.Add(new TextBlock
             {
-                Text =
-                    "【兼容修复常见问题 Q&A】\n\n" +
-                    "1. 什么时候需要使用兼容修复？\n" +
-                    "   • 游戏设置中的 DLSS 帧生成 / XeSS / FSR 选项灰显、无法开启或提示硬件不支持（部分游戏自带了较旧的配套 DLL）。\n" +
-                    "   • 开启插帧后游戏闪退、报错，或插帧倍率受限。\n" +
-                    "   • 游戏更新后自带的文件与 OptiScaler 补丁发生版本冲突。\n\n" +
-                    "2. 兼容修复做了什么？\n" +
-                    "   • 自动备份：将游戏目录中原有的配套 DLL（libxess.dll、amd_fidelityfx_*.dll 等）完整备份到游戏目录下的 OptiScaler-compat-backup 文件夹中。\n" +
-                    "   • 配套替换：将本工具箱经过实测验证的配套运行库一键部署到游戏目录，替换厂商未更新的老旧文件，使补丁与游戏运行库完美协同。\n\n" +
-                    "3. 如何还原或应对游戏更新？\n" +
-                    "   • 若修复后没有改善或出现异常，随时点击“恢复原文件”即可一键无损还原。\n" +
-                    "   • 游戏更新后若正常运行，可在还原窗口中选择“保留当前文件并结束修复”，安全清理旧记录。",
+                Text = qa,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 20)
             });
-            var ok = new Button { Content = "确定", IsDefault = true, MinWidth = 90, Margin = new Thickness(4), HorizontalAlignment = HorizontalAlignment.Right };
+            var ok = new Button { Content = L("确定", "OK"), IsDefault = true, MinWidth = 90, Margin = new Thickness(4), HorizontalAlignment = HorizontalAlignment.Right };
             DialogTheme.Primary(dialog, ok);
             ok.Click += delegate { dialog.DialogResult = true; };
             panel.Children.Add(ok);
@@ -1053,7 +1138,7 @@ namespace OptScalerNR.Launcher
             if (!File.Exists(script))
             {
                 if (_heroProgress != null) _heroProgress.IsIndeterminate = false;
-                done(false, "目录里没有 compat-repair.ps1，无法执行。");
+                done(false, L("目录里没有 compat-repair.ps1，无法执行。", "compat-repair.ps1 is missing; cannot run."));
                 return;
             }
             var dir = _dir;
@@ -1143,7 +1228,7 @@ namespace OptScalerNR.Launcher
             if (_iniQuickSaveButton != null) _iniQuickSaveButton.Click += delegate {
                 var game = CaptureIniGame();
                 if (!CanUseIniGame(game)) return;
-                SaveIniProfileCore(game, game.Name + " 保存配置");
+                SaveIniProfileCore(game, game.Name + L(" 保存配置", " profile"));
             };
             if (_iniImportButton != null) _iniImportButton.Click += delegate { PromptImportIniProfile(); };
             if (_iniRenameButton != null) _iniRenameButton.Click += delegate { PromptRenameIniProfile(); };
@@ -1162,16 +1247,16 @@ namespace OptScalerNR.Launcher
 
         static void RefreshProfilesLanguage()
         {
-            SetLabelText("IniHeading", "OptiScaler.ini 共享配置（整文件）");
-            SetLabelText("IniSelectHint", "选择配置后点击“应用所选配置”。");
-            if (_iniSaveButton != null) _iniSaveButton.Content = "保存…";
-            if (_iniQuickSaveButton != null) _iniQuickSaveButton.Content = "快速保存";
-            if (_iniImportButton != null) _iniImportButton.Content = "导入…";
-            if (_iniRenameButton != null) _iniRenameButton.Content = "重命名…";
-            if (_iniDeleteButton != null) _iniDeleteButton.Content = "删除";
-            if (_iniApplyButton != null) _iniApplyButton.Content = "应用所选配置";
-            if (_iniFolderButton != null) _iniFolderButton.Content = "配置文件夹";
-            if (_iniSearchBox != null) _iniSearchBox.ToolTip = "搜索共享配置";
+            SetLabelText("IniHeading", L("OptiScaler.ini 共享配置（整文件）", "Shared OptiScaler.ini profiles (whole file)"));
+            SetLabelText("IniSelectHint", L("选择配置后点击“应用所选配置”。", "Select a profile, then Apply selection."));
+            if (_iniSaveButton != null) _iniSaveButton.Content = L("保存…", "Save…");
+            if (_iniQuickSaveButton != null) _iniQuickSaveButton.Content = L("快速保存", "Quick save");
+            if (_iniImportButton != null) _iniImportButton.Content = L("导入…", "Import…");
+            if (_iniRenameButton != null) _iniRenameButton.Content = L("重命名…", "Rename…");
+            if (_iniDeleteButton != null) _iniDeleteButton.Content = L("删除", "Delete");
+            if (_iniApplyButton != null) _iniApplyButton.Content = L("应用所选配置", "Apply selection");
+            if (_iniFolderButton != null) _iniFolderButton.Content = L("配置文件夹", "Profiles folder");
+            if (_iniSearchBox != null) _iniSearchBox.ToolTip = L("搜索共享配置", "Search shared profiles");
             RefreshShareCodeLanguage();
             PopulateIniProfiles();
             RenderIniStatus();
@@ -1282,7 +1367,7 @@ namespace OptScalerNR.Launcher
             {
                 var query = _iniSearchBox == null ? "" : _iniSearchBox.Text.Trim();
                 _iniProfileCombo.Items.Clear();
-                var current = new ComboBoxItem { Content = "当前游戏 INI", Tag = "" };
+                var current = new ComboBoxItem { Content = L("当前游戏 INI", "Current game INI"), Tag = "" };
                 _iniProfileCombo.Items.Add(current);
                 ComboBoxItem chosen = string.IsNullOrEmpty(_iniSelectedProfile) ? current : null;
                 foreach (var name in _iniProfileNames)
@@ -1320,12 +1405,12 @@ namespace OptScalerNR.Launcher
         {
             var dialog = DialogTheme.Create(_window, title, 450);
             var panel = new StackPanel { Margin = new Thickness(22) };
-            panel.Children.Add(new TextBlock { Text = "配置名称", Margin = new Thickness(0, 0, 0, 8) });
+            panel.Children.Add(new TextBlock { Text = L("配置名称", "Profile name"), Margin = new Thickness(0, 0, 0, 8) });
             var name = new TextBox { Text = initial, MaxLength = 80 };
             panel.Children.Add(name);
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
-            var cancel = new Button { Content = "取消", IsCancel = true, MinWidth = 85, Margin = new Thickness(4) };
-            var accept = new Button { Content = "确定", IsDefault = true, MinWidth = 85, Margin = new Thickness(4) };
+            var cancel = new Button { Content = L("取消", "Cancel"), IsCancel = true, MinWidth = 85, Margin = new Thickness(4) };
+            var accept = new Button { Content = L("确定", "OK"), IsDefault = true, MinWidth = 85, Margin = new Thickness(4) };
             accept.Click += delegate { if (!string.IsNullOrWhiteSpace(name.Text)) dialog.DialogResult = true; };
             DialogTheme.Primary(dialog, accept);
             buttons.Children.Add(cancel); buttons.Children.Add(accept); panel.Children.Add(buttons);
@@ -1337,17 +1422,17 @@ namespace OptScalerNR.Launcher
         {
             var game = CaptureIniGame();
             if (!CanUseIniGame(game)) return;
-            var name = PromptIniName("保存共享配置", game.Name + " 保存配置");
+            var name = PromptIniName(L("保存共享配置", "Save shared profile"), game.Name + L(" 保存配置", " profile"));
             if (name != null) SaveIniProfileCore(game, name);
         }
         static void PromptImportIniProfile()
         {
             var game = CaptureIniGame();
             if (!CanUseIniGame(game)) return;
-            var picker = new Microsoft.Win32.OpenFileDialog { Title = "导入 OptiScaler.ini 配置", Filter = "INI (*.ini)|*.ini", CheckFileExists = true, RestoreDirectory = true };
+            var picker = new Microsoft.Win32.OpenFileDialog { Title = L("导入 OptiScaler.ini 配置", "Import OptiScaler.ini profile"), Filter = "INI (*.ini)|*.ini", CheckFileExists = true, RestoreDirectory = true };
             if (picker.ShowDialog(_window) != true || !CanUseIniGame(game)) return;
             var source = picker.FileName;
-            var name = PromptIniName("导入共享配置", System.IO.Path.GetFileNameWithoutExtension(source));
+            var name = PromptIniName(L("导入共享配置", "Import shared profile"), System.IO.Path.GetFileNameWithoutExtension(source));
             if (name != null) ImportIniProfileCore(game, source, name);
         }
         static void PromptRenameIniProfile()
@@ -1355,7 +1440,7 @@ namespace OptScalerNR.Launcher
             var game = CaptureIniGame();
             var oldName = _iniSelectedProfile;
             if (!CanUseIniGame(game) || string.IsNullOrEmpty(oldName)) return;
-            var name = PromptIniName("重命名共享配置", oldName);
+            var name = PromptIniName(L("重命名共享配置", "Rename shared profile"), oldName);
             if (name != null) RenameIniProfileCore(game, oldName, name);
         }
         static void PromptDeleteIniProfile()
@@ -1363,7 +1448,7 @@ namespace OptScalerNR.Launcher
             var game = CaptureIniGame();
             var name = _iniSelectedProfile;
             if (!CanUseIniGame(game) || string.IsNullOrEmpty(name)) return;
-            if (DialogTheme.Show(_window, "删除共享配置“" + name + "”？所有游戏的该配置选择都会清除，游戏 INI 不会改变。",
+            if (DialogTheme.Show(_window, L("删除共享配置“", "Delete shared profile \"") + name + L("”？所有游戏的该配置选择都会清除，游戏 INI 不会改变。", "\"? Its selection will be cleared for every game. Game INI files are not changed."),
                 "删除配置", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes)
                 DeleteIniProfileCore(game, name);
         }
@@ -1464,32 +1549,32 @@ namespace OptScalerNR.Launcher
             string text;
             switch (_iniStatus)
             {
-                case "busy": text = "操作正在进行，请稍候。"; break;
-                case "locked": text = "游戏文件夹已被另一个启动器锁定。"; break;
-                case "changed": text = "游戏选择已改变，操作已取消。"; break;
-                case "game": text = "请先选择游戏文件夹。"; break;
-                case "metadata": text = "无法读取配置记录，请检查配置记录文件。"; break;
-                case "noini": text = "游戏没有 OptiScaler.ini，请先安装。"; break;
-                case "invalid": text = "不是有效的 OptiScaler.ini。"; break;
-                case "extension": text = "只能导入 .ini 文件。"; break;
-                case "source": text = "导入文件不存在。"; break;
-                case "missing": text = "配置已不存在，请重新选择游戏以刷新列表。"; break;
-                case "name": text = "请输入有效的配置名称。"; break;
-                case "exists": text = "已有同名配置，请使用其他名称。"; break;
-                case "pending": text = "已保存选择；点击“应用”后修改游戏 INI。"; break;
-                case "saved": text = "已保存共享配置：" + _iniStatusDetail; break;
-                case "imported": text = "已导入：" + _iniStatusDetail + "。点击“应用”切换。"; break;
-                case "renamed": text = "已重命名：" + _iniStatusDetail; break;
-                case "deleted": text = "已删除共享配置：" + _iniStatusDetail; break;
-                case "applied": text = "已应用，请重启游戏。原 INI 备份：" + _iniStatusDetail; break;
-                case "share-imported": text = "已换上同款画面，重启游戏后生效"; break;
+                case "busy": text = L("操作正在进行，请稍候。", "An operation is in progress. Please wait."); break;
+                case "locked": text = L("游戏文件夹已被另一个启动器锁定。", "The game folder is locked by another launcher."); break;
+                case "changed": text = L("游戏选择已改变，操作已取消。", "Game selection changed; operation cancelled."); break;
+                case "game": text = L("请先选择游戏文件夹。", "Select a game folder first."); break;
+                case "metadata": text = L("无法读取配置记录，请检查配置记录文件。", "Cannot read profile records. Check the profile metadata file."); break;
+                case "noini": text = L("游戏没有 OptiScaler.ini，请先安装。", "No game OptiScaler.ini. Install first."); break;
+                case "invalid": text = L("不是有效的 OptiScaler.ini。", "Not a valid OptiScaler.ini."); break;
+                case "extension": text = L("只能导入 .ini 文件。", "Only .ini files can be imported."); break;
+                case "source": text = L("导入文件不存在。", "The import file does not exist."); break;
+                case "missing": text = L("配置已不存在，请重新选择游戏以刷新列表。", "Profile no longer exists. Reselect the game to refresh."); break;
+                case "name": text = L("请输入有效的配置名称。", "Enter a valid profile name."); break;
+                case "exists": text = L("已有同名配置，请使用其他名称。", "That profile name already exists. Choose another name."); break;
+                case "pending": text = L("已保存选择；点击“应用”后修改游戏 INI。", "Selection saved; click Apply to change the game INI."); break;
+                case "saved": text = L("已保存共享配置：", "Shared profile saved: ") + _iniStatusDetail; break;
+                case "imported": text = L("已导入：", "Imported: ") + _iniStatusDetail + L("。点击“应用”切换。", ". Click Apply to switch."); break;
+                case "renamed": text = L("已重命名：", "Renamed: ") + _iniStatusDetail; break;
+                case "deleted": text = L("已删除共享配置：", "Shared profile deleted: ") + _iniStatusDetail; break;
+                case "applied": text = L("已应用，请重启游戏。原 INI 备份：", "Applied; restart the game. Original INI backup: ") + _iniStatusDetail; break;
+                case "share-imported": text = L("已换上同款画面，重启游戏后生效", "New look applied; restart the game."); break;
                 case "share-error": text = _iniStatusDetail; break;
                 case "panel": text = _iniStatusDetail; break;
-                case "io": text = "配置操作失败，请检查文件权限与可用空间。"; break;
-                default: text = _iniProfiles == null ? "配置库不可用。"
-                    : CaptureIniGame() == null ? "选择游戏以使用共享配置。"
-                    : _iniProfileNames.Length == 0 ? "暂无共享配置。可保存当前游戏 INI 或导入。"
-                    : "配置对所有游戏可见；选择与插件开关按游戏保存。"; break;
+                case "io": text = L("配置操作失败，请检查文件权限与可用空间。", "Profile operation failed. Check file permissions and free space."); break;
+                default: text = _iniProfiles == null ? L("配置库不可用。", "Profile library unavailable.")
+                    : CaptureIniGame() == null ? L("选择游戏以使用共享配置。", "Select a game to use shared profiles.")
+                    : _iniProfileNames.Length == 0 ? L("暂无共享配置。可保存当前游戏 INI 或导入。", "No shared profiles yet. Save the current game INI or import one.")
+                    : L("配置对所有游戏可见；选择与插件开关按游戏保存。", "Profiles are shared; selection and plugin setting are saved per game."); break;
             }
             _iniProfileStatus.Text = text;
         }
@@ -1549,18 +1634,18 @@ namespace OptScalerNR.Launcher
         {
             var title = _window.FindName("StyleShareTitle") as TextBlock;
             var sub = _window.FindName("StyleShareSub") as TextBlock;
-            if (title != null) title.Text = "画面风格分享";
+            if (title != null) title.Text = L(L("画面风格分享", "Visual style sharing"), "Visual style sharing");
             if (sub != null)
-                sub.Text = "将调好的画面参数变成一段分享码，或粘贴别人的分享码";
+                sub.Text = L("将调好的画面参数变成一段分享码，或粘贴别人的分享码", "Turn your tuned settings into a share code, or paste someone else's");
             if (_styleOutButton != null)
             {
-                _styleOutButton.Content = "导出";
-                _styleOutButton.ToolTip = "生成你当前画面风格的分享码（默认打开发出）";
+                _styleOutButton.Content = L("导出", "Export");
+                _styleOutButton.ToolTip = L("生成你当前画面风格的分享码（默认打开发出）", "Generate a share code for your current look (opens export)");
             }
             if (_styleInButton != null)
             {
-                _styleInButton.Content = "导入";
-                _styleInButton.ToolTip = "粘贴别人的分享码，换上同款画面（默认打开导入）";
+                _styleInButton.Content = L("导入", "Import");
+                _styleInButton.ToolTip = L("粘贴别人的分享码，换上同款画面（默认打开导入）", "Paste a share code and wear that look (opens import)");
             }
         }
 
@@ -1576,16 +1661,16 @@ namespace OptScalerNR.Launcher
         static string ShareError(Exception error)
         {
             var code = error as MochizukiShareCode.CodeException;
-            if (code == null) return "操作没成功，再试一次或检查文件权限。";
+            if (code == null) return L("操作没成功，再试一次或检查文件权限。", "The operation failed. Try again or check file permissions.");
             switch (code.Reason) {
-                case "prefix": return "没认出画面分享码。确认复制了完整的分享内容（里面会有一段 MZ 开头的字符）。";
-                case "crc": return "内容好像没复制全，少了一截。把整段分享内容重新复制一遍试试？";
-                case "index": return "这段分享码来自更新的版本，更新启动器后再试。";
-                case "range": return "这段分享码的内容有问题，可能没复制全。";
-                case "duplicate": return "这段分享码的内容有问题，可能没复制全。";
-                case "encoding": return "游戏设置文件不是常见的编码，无法读取。";
-                case "value": return "这段分享码的内容有问题，可能没复制全。";
-                default: return "没认出画面分享码。确认复制了完整的分享内容。";
+                case "prefix": return L("没认出画面分享码。确认复制了完整的分享内容（里面会有一段 MZ 开头的字符）。", "No share code found. Make sure you copied the full share text (including the MZ... part).");
+                case "crc": return L("内容好像没复制全，少了一截。把整段分享内容重新复制一遍试试？", "Looks like part of the text was cut off. Try copying the whole thing again.");
+                case "index": return L("这段分享码来自更新的版本，更新启动器后再试。", "This share code needs a newer launcher. Update first.");
+                case "range": return L("这段分享码的内容有问题，可能没复制全。", "The share code looks incomplete.");
+                case "duplicate": return L("这段分享码的内容有问题，可能没复制全。", "The share code looks incomplete.");
+                case "encoding": return L("游戏设置文件不是常见的编码，无法读取。", "The game INI uses an unsupported encoding.");
+                case "value": return L("这段分享码的内容有问题，可能没复制全。", "The share code looks incomplete.");
+                default: return L("没认出画面分享码。确认复制了完整的分享内容。", "No share code recognized. Copy the full share text.");
             }
         }
 
@@ -1598,11 +1683,11 @@ namespace OptScalerNR.Launcher
             string executable = exeInfo != null ? exeInfo.FullName : null;
             if (!File.Exists(path)) { SetIniStatus("noini", ""); return; }
             try {
-                var dialog = DialogTheme.Create(_window, "画面风格分享", 620);
+                var dialog = DialogTheme.Create(_window, L(L("画面风格分享", "Visual style sharing"), "Visual style sharing"), 620);
                 var panel = new StackPanel { Margin = new Thickness(22) };
                 var modeRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
-                var exportRadio = new RadioButton { Content = "导出（发出我的画面）", GroupName = "ShareCodeMode", Margin = new Thickness(0, 0, 14, 0) };
-                var importRadio = new RadioButton { Content = "导入（换上别人的画面）", GroupName = "ShareCodeMode" };
+                var exportRadio = new RadioButton { Content = L("导出（发出我的画面）", "Export (share my look)"), GroupName = "ShareCodeMode", Margin = new Thickness(0, 0, 14, 0) };
+                var importRadio = new RadioButton { Content = L("导入（换上别人的画面）", "Import (wear someone's look)"), GroupName = "ShareCodeMode" };
                 modeRow.Children.Add(exportRadio); modeRow.Children.Add(importRadio);
                 panel.Children.Add(modeRow);
                 var hint = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
@@ -1616,17 +1701,17 @@ namespace OptScalerNR.Launcher
                     Padding = new Thickness(6, 4, 6, 4)
                 };
                 panel.Children.Add(input);
-                var includeGame = new CheckBox { Content = "附带游戏名（朋友导入时会显示这段画面来自哪个游戏）", IsChecked = true, Margin = new Thickness(0, 10, 0, 0) };
+                var includeGame = new CheckBox { Content = L("附带游戏名（朋友导入时会显示这段画面来自哪个游戏）", "Include game title (shown to whoever imports it)"), IsChecked = true, Margin = new Thickness(0, 10, 0, 0) };
                 panel.Children.Add(includeGame);
                 var sourceRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
-                var pickIni = new Button { Content = "从 INI 文件读取…", MinWidth = 110, Margin = new Thickness(0, 0, 8, 0), Padding = new Thickness(10, 3, 10, 3) };
+                var pickIni = new Button { Content = L("从 INI 文件读取…", "Read from INI file…"), MinWidth = 110, Margin = new Thickness(0, 0, 8, 0), Padding = new Thickness(10, 3, 10, 3) };
                 var sourceHint = new TextBlock { Foreground = TryFindResourceString("ThemeMuted"), FontSize = 11, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 330 };
-                sourceHint.Text = "默认：当前游戏的 OptiScaler.ini";
+                sourceHint.Text = L("默认：当前游戏的 OptiScaler.ini", "Default: the current game's OptiScaler.ini");
                 sourceRow.Children.Add(pickIni); sourceRow.Children.Add(sourceHint);
                 panel.Children.Add(sourceRow);
-                var noteHint = new TextBlock { Text = "备注（可选，随分享码一起发过去）：", Foreground = TryFindResourceString("ThemeMuted"), FontSize = 11, Margin = new Thickness(0, 8, 0, 2) };
+                var noteHint = new TextBlock { Text = L("备注（可选，随分享码一起发过去）：", "Note (optional, travels with the code):"), Foreground = TryFindResourceString("ThemeMuted"), FontSize = 11, Margin = new Thickness(0, 8, 0, 2) };
                 var noteBox = new TextBox { Height = 26, Padding = new Thickness(6, 3, 6, 3), Background = TryFindResourceString("ThemeSurface"), Foreground = TryFindResourceString("ThemeInk"), BorderBrush = TryFindResourceString("ThemeBorder") };
-                var notePlaceholder = "给这段画面起个名字，比如：夜之城 冷蓝电影感";
+                var notePlaceholder = L("给这段画面起个名字，比如：夜之城 冷蓝电影感", "Name this look, e.g. cold cinematic night");
                 noteBox.Text = notePlaceholder; noteBox.Foreground = TryFindResourceString("ThemeMuted");
                 bool noteDirty = false;
                 noteBox.GotFocus += delegate { if (!noteDirty) { noteBox.Text = ""; noteBox.Foreground = TryFindResourceString("ThemeInk"); } };
@@ -1646,22 +1731,22 @@ namespace OptScalerNR.Launcher
                 };
                 exportRadio.Checked += switchMode; importRadio.Checked += switchMode;
                 var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-                var close = new Button { Content = "关闭", MinWidth = 75, Margin = new Thickness(6) };
+                var close = new Button { Content = L("关闭", "Close"), MinWidth = 75, Margin = new Thickness(6) };
                 close.Click += delegate { dialog.Close(); };
                 var action = new Button { MinWidth = 100, Margin = new Thickness(6) };
                 var apply = new Button { MinWidth = 110, Margin = new Thickness(6), IsEnabled = false, Visibility = Visibility.Collapsed };
                 string validated = null, validatedGame = "";
                 renderMode = delegate {
-                    action.Content = isExport ? "复制分享码" : "解析";
-                    apply.Content = "立即换上这套画面";
+                    action.Content = isExport ? L("复制分享码", "Copy code") : L("解析", "Parse");
+                    apply.Content = L("立即换上这套画面", "Apply this look");
                     apply.Visibility = isExport ? Visibility.Collapsed : Visibility.Visible;
                     apply.IsEnabled = false; validated = null; validatedGame = "";
                     includeGame.Visibility = isExport ? Visibility.Visible : Visibility.Collapsed;
                     sourceRow.Visibility = noteHint.Visibility = noteBox.Visibility =
                         isExport ? Visibility.Visible : Visibility.Collapsed;
                     hint.Text = isExport
-                        ? "你调好的画面风格会变成下面这段分享码（只含画面参数，不动其他设置）。复制后发给朋友或发到群里，TA 粘贴解析后就能用上一模一样的画面。"
-                        : "粘贴别人分享的码（直接粘贴整段分享文本也行，会自动找出里面的码），解析预览后套用。";
+                        ? L("你调好的画面风格会变成下面这段分享码（只含画面参数，不动其他设置）。复制后发给朋友或发到群里，TA 粘贴解析后就能用上一模一样的画面。", "Your tuned look becomes the share code below (visual parameters only, nothing else changes). Send it to friends or chat; they paste, parse and wear your exact look.")
+                        : L("粘贴别人分享的码（直接粘贴整段分享文本也行，会自动找出里面的码），解析预览后套用。", "Paste a shared code (pasting the whole share text works too, the code inside is found automatically), parse, then apply.");
                     input.IsReadOnly = isExport;
                     summary.Text = "";
                     if (isExport) {
@@ -1684,8 +1769,8 @@ namespace OptScalerNR.Launcher
                         try {
                             var values = MochizukiShareCode.Decode(code);
                             string tag = values.GameTag.Length > 0 ? "【" + values.GameTag + "】" : "";
-                            string noteLine = values.Note.Length > 0 ? "（备注：" + values.Note + "）" : "";
-                            summary.Text = "✨ 已识别" + tag + "同款画质（色调、质感等专属调校）" + noteLine;
+                            string noteLine = values.Note.Length > 0 ? L("（备注：", " (note: ") + values.Note + L("）", ")") : "";
+                            summary.Text = L("✨ 已识别", "✨ Ready: ") + tag + L("同款画质（色调、质感等专属调校）", "custom look (color and texture tuning)") + noteLine;
                             validated = code; validatedGame = values.GameTag; apply.IsEnabled = true;
                         } catch (Exception ex) { summary.Text = ShareError(ex); }
                     }
@@ -1698,7 +1783,7 @@ namespace OptScalerNR.Launcher
                     if (isExport && renderMode != null) renderMode();
                 };
                 pickIni.Click += delegate {
-                    var dlg = new Microsoft.Win32.OpenFileDialog { Filter = "INI 文件|*.ini|所有文件|*.*", Title = "选择要导出的 INI" };
+                    var dlg = new Microsoft.Win32.OpenFileDialog { Filter = L("INI 文件|*.ini|所有文件|*.*", "INI files|*.ini|All files|*.*"), Title = L("选择要导出的 INI", "Choose an INI to export") };
                     if (dlg.ShowDialog(dialog) == true)
                     {
                         try {
@@ -1716,8 +1801,8 @@ namespace OptScalerNR.Launcher
                         var code = ExtractCode(input.Text);
                         var values = MochizukiShareCode.Decode(code);
                         int difference = MochizukiShareCode.DifferenceCount(File.ReadAllBytes(path), code);
-                        summary.Text = (values.Note.Length > 0 ? "备注：" + values.Note + "\n" : "") +
-                                       MochizukiShareCode.Summary(values, true) + "\n将更改 " + difference + " 项画面设置（其余风格参数恢复默认）。";
+                        summary.Text = (values.Note.Length > 0 ? L("备注：", "Note: ") + values.Note + "\n" : "") +
+                                       MochizukiShareCode.Summary(values, true) + L("\n将更改 ", "\nWill change ") + difference + L(" 项画面设置（其余风格参数恢复默认）。", " settings (remaining visual parameters reset to defaults).");
                         validated = code; validatedGame = values.GameTag; apply.IsEnabled = true;
                     } catch (Exception ex) { validated = null; apply.IsEnabled = false; summary.Text = ShareError(ex); }
                 };
@@ -1726,7 +1811,7 @@ namespace OptScalerNR.Launcher
                     if (validatedGame.Length > 0 && !MochizukiShareCode.GameTagMatches(validatedGame, executable) &&
                         DialogTheme.Show(dialog,
                             "这段画面来自「" + validatedGame + "」，和当前游戏不是同一个，还要换上吗？",
-                            "游戏不一样", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+                            L("游戏不一样", "Different game"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
                     if (ApplyShareCode(game, validated)) dialog.Close();
                 };
                 buttons.Children.Add(close); buttons.Children.Add(action); buttons.Children.Add(apply);

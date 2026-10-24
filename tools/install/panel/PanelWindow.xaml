@@ -411,9 +411,14 @@
         </StackPanel>
 
         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-          <Button x:Name="RefreshBtn" Content="↻" Style="{DynamicResource GhostButton}" Width="32" Padding="0"
-                  FontSize="18" Margin="0,0,5,0"
-                  shell:WindowChrome.IsHitTestVisibleInChrome="True"/>
+          <Border Background="{DynamicResource ThemeSubtle}" CornerRadius="16" Padding="2" Margin="0,0,5,0">
+            <StackPanel Orientation="Horizontal">
+              <Button x:Name="LangZh" Style="{DynamicResource GhostButton}" Width="30" Height="28" Padding="0"
+                      shell:WindowChrome.IsHitTestVisibleInChrome="True"/>
+              <Button x:Name="LangEn" Content="EN" Style="{DynamicResource GhostButton}" Width="30" Height="28" Padding="0"
+                      shell:WindowChrome.IsHitTestVisibleInChrome="True"/>
+            </StackPanel>
+          </Border>
           <Button x:Name="ThemeToggle" Style="{DynamicResource GhostButton}" Width="36" Padding="0" Margin="0,0,5,0"
                   shell:WindowChrome.IsHitTestVisibleInChrome="True"/>
           <Button x:Name="MinBtn" Content="—" Style="{StaticResource CaptionButton}"
@@ -450,7 +455,7 @@
           <DockPanel Grid.Column="1" VerticalAlignment="Center">
             <TextBlock DockPanel.Dock="Right" FontSize="11" Foreground="{DynamicResource ThemeMuted}"
                        VerticalAlignment="Center">
-              <Run Text="整合："/><Hyperlink x:Name="PackLink" NavigateUri="https://space.bilibili.com/166753728"
+              <Run x:Name="PackCaption" Text="整合："/><Hyperlink x:Name="PackLink" NavigateUri="https://space.bilibili.com/166753728"
                          Cursor="Hand">
                 <Hyperlink.Style>
                   <Style TargetType="Hyperlink">
@@ -502,8 +507,8 @@
       <Border Style="{StaticResource Surface}" Padding="10">
         <DockPanel>
           <StackPanel DockPanel.Dock="Top" Margin="2,0,2,8">
-            <TextBlock Text="注入代理" FontWeight="SemiBold" FontSize="12"/>
-            <TextBlock Text="点击切换，立即生效" Foreground="{DynamicResource ThemeMuted}"
+            <TextBlock x:Name="ProxyHeading" Text="注入代理" FontWeight="SemiBold" FontSize="12"/>
+            <TextBlock x:Name="ProxyHint" Text="点击切换，立即生效" Foreground="{DynamicResource ThemeMuted}"
                        FontSize="10.5" Margin="0,2,0,0"/>
           </StackPanel>
           <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -535,7 +540,7 @@
         <!-- 兼容修复：结构与文案照抄上游“配置与运行库兼容诊断”区的 compat 部分 -->
         <Border Style="{StaticResource Surface}" Padding="15,12" Margin="0,0,0,12">
           <StackPanel>
-            <TextBlock Text="配置与运行库兼容诊断" Foreground="{DynamicResource ThemeMuted}" FontSize="11.5" Margin="0,0,0,10"/>
+            <TextBlock x:Name="DiagnosticsHeading" Text="配置与运行库兼容诊断" Foreground="{DynamicResource ThemeMuted}" FontSize="11.5" Margin="0,0,0,10"/>
             <TextBlock x:Name="CompatSummary" TextWrapping="Wrap" Foreground="{DynamicResource ThemeMuted}" FontSize="10.5" Margin="0,0,0,9"/>
             <WrapPanel Margin="0,0,0,9">
               <Button x:Name="CompatRepairBtn" Content="兼容修复" Style="{DynamicResource GhostButton}" Height="27" FontSize="11" IsEnabled="False"/>
