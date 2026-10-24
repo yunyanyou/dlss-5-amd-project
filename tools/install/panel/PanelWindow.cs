@@ -1551,15 +1551,15 @@ namespace OptScalerNR.Launcher
             var sub = _window.FindName("StyleShareSub") as TextBlock;
             if (title != null) title.Text = "画面风格分享";
             if (sub != null)
-                sub.Text = "把你调好的画面风格变成一段分享码发给朋友，或粘贴别人的码换上同款画面";
+                sub.Text = "将调好的画面参数变成一段分享码，或粘贴别人的分享码";
             if (_styleOutButton != null)
             {
-                _styleOutButton.Content = "晒出我的画面";
+                _styleOutButton.Content = "导出";
                 _styleOutButton.ToolTip = "生成你当前画面风格的分享码（默认打开发出）";
             }
             if (_styleInButton != null)
             {
-                _styleInButton.Content = "换上同款画面";
+                _styleInButton.Content = "导入";
                 _styleInButton.ToolTip = "粘贴别人的分享码，换上同款画面（默认打开导入）";
             }
         }
