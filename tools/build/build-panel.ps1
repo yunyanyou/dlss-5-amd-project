@@ -48,7 +48,6 @@ $refs = @(
     (Join-Path $wpf 'WindowsBase.dll'),
     (Join-Path $wpf 'PresentationCore.dll'),
     (Join-Path $wpf 'PresentationFramework.dll'),
-    (Join-Path $fw 'System.Management.dll'),
     (Join-Path $fw 'System.Drawing.dll')
 )
 

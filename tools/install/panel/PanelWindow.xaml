@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:local="clr-namespace:OptScalerNR.Launcher;assembly=OptiScalerPanel"
-        Title="OptScaler NR"
+        Title="Optiscaler代理切换"
         Width="900" Height="620"
         MinWidth="900" MinHeight="620"
         Background="{DynamicResource ThemeBackground}"
@@ -119,25 +119,7 @@
             <TextBlock Text="N" Foreground="White" FontWeight="Bold"
                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
           </Border>
-          <TextBlock Text="OptScaler NR" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
-          <Border x:Name="VersionBadge" Width="90" Height="26" VerticalAlignment="Center"
-                  Background="{DynamicResource ThemeSubtle}" CornerRadius="13" Padding="8,0" Margin="7,0,0,0">
-            <TextBlock x:Name="VersionTag" FontSize="10" Foreground="{DynamicResource ThemeMuted}"
-                       HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center"/>
-          </Border>
-          <Border x:Name="TopWarning" Width="220" Height="26" VerticalAlignment="Center"
-                  Background="{DynamicResource ThemeWarningBg}" CornerRadius="13" Padding="9,0" Margin="8,0,0,0">
-            <TextBlock x:Name="RefundWarning" FontSize="10" Foreground="{DynamicResource ThemeWarning}"
-                       HorizontalAlignment="Center" VerticalAlignment="Center"
-                       Text="本软件免费，如付费购买请立即退款！"/>
-          </Border>
-        </StackPanel>
-
-        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="18,0,0,0">
-          <Ellipse x:Name="StatusLed" Width="6" Height="6" Fill="{DynamicResource ThemeSuccess}"
-                   VerticalAlignment="Center" Margin="0,0,8,0"/>
-          <TextBlock x:Name="TopStatus" Foreground="{DynamicResource ThemeMuted}" FontSize="11"
-                     VerticalAlignment="Center" MaxWidth="360" TextTrimming="CharacterEllipsis"/>
+          <TextBlock Text="Optiscaler代理切换" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
         </StackPanel>
 
         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
@@ -216,7 +198,7 @@
       <Border Style="{StaticResource Surface}" Padding="10">
         <DockPanel>
           <StackPanel DockPanel.Dock="Top" Margin="2,0,2,8">
-            <TextBlock Text="注入名" FontWeight="SemiBold" FontSize="12"/>
+            <TextBlock Text="注入代理" FontWeight="SemiBold" FontSize="12"/>
             <TextBlock Text="点击切换，重启游戏生效" Foreground="{DynamicResource ThemeMuted}"
                        FontSize="10.5" Margin="0,2,0,0"/>
           </StackPanel>
@@ -243,40 +225,55 @@
           </StackPanel>
         </Border>
 
-        <Border Style="{StaticResource Surface}" Padding="14" Margin="0,0,0,12">
+        <!-- 配置预设 + 画面分享：照搬上游 ini 区块 + StyleShareBar 合并为一块 -->
+        <Border Style="{StaticResource Surface}" Padding="14">
           <StackPanel>
-            <TextBlock Text="配置预设" FontWeight="SemiBold" FontSize="12"/>
-            <TextBlock Text="存一份当前 ini，之后一键切回来（套用前会自动备份）"
-                       Foreground="{DynamicResource ThemeMuted}" FontSize="10.5" Margin="0,2,0,8"/>
+            <DockPanel Margin="0,0,0,8">
+              <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button x:Name="PresetSaveBtn" Content="保存当前" Style="{DynamicResource GhostButton}"
+                        Height="25" FontSize="10.5" Padding="8,0"/>
+                <Button x:Name="PresetApplyBtn" Content="套用" Style="{DynamicResource GhostButton}"
+                        Height="25" FontSize="10.5" Padding="12,0" Margin="5,0,0,0"/>
+              </StackPanel>
+              <TextBlock Text="配置预设" Foreground="{DynamicResource ThemeMuted}" FontSize="11"
+                         VerticalAlignment="Center"/>
+            </DockPanel>
             <Grid>
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
               </Grid.ColumnDefinitions>
               <ComboBox x:Name="PresetCombo" Height="30" Background="{DynamicResource ThemeSubtle}"
                         Foreground="{DynamicResource ThemeInk}" BorderBrush="{DynamicResource ThemeBorder}"/>
-              <Button x:Name="PresetApplyBtn" Content="套用" Grid.Column="1"
-                      Style="{DynamicResource GhostButton}" Height="30" Padding="10,0" Margin="8,0,0,0"/>
-              <Button x:Name="PresetSaveBtn" Content="保存当前" Grid.Column="2"
-                      Style="{DynamicResource GhostButton}" Height="30" Padding="10,0" Margin="6,0,0,0"/>
-              <Button x:Name="PresetDeleteBtn" Content="删除" Grid.Column="3"
-                      Style="{DynamicResource GhostButton}" Height="30" Padding="10,0" Margin="6,0,0,0"/>
+              <Button x:Name="PresetDeleteBtn" Content="删除" Grid.Column="1"
+                      Style="{DynamicResource GhostButton}" Height="30" Padding="8,0" FontSize="10.5"
+                      Margin="6,0,0,0"/>
             </Grid>
-          </StackPanel>
-        </Border>
+            <TextBlock Text="存一份当前 ini，之后一键切回来（套用前会自动备份）"
+                       Foreground="{DynamicResource ThemeMuted}" FontSize="10" VerticalAlignment="Center"
+                       TextWrapping="Wrap" Margin="0,6,0,0"/>
 
-        <Border Style="{StaticResource Surface}" Padding="14">
-          <StackPanel>
-            <TextBlock Text="画面分享" FontWeight="SemiBold" FontSize="12"/>
-            <TextBlock Text="把调好的 Mochizuki 外观发给别人，或粘贴别人的码直接换上"
-                       Foreground="{DynamicResource ThemeMuted}" FontSize="10.5" Margin="0,2,0,8"/>
-            <WrapPanel>
-              <Button x:Name="ExportBtn" Content="晒出我的画面" Style="{DynamicResource GhostButton}"
-                      Height="30" Padding="12,0" Margin="0,0,8,0"/>
-              <Button x:Name="ImportBtn" Content="换上同款画面" Style="{DynamicResource GhostButton}"
-                      Height="30" Padding="12,0" Margin="0,0,8,0"/>
+            <Border Background="{DynamicResource ThemeSubtle}" BorderBrush="{DynamicResource ThemeBorder}"
+                    BorderThickness="1" CornerRadius="10" Padding="12,9" Margin="0,10,0,0">
+              <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                  <Button x:Name="ExportBtn" Content="晒出我的画面" Style="{DynamicResource GhostButton}"
+                          Height="30" FontSize="11.5" Padding="12,0" Margin="6,0,0,0"/>
+                  <Button x:Name="ImportBtn" Content="换上同款画面" Style="{DynamicResource GhostButton}"
+                          Background="{DynamicResource ThemeAccent}" BorderThickness="0" Foreground="White"
+                          Height="30" FontSize="11.5" FontWeight="SemiBold" Padding="12,0" Margin="6,0,0,0"/>
+                </StackPanel>
+                <StackPanel VerticalAlignment="Center">
+                  <TextBlock Text="画面分享" FontWeight="SemiBold" FontSize="11.5"
+                             Foreground="{DynamicResource ThemeInk}"/>
+                  <TextBlock Text="把调好的 Mochizuki 外观发给别人，或粘贴别人的码直接换上"
+                             FontSize="10" Foreground="{DynamicResource ThemeMuted}" TextWrapping="Wrap"
+                             Margin="0,2,8,0"/>
+                </StackPanel>
+              </DockPanel>
+            </Border>
+
+            <WrapPanel Margin="0,10,0,0">
               <Button x:Name="FolderBtn" Content="打开目录" Style="{DynamicResource GhostButton}"
                       Height="30" Padding="12,0"/>
             </WrapPanel>

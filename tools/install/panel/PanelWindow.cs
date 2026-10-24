@@ -26,8 +26,8 @@ namespace OptScalerNR.Launcher
         static Button _themeToggle, _maxBtn;
         static TextBlock _hardwareText;
         static StackPanel _list;
-        static TextBlock _gameText, _wikiText, _optiText, _topStatus, _bottomStatus, _shareHint;
-        static System.Windows.Shapes.Ellipse _led, _bottomLed;
+        static TextBlock _gameText, _wikiText, _optiText, _bottomStatus, _shareHint;
+        static System.Windows.Shapes.Ellipse _bottomLed;
         static ComboBox _presetCombo;
         static TextBox _codeBox;
 
@@ -49,10 +49,8 @@ namespace OptScalerNR.Launcher
             _gameText = (TextBlock)_window.FindName("GameText");
             _wikiText = (TextBlock)_window.FindName("WikiText");
             _optiText = (TextBlock)_window.FindName("OptiText");
-            _topStatus = (TextBlock)_window.FindName("TopStatus");
             _bottomStatus = (TextBlock)_window.FindName("BottomStatus");
             _shareHint = (TextBlock)_window.FindName("ShareHint");
-            _led = (System.Windows.Shapes.Ellipse)_window.FindName("StatusLed");
             _bottomLed = (System.Windows.Shapes.Ellipse)_window.FindName("BottomLed");
             _presetCombo = (ComboBox)_window.FindName("PresetCombo");
             _codeBox = (TextBox)_window.FindName("CodeBox");
@@ -87,7 +85,6 @@ namespace OptScalerNR.Launcher
             ((System.Windows.Documents.Run)_window.FindName("AuthorCaption")).Text = " · 作者：";
             var author = (System.Windows.Documents.Hyperlink)_window.FindName("AuthorLink");
             author.RequestNavigate += (s, e) => { OpenUrl("https://github.com/TheAutomatic/dlss-5-amd-project"); e.Handled = true; };
-            ShowVersion();
 
             ((Button)_window.FindName("FolderBtn")).Click += (s, e) => OpenDir();
             ((Button)_window.FindName("ExportBtn")).Click += (s, e) => ExportCode();
@@ -180,10 +177,10 @@ namespace OptScalerNR.Launcher
                         ? "　备选 " + string.Join(" / ", profile.Alternatives) : string.Empty);
             _optiText.Text = HasOptiPatcher() ? "OptiPatcher　已安装" : "OptiPatcher　未安装";
 
-            _topStatus.Text = current != null ? "已注入 " + current.Name + ".dll" : "未检测到注入";
-            _led.Fill = current != null ? LauncherTheme.Brush("ThemeSuccess") : LauncherTheme.Brush("ThemeAccent");
-            _bottomLed.Fill = _led.Fill;
-            _bottomStatus.Text = Path.GetFileName(_dir.TrimEnd('\\', '/'));
+            _bottomLed.Fill = current != null ? LauncherTheme.Brush("ThemeSuccess") : LauncherTheme.Brush("ThemeWarning");
+            _bottomStatus.Text = current != null
+                ? "已注入 " + current.Name + ".dll"
+                : "未检测到注入";
             RefreshHardware();
 
             ReloadPresets();
@@ -191,32 +188,91 @@ namespace OptScalerNR.Launcher
 
         static string _hardwareDetails;
 
-        /// <summary>底栏的硬件信息：与启动器一样只报物理显卡名，不声称游戏在用哪块。</summary>
+        /// <summary>底栏的硬件信息：与启动器同算法，从注册表挑物理独显，不声称游戏在用哪块。</summary>
         static void RefreshHardware()
         {
             if (_hardwareText == null) return;
             if (_hardwareDetails == null)
             {
-                try
-                {
-                    using (var searcher = new System.Management.ManagementObjectSearcher(
-                        "SELECT Name FROM Win32_VideoController"))
-                    {
-                        foreach (System.Management.ManagementObject mo in searcher.Get())
-                        {
-                            var name = Convert.ToString(mo["Name"]);
-                            if (string.IsNullOrWhiteSpace(name)) continue;
-                            if (name.IndexOf("virtual", StringComparison.OrdinalIgnoreCase) >= 0) continue;
-                            if (name.IndexOf("basic", StringComparison.OrdinalIgnoreCase) >= 0) continue;
-                            _hardwareDetails = name.Trim();
-                            break;
-                        }
-                    }
-                }
-                catch { }
-                if (_hardwareDetails == null) _hardwareDetails = "GPU 信息不可用";
+                _hardwareDetails = ReadPhysicalAdapterName();
+                if (string.IsNullOrWhiteSpace(_hardwareDetails)) _hardwareDetails = "GPU 信息不可用";
             }
             _hardwareText.Text = _hardwareDetails;
+        }
+
+        static readonly string[] NonPhysicalAdapterNames = { "virtual", "remote", "gameviewer", "uu", "parsec", "basic", "indirect", "rdp", "citrix", "vmware", "vnc", "displaylink" };
+
+        static bool ContainsHardwareText(string value, string text)
+        {
+            return value.IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        static int PhysicalAdapterRank(string name, string device)
+        {
+            foreach (var excluded in NonPhysicalAdapterNames)
+                if (ContainsHardwareText(name, excluded)) return -1;
+            if (!string.IsNullOrEmpty(device) && !device.StartsWith(@"PCI\", StringComparison.OrdinalIgnoreCase)) return -1;
+            if (ContainsHardwareText(name, "NVIDIA")) return 0;
+            if (ContainsHardwareText(name, "AMD") || ContainsHardwareText(name, "Radeon"))
+            {
+                bool integrated = ContainsHardwareText(name, "Vega") && !ContainsHardwareText(name, "RX Vega") || ContainsHardwareText(name, "Radeon(TM) Graphics") ||
+                    ContainsHardwareText(name, "Radeon Graphics") || ContainsHardwareText(name, "Ryzen") ||
+                    ContainsHardwareText(name, "Radeon 610M") || ContainsHardwareText(name, "Radeon 660M") ||
+                    ContainsHardwareText(name, "Radeon 680M") || ContainsHardwareText(name, "Radeon 740M") ||
+                    ContainsHardwareText(name, "Radeon 760M") || ContainsHardwareText(name, "Radeon 780M") ||
+                    ContainsHardwareText(name, "Radeon 880M") || ContainsHardwareText(name, "Radeon 890M");
+                return integrated ? 1 : 0;
+            }
+            if (ContainsHardwareText(name, "Intel")) return ContainsHardwareText(name, "Arc A") || ContainsHardwareText(name, "Arc B") ||
+                ContainsHardwareText(name, "Arc(TM) A") || ContainsHardwareText(name, "Arc(TM) B") ? 0 : 2;
+            return -1;
+        }
+
+        static string ReadPhysicalAdapterName()
+        {
+            string best = null;
+            int bestRank = int.MaxValue;
+            bool bestPrimary = false;
+            string primary = "";
+            try
+            {
+                using (var video = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"HARDWARE\DEVICEMAP\VIDEO"))
+                    if (video != null) primary = Convert.ToString(video.GetValue(@"\Device\Video0"));
+                const string machinePrefix = @"\Registry\Machine\";
+                if (primary.StartsWith(machinePrefix, StringComparison.OrdinalIgnoreCase))
+                    using (var mapped = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(primary.Substring(machinePrefix.Length)))
+                        primary = mapped == null ? "" : Convert.ToString(mapped.GetValue("Driver"));
+            }
+            catch { }
+            try
+            {
+                using (var root = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"))
+                {
+                    if (root != null) foreach (var name in root.GetSubKeyNames())
+                    {
+                        int index; if (name.Length != 4 || !int.TryParse(name, out index)) continue;
+                        try
+                        {
+                            using (var key = root.OpenSubKey(name))
+                            {
+                                if (key == null) continue;
+                                string gpu = Convert.ToString(key.GetValue("DriverDesc"));
+                                if (string.IsNullOrWhiteSpace(gpu)) continue;
+                                int rank = PhysicalAdapterRank(gpu, Convert.ToString(key.GetValue("MatchingDeviceId")));
+                                if (rank < 0) continue;
+                                bool isPrimary = primary.EndsWith(@"\" + name, StringComparison.OrdinalIgnoreCase);
+                                if (best == null || rank < bestRank || (rank == bestRank && isPrimary && !bestPrimary))
+                                {
+                                    best = gpu; bestRank = rank; bestPrimary = isPrimary;
+                                }
+                            }
+                        }
+                        catch { }
+                    }
+                }
+            }
+            catch { }
+            return best;
         }
 
         static void ReloadPresets()
@@ -333,34 +389,6 @@ namespace OptScalerNR.Launcher
         static string ThemeName(string theme)
         {
             return theme == "light" ? "浅色" : theme == "dark" ? "深色" : "跟随系统";
-        }
-
-        // 顶栏版本徽章：与启动器一样，向上查找 VERSION 文件。
-        static void ShowVersion()
-        {
-            try
-            {
-                var roots = new List<string>();
-                try { var loc = typeof(PanelWindow).Assembly.Location; if (!string.IsNullOrEmpty(loc)) roots.Add(Path.GetDirectoryName(loc)); } catch { }
-                if (!string.IsNullOrEmpty(AppDomain.CurrentDomain.BaseDirectory)) roots.Add(AppDomain.CurrentDomain.BaseDirectory);
-                foreach (var start in roots)
-                {
-                    var dir = start;
-                    for (int depth = 0; depth < 5 && !string.IsNullOrEmpty(dir); depth++)
-                    {
-                        var candidate = Path.Combine(dir, "VERSION");
-                        if (File.Exists(candidate))
-                        {
-                            var raw = File.ReadAllText(candidate).Trim();
-                            if (!string.IsNullOrEmpty(raw))
-                                ((TextBlock)_window.FindName("VersionTag")).Text = raw.TrimStart('v', 'V');
-                            return;
-                        }
-                        dir = Path.GetDirectoryName(dir.TrimEnd('\\', '/'));
-                    }
-                }
-            }
-            catch { }
         }
 
         static void OnSystemThemeChanged(object sender, Microsoft.Win32.UserPreferenceChangedEventArgs e)
