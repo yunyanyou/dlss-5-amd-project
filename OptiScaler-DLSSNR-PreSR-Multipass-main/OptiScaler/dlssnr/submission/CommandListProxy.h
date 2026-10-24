@@ -73,9 +73,39 @@ IRecordingResources : public IUnknown
                                                        D3D12_RESOURCE_STATES* states) = 0;
     virtual void STDMETHODCALLTYPE TraceNrInputState(const char* backend, uint64_t frame, const char* role,
                                                      ID3D12Resource* resource, D3D12_RESOURCE_STATES expected) = 0;
+    // Restore caller heaps only, then synchronize tracking without replaying native compute bindings.
+    virtual void STDMETHODCALLTYPE InvalidateDirectComputeBindings() = 0;
+    virtual HRESULT STDMETHODCALLTYPE BeginDirectState(UINT count, ID3D12Resource** resources,
+                                                       D3D12_RESOURCE_STATES* states) = 0;
+    virtual void STDMETHODCALLTYPE EndDirectState() = 0;
+};
+// D3D12Core's private presentation face, not a GraphicsCommandList version or XeLL IID.
+// Microsoft D3D12Core.pdb F597AC0490C849B7992AAAA0485E83EB1: GUID RVA 0x1CAA20;
+// CGraphicsCommandList COM-map RVA 0x1C93F0 returns +0x300, matching the
+// ID3D12CommandListPresent_RS5 RTTI base and its IUnknown/Blt/Present vtable.
+inline constexpr GUID IID_CommandListPresentRS5 =
+    {0xB0B9E70E, 0x59CE, 0x4415, {0x81, 0x16, 0xC8, 0xC8, 0x26, 0xB1, 0xE5, 0x99}};
+// Only opaque pointers cross this ABI; the runtime owns these private structures.
+struct SUBRESOURCE_BLT_MAP;
+struct D3D12_PRESENTSURFACE;
+struct D3D12_PRESENT;
+MIDL_INTERFACE("b0b9e70e-59ce-4415-8116-c8c826b1e599")
+ID3D12CommandListPresent_RS5 : public IUnknown
+{
+    virtual void STDMETHODCALLTYPE Blt(ID3D12Resource* destination, const RECT* destinationRect,
+                                      const RECT* destinationSubRect, UINT destinationSubresource,
+                                      ID3D12Resource* source, const RECT* sourceRect,
+                                      const SUBRESOURCE_BLT_MAP* subresources, UINT subresourceCount,
+                                      UINT flags) = 0;
+    virtual void STDMETHODCALLTYPE Present(ID3D12CommandQueue* queue, const D3D12_PRESENTSURFACE* surfaces,
+                                          UINT surfaceCount, ID3D12Resource* resource, const RECT* rect,
+                                          UINT flags, UINT interval, UINT presentCount, INT* result,
+                                          D3D12_PRESENT* present) = 0;
 };
 
-class CommandListProxy final : public ID3D12GraphicsCommandList10, public ILogicalCommandList, public IRecordingResources
+
+class CommandListProxy final : public ID3D12GraphicsCommandList10, public ILogicalCommandList, public IRecordingResources,
+                               public ID3D12CommandListPresent_RS5
 {
     std::atomic<ULONG> refs { 1 };
     inline static std::atomic<uint64_t> nextIdentity { 0 };
@@ -90,9 +120,11 @@ class CommandListProxy final : public ID3D12GraphicsCommandList10, public ILogic
     QueryStateBook queryBook;
     bool splitIneligible = false;
     bool renderPassActive = false, enhancedBarriersSeen = false;
+    bool presentCommandsUsed = false;
     std::atomic<bool> rawInterfaceEscaped { false }; // Lifetime-wide; an alias can outlive Reset.
     const char *splitIneligibleReason = nullptr;
     bool inlineUnsafe = false, inlineStateActive = false;
+    bool directStateActive = false, predicationActive = false;
     // A lane's own recording may bind private state (see BeginPrivateBindings). While this is set the tracked setters
     // write into inlineState, so the game's snapshot stays what the continuation is seeded from, while the native list
     // still receives the private bindings the dispatch needs.
@@ -179,7 +211,7 @@ class CommandListProxy final : public ID3D12GraphicsCommandList10, public ILogic
             return S_OK;
         } catch (...) { return E_OUTOFMEMORY; }
     }
-    bool STDMETHODCALLTYPE CanAppendCompute() override { return !rawInterfaceEscaped && !renderPassActive && !enhancedBarriersSeen; }
+    bool STDMETHODCALLTYPE CanAppendCompute() override { return !rawInterfaceEscaped && !presentCommandsUsed && !renderPassActive && !enhancedBarriersSeen; }
     bool STDMETHODCALLTYPE CanRecordInline() override
     {
         if (rawInterfaceEscaped) inlineRejection = "native_interface_escaped";
@@ -223,6 +255,48 @@ class CommandListProxy final : public ID3D12GraphicsCommandList10, public ILogic
             inlineRejection = "enhanced_barriers_not_allowed"; return E_UNEXPECTED;
         }
         return BeginNrState(count, resources, states, true);
+    }
+    HRESULT STDMETHODCALLTYPE BeginDirectState(UINT count, ID3D12Resource** resources,
+                                               D3D12_RESOURCE_STATES* states) override
+    {
+        // Open queries are legal in an unsplit recording. Active render passes and
+        // predication are not: raw Vulkan ignores the caller's conditional execution.
+        if (renderPassActive) inlineRejection = "render_pass";
+        else if (predicationActive) inlineRejection = "predication";
+        else if (presentCommandsUsed) inlineRejection = "private_present_commands";
+        else if (!resBook.CanSplit(nullptr)) inlineRejection = "open_split_barrier";
+        else if (privateBindings || inlineStateActive || directStateActive) inlineRejection = "nr_state_already_active";
+        else {
+            const auto hr = BeginNrState(count, resources, states, false);
+            if (FAILED(hr)) return hr;
+            // Prefer an observed whole-resource legacy state; unobserved inputs
+            // retain the incoming Frame contract, including prior-list transitions.
+            for (UINT i = 0; i < count; ++i) {
+                if (!resources[i]) continue;
+                const auto* observed = enhancedBook.Find(resources[i]);
+                if (!observed || observed->legacy) resBook.TryGet(resources[i], &states[i]);
+            }
+            directStateActive = true;
+            return S_OK;
+        }
+        return E_UNEXPECTED;
+    }
+    void STDMETHODCALLTYPE EndDirectState() override
+    {
+        if (!directStateActive) return;
+        auto* list7 = inlineLayouts.empty() ? nullptr : CurAs<ID3D12GraphicsCommandList7>();
+        for (const auto& [resource, state] : inlineLayouts) {
+            // Runtime restores the COMMON layout provided by BeginNrState.
+            TransitionEnhanced(list7, resource, state, false);
+            enhancedBook.Restore(resource, state);
+            resBook.Forget(resource);
+        }
+        if (list7) list7->Release();
+        inlineLayouts.clear();
+        inlineState.Reset();
+        inlineStateActive = directStateActive = false;
+        // Never ApplyTo or reset native compute bindings here: the runtime's
+        // null PSO/root and partial ClearUAV invalidation must survive this scope.
     }
 private:
     HRESULT BeginNrState(UINT count, ID3D12Resource** resources, D3D12_RESOURCE_STATES* states, bool split)
@@ -304,6 +378,21 @@ public:
         // was never written to, so the continuation is still seeded from the game's bindings.
         if (auto* c = Cur()) contState.ApplyTo(c);
         inlineState.Reset();
+    }
+    void STDMETHODCALLTYPE InvalidateDirectComputeBindings() override
+    {
+        // The runtime's native exposure meter can change descriptor heaps. Restore
+        // only those: replaying PSO/root would overwrite its null setters and the
+        // partial ClearUAV meta invalidation needed for subsequent Vulkan rebinds.
+        if (auto* c = Cur(); c && contState.hasHeaps)
+            c->SetDescriptorHeaps(contState.numHeaps, contState.heaps);
+        // Raw Vulkan changed the compute bind point; discard its old snapshots.
+        contState.OnPso(nullptr);
+        contState.OnComputeRoot(nullptr);
+        contState.computeRoots.Reset();
+        inlineState.OnPso(nullptr);
+        inlineState.OnComputeRoot(nullptr);
+        inlineState.computeRoots.Reset();
     }
     void STDMETHODCALLTYPE TraceOpenQueries() override
     {
@@ -422,6 +511,16 @@ public:
             AddRef();
             return S_OK;
         }
+        if (riid == IID_CommandListPresentRS5)
+        {
+            auto* supported = CurAs<ID3D12CommandListPresent_RS5>();
+            if (!supported) return E_NOINTERFACE;
+            supported->Release();
+            // Capability probing must not hand out a native alias that can survive Reset.
+            *ppv = static_cast<ID3D12CommandListPresent_RS5*>(this);
+            AddRef();
+            return S_OK;
+        }
         // Streamline / debug / vendor QIs: forward to the live producer/continuation list
         // instead of E_NOINTERFACE (燕云 crash with ArmCreate + wrap).
         if (auto *cur = logical.Current())
@@ -467,6 +566,37 @@ public:
         return n;
     }
 
+    void STDMETHODCALLTYPE Blt(ID3D12Resource* destination, const RECT* destinationRect,
+                              const RECT* destinationSubRect, UINT destinationSubresource,
+                              ID3D12Resource* source, const RECT* sourceRect,
+                              const SUBRESOURCE_BLT_MAP* subresources, UINT subresourceCount, UINT flags) override
+    {
+        // QI-only probes are harmless; an actual opaque command invalidates tracked state
+        // for this recording. Unlike a raw escaped alias, this proxy face follows Reset.
+        presentCommandsUsed = true;
+        MarkSplitIneligible("private_present_commands");
+        if (auto* current = CurAs<ID3D12CommandListPresent_RS5>())
+        {
+            current->Blt(destination, destinationRect, destinationSubRect, destinationSubresource,
+                         source, sourceRect, subresources, subresourceCount, flags);
+            current->Release();
+        }
+    }
+    void STDMETHODCALLTYPE Present(ID3D12CommandQueue* queue, const D3D12_PRESENTSURFACE* surfaces,
+                                  UINT surfaceCount, ID3D12Resource* resource, const RECT* rect,
+                                  UINT flags, UINT interval, UINT presentCount, INT* result,
+                                  D3D12_PRESENT* present) override
+    {
+        presentCommandsUsed = true;
+        MarkSplitIneligible("private_present_commands");
+        if (auto* current = CurAs<ID3D12CommandListPresent_RS5>())
+        {
+            current->Present(queue, surfaces, surfaceCount, resource, rect, flags, interval, presentCount,
+                             result, present);
+            current->Release();
+        }
+    }
+
     HRESULT STDMETHODCALLTYPE GetPrivateData(REFGUID guid, UINT *size, void *data) override
     {
         return logical.Current() ? logical.Current()->GetPrivateData(guid, size, data) : E_UNEXPECTED;
@@ -503,9 +633,11 @@ public:
         resBook.Reset();
         queryBook.Reset();
         splitIneligible = false;
+        presentCommandsUsed = false;
         renderPassActive = enhancedBarriersSeen = false;
         splitIneligibleReason = nullptr;
         inlineUnsafe = inlineStateActive = privateBindings = false;
+        directStateActive = predicationActive = false;
         inlineUnsafeReason = nullptr; inlineRejection = "eligible";
         enhancedBook.Reset(); inlineLayouts.clear();
         if (initial)
@@ -893,6 +1025,7 @@ public:
     }
     void STDMETHODCALLTYPE SetPredication(ID3D12Resource *b, UINT64 o, D3D12_PREDICATION_OP op) override
     {
+        predicationActive = b != nullptr;
         if (!inlineStateActive) MarkSplitIneligible("predication");
         if (auto *c = Cur())
             c->SetPredication(b, o, op);
