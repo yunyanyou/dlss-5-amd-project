@@ -130,9 +130,11 @@ namespace OptScalerNR.Launcher
             ((Button)_window.FindName("QuickLogButton")).Click += (s, e) => OpenLog();
             Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnSystemThemeChanged;
             _window.Closed += (s, e) => Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnSystemThemeChanged;
-            ((System.Windows.Documents.Run)_window.FindName("AuthorCaption")).Text = " · 作者：";
+            ((System.Windows.Documents.Run)_window.FindName("AuthorCaption")).Text = " · 来源：";
             var author = (System.Windows.Documents.Hyperlink)_window.FindName("AuthorLink");
             author.RequestNavigate += (s, e) => { OpenUrl("https://github.com/TheAutomatic/dlss-5-amd-project"); e.Handled = true; };
+            var pack = (System.Windows.Documents.Hyperlink)_window.FindName("PackLink");
+            if (pack != null) pack.RequestNavigate += (s, e) => { OpenUrl("https://space.bilibili.com/166753728"); e.Handled = true; };
 
             ((Button)_window.FindName("OptiBtn")).Click += (s, e) => InstallOptiPatcher();
             ((Button)_window.FindName("LogBtn")).Click += (s, e) => OpenLog();
@@ -368,18 +370,32 @@ namespace OptScalerNR.Launcher
             _heroFacts.Children.Add(row);
         }
 
-        static string _hardwareDetails;
+        static string _hardwareDetails, _hardwareDriver;
 
-        /// <summary>底栏的硬件信息：与启动器同算法，从注册表挑物理独显，不声称游戏在用哪块。</summary>
+        /// <summary>底栏硬件信息：与上游同源逻辑——物理显卡名 + Adrenalin 版本（AMD 才有），
+        /// 悬浮提示含 Windows 驱动版本。</summary>
         static void RefreshHardware()
         {
             if (_hardwareText == null) return;
             if (_hardwareDetails == null)
             {
-                _hardwareDetails = ReadPhysicalAdapterName();
-                if (string.IsNullOrWhiteSpace(_hardwareDetails)) _hardwareDetails = "GPU 信息不可用";
+                var adapter = ReadPhysicalAdapter();
+                if (adapter == null) _hardwareDetails = "GPU 信息不可用";
+                else
+                {
+                    _hardwareDetails = adapter.Name
+                        + (string.IsNullOrWhiteSpace(adapter.RadeonVersion) ? "" : " · Adrenalin " + adapter.RadeonVersion.Trim());
+                    _hardwareDriver = adapter.WindowsDriver;
+                }
             }
             _hardwareText.Text = _hardwareDetails;
+            _hardwareText.ToolTip = "检测到的物理显卡；不代表游戏当前使用的渲染显卡。"
+                + (string.IsNullOrWhiteSpace(_hardwareDriver) ? "" : "\nWindows 驱动版本：" + _hardwareDriver);
+        }
+
+        sealed class PanelHardwareAdapter
+        {
+            public string Name, WindowsDriver, RadeonVersion;
         }
 
         static readonly string[] NonPhysicalAdapterNames = { "virtual", "remote", "gameviewer", "uu", "parsec", "basic", "indirect", "rdp", "citrix", "vmware", "vnc", "displaylink" };
@@ -410,9 +426,9 @@ namespace OptScalerNR.Launcher
             return -1;
         }
 
-        static string ReadPhysicalAdapterName()
+        static PanelHardwareAdapter ReadPhysicalAdapter()
         {
-            string best = null;
+            PanelHardwareAdapter best = null;
             int bestRank = int.MaxValue;
             bool bestPrimary = false;
             string primary = "";
@@ -445,7 +461,15 @@ namespace OptScalerNR.Launcher
                                 bool isPrimary = primary.EndsWith(@"\" + name, StringComparison.OrdinalIgnoreCase);
                                 if (best == null || rank < bestRank || (rank == bestRank && isPrimary && !bestPrimary))
                                 {
-                                    best = gpu; bestRank = rank; bestPrimary = isPrimary;
+                                    best = new PanelHardwareAdapter
+                                    {
+                                        Name = gpu,
+                                        // 与上游一致：不从 Windows 驱动号推 Adrenalin 版本，读 RadeonSoftwareVersion。
+                                        WindowsDriver = Convert.ToString(key.GetValue("DriverVersion")),
+                                        RadeonVersion = ContainsHardwareText(gpu, "AMD") || ContainsHardwareText(gpu, "Radeon")
+                                            ? Convert.ToString(key.GetValue("RadeonSoftwareVersion")) : null
+                                    };
+                                    bestRank = rank; bestPrimary = isPrimary;
                                 }
                             }
                         }

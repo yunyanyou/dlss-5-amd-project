@@ -450,6 +450,22 @@
           <DockPanel Grid.Column="1" VerticalAlignment="Center">
             <TextBlock DockPanel.Dock="Right" FontSize="11" Foreground="{DynamicResource ThemeMuted}"
                        VerticalAlignment="Center">
+              <Run Text="整合："/><Hyperlink x:Name="PackLink" NavigateUri="https://space.bilibili.com/166753728"
+                         Cursor="Hand">
+                <Hyperlink.Style>
+                  <Style TargetType="Hyperlink">
+                    <Setter Property="Foreground" Value="{DynamicResource ThemeMuted}"/>
+                    <Setter Property="TextDecorations" Value="{x:Null}"/>
+                    <Style.Triggers>
+                      <Trigger Property="IsMouseOver" Value="True">
+                        <Setter Property="Foreground" Value="{DynamicResource ThemeAccent}"/>
+                        <Setter Property="TextDecorations" Value="Underline"/>
+                      </Trigger>
+                    </Style.Triggers>
+                  </Style>
+                </Hyperlink.Style>
+                小雲浅浅
+              </Hyperlink>
               <Run x:Name="AuthorCaption"/>
               <Hyperlink x:Name="AuthorLink" NavigateUri="https://github.com/TheAutomatic/dlss-5-amd-project"
                          Cursor="Hand">
