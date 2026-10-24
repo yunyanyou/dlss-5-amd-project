@@ -503,7 +503,8 @@
         <Border x:Name="HeroCard" Background="#101522" CornerRadius="18" MinHeight="150" ClipToBounds="True" Margin="0,0,0,12">
           <Grid>
             <TextBlock x:Name="HeroMonogram" Text="N" FontSize="190" FontWeight="Black" Foreground="#26394C" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,-50,40,-50"/>
-            <Image x:Name="HeroBgImage" Stretch="UniformToFill" Opacity="0.75"/>
+            <!-- 背景用 ImageBrush 而不是 Image 控件：画刷不参与布局测量，图片怎么放大都撑不高卡片 -->
+            <Border><Border.Background><ImageBrush x:Name="HeroBgBrush" Stretch="UniformToFill" Opacity="0.75"/></Border.Background></Border>
             <Border><Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,0"><GradientStop Color="#F2101522" Offset="0"/><GradientStop Color="#B0101522" Offset="0.55"/><GradientStop Color="#50101522" Offset="1"/></LinearGradientBrush></Border.Background></Border>
             <Border><Border.Background><LinearGradientBrush StartPoint="0,1" EndPoint="0,0"><GradientStop Color="#C0101522" Offset="0"/><GradientStop Color="#00101522" Offset="1"/></LinearGradientBrush></Border.Background></Border>
             <StackPanel Margin="20,16" VerticalAlignment="Center">

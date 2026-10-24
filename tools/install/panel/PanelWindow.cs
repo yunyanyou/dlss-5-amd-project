@@ -28,7 +28,7 @@ namespace OptScalerNR.Launcher
         static StackPanel _list;
         static TextBlock _heroKicker, _heroTitle, _heroMonogram, _bottomStatus;
         static System.Windows.Controls.StackPanel _heroFacts;
-        static System.Windows.Controls.Image _heroBgImage;
+        static System.Windows.Media.ImageBrush _heroBgBrush;
         static System.Windows.Shapes.Ellipse _bottomLed;
         static LocalArtwork.Scope _heroArtwork;
         static int _refreshGeneration;
@@ -77,7 +77,7 @@ namespace OptScalerNR.Launcher
             _heroTitle = (TextBlock)_window.FindName("HeroTitle");
             _heroFacts = (System.Windows.Controls.StackPanel)_window.FindName("HeroFacts");
             _heroMonogram = (TextBlock)_window.FindName("HeroMonogram");
-            _heroBgImage = (System.Windows.Controls.Image)_window.FindName("HeroBgImage");
+            _heroBgBrush = (System.Windows.Media.ImageBrush)_window.FindName("HeroBgBrush");
             _heroArtwork = new LocalArtwork.Scope(_window.Dispatcher);
             _bottomStatus = (TextBlock)_window.FindName("BottomStatus");
             _bottomLed = (System.Windows.Shapes.Ellipse)_window.FindName("BottomLed");
@@ -105,6 +105,14 @@ namespace OptScalerNR.Launcher
             _hardwareText = (TextBlock)_window.FindName("HardwareInfo");
             _themeToggle = (Button)_window.FindName("ThemeToggle");
             InitThemeToggle();
+            // 上游同款：圆角卡片靠显式 Clip 裁掉溢出的内容（Border.CornerRadius 不裁子元素）。
+            var heroCard = _window.FindName("HeroCard") as System.Windows.Controls.Border;
+            if (heroCard != null)
+                heroCard.SizeChanged += delegate
+                {
+                    heroCard.Clip = new System.Windows.Media.RectangleGeometry(
+                        new Rect(0, 0, heroCard.ActualWidth, heroCard.ActualHeight), 18, 18);
+                };
             ((Button)_window.FindName("RefreshBtn")).Click += (s, e) => Refresh();
             ((Button)_window.FindName("QuickLogButton")).Click += (s, e) => OpenLog();
             Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnSystemThemeChanged;
@@ -176,9 +184,7 @@ namespace OptScalerNR.Launcher
                     RenderNow();
                     LocalArtwork.Load(_heroArtwork, hero, heroFromIcon ? 256 : 1000, heroFromIcon, !heroFromIcon, delegate(System.Windows.Media.ImageSource image)
                     {
-                        // 统一 UniformToFill 铺满：只在卡片现有空间内放大裁剪，不撑高卡片，
-                        // 超出部分被圆角边框裁掉，就是“放大 + 边缘自然消隐”的效果。
-                        _heroBgImage.Source = image;
+                        _heroBgBrush.ImageSource = image;
                     });
                 }));
             });
@@ -255,12 +261,7 @@ namespace OptScalerNR.Launcher
                 AddHeroFact("Wiki", WikiFact(advice), 1);
                 AddHeroFact("OptiPatcher", OptiFact(advice), 2);
             }
-            _heroBgImage.Source = null;
-            _heroBgImage.Opacity = 0.75;
-            _heroBgImage.Stretch = Stretch.UniformToFill;
-            _heroBgImage.HorizontalAlignment = HorizontalAlignment.Stretch;
-            _heroBgImage.VerticalAlignment = VerticalAlignment.Stretch;
-            _heroBgImage.Margin = new Thickness(0);
+            _heroBgBrush.ImageSource = null;
             _heroMonogram.Visibility = Visibility.Visible;
 
             _bottomLed.Fill = current != null ? LauncherTheme.Brush("ThemeSuccess") : LauncherTheme.Brush("ThemeWarning");
