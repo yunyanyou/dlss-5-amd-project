@@ -498,26 +498,23 @@
 
       <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" Focusable="False" IsTabStop="False" FocusVisualStyle="{x:Null}">
         <StackPanel>
-        <!-- 游戏卡：照搬上游 MainWindow 的 HeroCard（名字 + 大图 + 渐变 + 底部进度条）；
-             文字多时卡片随内容向下扩展，右列放在 ScrollViewer 里（同上游 DetailsScroll）。 -->
-        <Border x:Name="HeroCard" Background="#101522" CornerRadius="18" MinHeight="166" ClipToBounds="True" Margin="0,0,0,12">
+        <!-- 游戏卡：上游 HeroCard 的底子（深底 + 大图 + 渐变 + monogram），内容区自排：
+             路径 → 大字游戏名 → 分组说明行（标签+内容）→ 底部横排按钮。文字多时向下扩展。 -->
+        <Border x:Name="HeroCard" Background="#101522" CornerRadius="18" MinHeight="150" ClipToBounds="True" Margin="0,0,0,12">
           <Grid>
             <TextBlock x:Name="HeroMonogram" Text="N" FontSize="190" FontWeight="Black" Foreground="#26394C" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,-50,40,-50"/>
             <Image x:Name="HeroBgImage" Stretch="UniformToFill" Opacity="0.75"/>
             <Border><Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="1,0"><GradientStop Color="#F2101522" Offset="0"/><GradientStop Color="#B0101522" Offset="0.55"/><GradientStop Color="#50101522" Offset="1"/></LinearGradientBrush></Border.Background></Border>
             <Border><Border.Background><LinearGradientBrush StartPoint="0,1" EndPoint="0,0"><GradientStop Color="#C0101522" Offset="0"/><GradientStop Color="#00101522" Offset="1"/></LinearGradientBrush></Border.Background></Border>
-            <Grid Margin="20,18"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="240"/></Grid.ColumnDefinitions>
-              <StackPanel VerticalAlignment="Center" Margin="0,0,14,0">
-                <TextBlock x:Name="HeroKicker" Foreground="#CCD5E4" FontSize="10" TextTrimming="CharacterEllipsis"/>
-                <TextBlock x:Name="HeroTitle" FontSize="25" FontWeight="Bold" Foreground="White" Margin="0,5,0,4" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
-                <TextBlock x:Name="HeroMeta" Foreground="#CCD5E4" FontSize="11" TextWrapping="Wrap"/>
-                <TextBlock x:Name="HeroPath" Foreground="#9BA8BA" FontSize="10" TextTrimming="CharacterEllipsis" Margin="0,6,0,0" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+            <StackPanel Margin="20,16" VerticalAlignment="Center">
+              <TextBlock x:Name="HeroKicker" Foreground="#9BA8BA" FontSize="10" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+              <TextBlock x:Name="HeroTitle" FontSize="25" FontWeight="Bold" Foreground="White" Margin="0,4,0,7" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+              <StackPanel x:Name="HeroFacts"/>
+              <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                <Button x:Name="OptiBtn" Content="安装 OptiPatcher（DLSS 伪装增强）" Style="{DynamicResource GhostButton}" Padding="12,0"/>
+                <Button x:Name="LogBtn" Content="打开日志" Style="{DynamicResource GhostButton}" Height="27" Padding="8,0" Margin="8,0,0,0"/>
               </StackPanel>
-              <Grid Grid.Column="1">
-                <Button x:Name="OptiBtn" Content="安装 OptiPatcher（DLSS 伪装增强）" Style="{DynamicResource GhostButton}" VerticalAlignment="Center" Padding="10,0"/>
-                <WrapPanel VerticalAlignment="Bottom" HorizontalAlignment="Right"><Button x:Name="LogBtn" Content="打开日志" Style="{DynamicResource GhostButton}" Height="27" Padding="8,0"/></WrapPanel>
-              </Grid>
-            </Grid>
+            </StackPanel>
             <ProgressBar x:Name="HeroProgress" Height="3" VerticalAlignment="Bottom" Foreground="{DynamicResource ThemeAccent}" Background="#30405060" BorderThickness="0"/>
           </Grid>
         </Border>

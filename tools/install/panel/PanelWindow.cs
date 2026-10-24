@@ -26,7 +26,8 @@ namespace OptScalerNR.Launcher
         static Button _themeToggle, _maxBtn;
         static TextBlock _hardwareText;
         static StackPanel _list;
-        static TextBlock _heroKicker, _heroTitle, _heroMeta, _heroPath, _heroMonogram, _bottomStatus;
+        static TextBlock _heroKicker, _heroTitle, _heroMonogram, _bottomStatus;
+        static System.Windows.Controls.StackPanel _heroFacts;
         static System.Windows.Controls.Image _heroBgImage;
         static System.Windows.Shapes.Ellipse _bottomLed;
         static LocalArtwork.Scope _heroArtwork;
@@ -74,8 +75,7 @@ namespace OptScalerNR.Launcher
             _list = (StackPanel)_window.FindName("LoaderList");
             _heroKicker = (TextBlock)_window.FindName("HeroKicker");
             _heroTitle = (TextBlock)_window.FindName("HeroTitle");
-            _heroMeta = (TextBlock)_window.FindName("HeroMeta");
-            _heroPath = (TextBlock)_window.FindName("HeroPath");
+            _heroFacts = (System.Windows.Controls.StackPanel)_window.FindName("HeroFacts");
             _heroMonogram = (TextBlock)_window.FindName("HeroMonogram");
             _heroBgImage = (System.Windows.Controls.Image)_window.FindName("HeroBgImage");
             _heroArtwork = new LocalArtwork.Scope(_window.Dispatcher);
@@ -222,27 +222,28 @@ namespace OptScalerNR.Launcher
                 _list.Children.Add(row);
             }
 
-            // Hero 卡：上游 MainWindow.SelectGame 的字段分工 —— Kicker=游戏程序，Title=游戏名，
-            // Meta=Wiki 行 + OptiPatcher 支持行（+ 档案中文备注），Path=目录。
+            // Hero 卡：顶部小字=目录路径，大字=游戏名，说明区=分组标签行，底部=横排按钮。
             var exe = GameExe();
             var scanned = string.Equals(_gameExeDir, _dir, StringComparison.OrdinalIgnoreCase);
-            _heroKicker.Text = exe != null ? "游戏程序：" + exe.Name
-                : scanned ? "游戏程序：未找到（可把游戏 EXE 拖进窗口指定）"
-                : "正在扫描游戏程序…";
+            _heroKicker.Text = _dir;
             var title = advice != null && advice.WikiName != null ? advice.WikiName : Path.GetFileName(_dir.TrimEnd('\\', '/'));
             _heroTitle.Text = title;
             _heroMonogram.Text = string.IsNullOrEmpty(title) ? "N"
                 : title.Substring(0, 1).ToUpperInvariant();
+            _heroFacts.Children.Clear();
+            AddHeroFact("程序", exe != null ? exe.Name
+                : scanned ? "未找到（可把游戏 EXE 拖进窗口指定）"
+                : "正在扫描…", 0);
             if (advice == null)
             {
-                _heroMeta.Text = "正在获取 Wiki 与支持列表…";
+                AddHeroFact("Wiki", "正在获取 Wiki 与支持列表…", 1);
             }
             else
             {
-                _heroMeta.Text = WikiLine(advice) + "\n" + OptiLine(advice)
-                    + (!string.IsNullOrEmpty(advice.ProfileNotes) ? "\n" + advice.ProfileNotes : "");
+                AddHeroFact("Wiki", WikiFact(advice), 1);
+                AddHeroFact("OptiPatcher", OptiFact(advice), 2);
+                if (!string.IsNullOrEmpty(advice.ProfileNotes)) AddHeroFact("备注", advice.ProfileNotes, 3);
             }
-            _heroPath.Text = _dir;
             _heroBgImage.Source = null;
 
             _bottomLed.Fill = current != null ? LauncherTheme.Brush("ThemeSuccess") : LauncherTheme.Brush("ThemeWarning");
@@ -254,27 +255,72 @@ namespace OptScalerNR.Launcher
             SelectGameProfiles();
         }
 
-        static string WikiLine(WikiAdvice advice)
+        static string WikiFact(WikiAdvice advice)
         {
             if (advice.Profile != null)
             {
                 var alt = advice.Profile.Alternatives != null ? string.Join(" / ", advice.Profile.Alternatives) : "";
-                return "Wiki 档案：" + advice.Profile.Id + " → 首选 " + advice.Profile.Preferred
+                return "精选档案 → 首选 " + advice.Profile.Preferred
                     + (alt.Length > 0 ? "；备选 " + alt : "");
             }
             if (advice.WikiName != null)
             {
                 return advice.WikiProxies != null && advice.WikiProxies.Length > 0
-                    ? "Wiki 兼容列表：" + advice.WikiName + " → " + string.Join(" / ", advice.WikiProxies)
-                    : "Wiki 兼容列表：" + advice.WikiName + "（未注明 DLL，可任选尝试）";
+                    ? "兼容列表：" + advice.WikiName + " → " + string.Join(" / ", advice.WikiProxies)
+                    : "兼容列表：" + advice.WikiName + "（未注明 DLL，可任选尝试）";
             }
-            return "Wiki 档案：无此游戏记录";
+            return "无此游戏记录";
         }
-        static string OptiLine(WikiAdvice advice)
+        static string OptiFact(WikiAdvice advice)
         {
             return advice.OptiDlss != null
-                ? "OptiPatcher支持：Wiki 收录，支持 DLSS " + advice.OptiDlss + " / DLSS-FG " + advice.OptiFg
-                : "OptiPatcher支持：Wiki 未收录此游戏";
+                ? "Wiki 收录，支持 DLSS " + advice.OptiDlss + " / DLSS-FG " + advice.OptiFg
+                : "Wiki 未收录此游戏";
+        }
+
+        // hero 卡说明行：左侧彩色小标签，右侧内容铺满剩余宽度并自动换行；
+        // hero 卡固定深底（同上游），所以配色用固定低饱和色而不是主题资源。
+        static void AddHeroFact(string tag, string text, int palette)
+        {
+            var back = new[]
+            {
+                System.Windows.Media.Color.FromRgb(0x2A, 0x3A, 0x4F),
+                System.Windows.Media.Color.FromRgb(0x23, 0x40, 0x2F),
+                System.Windows.Media.Color.FromRgb(0x46, 0x32, 0x1F),
+                System.Windows.Media.Color.FromRgb(0x3A, 0x2F, 0x45),
+            }[palette];
+            var fore = new[]
+            {
+                System.Windows.Media.Color.FromRgb(0xA9, 0xC4, 0xE8),
+                System.Windows.Media.Color.FromRgb(0x9B, 0xD8, 0xB4),
+                System.Windows.Media.Color.FromRgb(0xE8, 0xC6, 0x9A),
+                System.Windows.Media.Color.FromRgb(0xCB, 0xB8, 0xE8),
+            }[palette];
+            var badgeBack = new System.Windows.Media.SolidColorBrush(back); badgeBack.Freeze();
+            var badgeFore = new System.Windows.Media.SolidColorBrush(fore); badgeFore.Freeze();
+            var ink = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xDC, 0xE4, 0xEE)); ink.Freeze();
+
+            var row = new System.Windows.Controls.DockPanel { Margin = new Thickness(0, 4, 0, 0) };
+            var badge = new Border
+            {
+                Background = badgeBack,
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(7, 1.5, 7, 1.5),
+                Margin = new Thickness(0, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Top,
+                Child = new TextBlock { Text = tag, FontSize = 10, Foreground = badgeFore }
+            };
+            System.Windows.Controls.DockPanel.SetDock(badge, Dock.Left);
+            row.Children.Add(badge);
+            row.Children.Add(new TextBlock
+            {
+                Text = text,
+                FontSize = 11.5,
+                Foreground = ink,
+                TextWrapping = TextWrapping.Wrap,
+                VerticalAlignment = VerticalAlignment.Top
+            });
+            _heroFacts.Children.Add(row);
         }
 
         static string _hardwareDetails;
