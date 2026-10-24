@@ -303,6 +303,59 @@ passes. A missing bundle, a record mismatch, or an import that produces no
 pipelines discards that graph and builds one complete native network.
 Diagnostics show requested, effective and the reason. `NR_ACO_DIR` does not
 select the bundle after `own_directory()`.
+
+**Proton/vkd3d transport:** the host prepares supported Mochizuki-required Vulkan
+extensions/features during the game-facing D3D12 creation hooks, independent of
+the selected NR backend or its current configuration. `ScopedGameD3D12Device`
+distinguishes game translation from private `ScopedCreatingD3DDevice` probes;
+`ScopedSkipVulkanHooks` always excludes private devices. Raw Vulkan game creation
+is not augmented by this path. Both instance and physical device must support
+Vulkan 1.3. Failed capability merging or augmented creation falls back to the
+original game request. This allows choosing Mochizuki later without trying to
+enable features on an already-created game device.
+Adoption uses the host's successful per-`VkDevice` creation record when available;
+only devices without a host record fall back to vkd3d's extension/feature reports,
+including both core-version and individual promoted feature structures. The core
+does not require `shaderSubgroupExtendedTypes`.
+
+On the adopted path, frame buffers borrow vkd3d's `VkBuffer` and allocation offset;
+only their D3D12 resource owner is released. Producer submissions hold the game's
+vkd3d queue after its D3D12 signal has been flushed; background build submissions
+hold the build queue and stop on a failed lock. Separate imported timeline fences
+order D3D12 capture, Vulkan work and D3D12 consumption. Buffers return to D3D12
+`COMMON` at the copy boundaries and Vulkan copies include the borrowed offset.
+Completion-based recording retirement and builder joining precede resource/device
+release; the game's borrowed Vulkan device is never destroyed by the runtime.
+
+The own-device route now imports and binds a shared buffer before building a
+network. Under Wine the probe is 64 KiB; Windows retains the 16 MiB minimum needed
+by its shared-handle workaround, also retained for real frame buffers. Probe and
+import diagnostics identify the buffer, requested/actual byte sizes,
+`D3D12_RESOURCE` handle type, buffer/handle/intersection `memoryTypeBits`,
+`allocationSize` and failing API/result. Unavailable fields are zero when failure
+occurs before their query. Fixed Proton external-import failures, including
+winevulkan's host-memory error during the tiny probe, report external interop unsupported
+and are remembered for the adapter for this process, rather than recompiling the
+same network. Native Windows out-of-memory classification/backoff is unchanged;
+D3D12 allocation OOM, Vulkan device-memory pressure and larger allocations on a
+successfully probed path retain their memory-pressure classification.
+`tests\mochizuki\run.cmd transport-policy` covers probe sizing and this platform-
+specific failure boundary without a GPU and is included in `abi`. Proton first-frame,
+rebuild/exit and Windows transport/OOM regression checks still require GPU runs.
+
+**RADV/Mesa:** the actual Vulkan physical-device driver selects the Linux graph and
+`dlssnr-amd/aco/shaders` independently of the saved ACO checkbox. This applies to
+both the owned device and borrowed vkd3d device. RADV compiles those SPIR-V shaders
+normally; no PAL records, shell aliases or pipeline-binary extension are required.
+The selected model's kernels, temporal variants, accumulation marker and shader
+constants must match the host. Missing or invalid assets and compile failures
+report an NR build failure/bypass: RADV never retries the Windows network shaders.
+INT4 remains unavailable and the default model path runs with an explanatory note.
+Diagnostics distinguish `RADV driver-compiled Linux SPIR-V (no PAL import)` from
+PAL imports; `aco_effective` means actual PAL import only. The stored INI request
+is unchanged. `tests\mochizuki\run.cmd compile-policy` covers policy propagation
+on a real builder thread, cleanup, assets and failure veto without a GPU; it also
+runs in the `abi` tier.
 On 2026-10-11, `tests/mochizuki/run.cmd aco` used AMD Radeon RX 9070 XT
 (vendor 0x1002, device 0x7550, Vulkan 26.8.1 LLPC, driverVersion 0x0080018b).
 The runtime log recorded 58/58 record matches and 29 imported pipelines. The
@@ -336,6 +389,11 @@ measurable leaves the last measurement in place, and after a second without one 
 white point is back in charge with a line in the log; it resumes on its own once it measures
 again. Daniel/lmxxf exposure controls do not
 configure this backend, and preprocessing keeps its own histogram meter.
+
+The meter classifies finite samples by exponent bits (`(asuint(l) & 0x7f800000u) != 0x7f800000u`)
+for Wine d3dcompiler compatibility (E5005 on `isnan`), preserving Windows finite/zero/denormal acceptance.
+`tests\mochizuki\run.cmd exposure-recording` covers NaN/±Inf parity with Windows intrinsics,
+plus normal, mixed-invalid and all-invalid meter dispatches.
 
 ## Build and verification
 

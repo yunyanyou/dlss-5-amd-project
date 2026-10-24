@@ -1,3 +1,39 @@
+## 2026-10-23 — 启动器按钮"白边"事故:WPF 运行时 XAML 的模板静默回退(已修)
+
+**给以后看的人(说人话版)**:启动器所有界面是运行时从嵌入资源读 XAML 字符串搭起来的
+(不是常规的编译期 XAML)。按钮样式(MainWindow.xaml)和按钮模板(DialogTheme.xaml)
+分在两个文件里,样式里用 DynamicResource 跨文件引模板。这条链在"样式先解析、模板后合并"
+时解析不到,而 WPF 找不到模板时**不报错、直接套 Windows 默认按钮皮肤**——默认皮肤自带
+一圈内侧白色高光,就是用户看到的"红按钮里一圈白边"。弹窗按钮没白边,因为它的样式和模板
+在同一个文件里、用 StaticResource(加载当场解析,找不到会直接崩,崩了我们反而能发现)。
+
+**本次处置**(收口后两层,全部已进 main):
+1. ~~分享按钮用代码构建的极简模板~~(过渡方案,已删):它抹掉了灰按钮的 1px 描边导致
+   "晒出"按钮看起来没框——根因修通后此保底成为回退源,探针验证新链路(元素级
+   DynamicResource 样式 → DialogTheme 内 StaticResource 模板)渲染无白环后移除。
+   dll 药丸(dxgi/d3d12/winmm)一直没这个病的原因:它们的模板内联在 MainWindow.xaml
+   自己样式里,同文件同次解析,从无跨文件引用。
+2. 根治:PrimaryButton/GhostButton/HeroButton 三个样式搬进 DialogTheme.xaml(与模板同
+   文件),模板引用改 StaticResource;MainWindow.xaml 里 44 处按钮改用元素级
+   DynamicResource 引样式(此模式已被验证可靠)。此前 44 处全部静默套默认皮肤。
+3. DialogTheme 在窗口解析前先并入 Application 资源(合并顺序不再是变量)。
+
+**最终元凶补记(2026-10-24,GPT 一轮定位)**:白边是两个病因叠加、症状相同——
+(1)模板解析失败静默套默认铬框(样式合并修复);(2)链路修通后剩下的同色 1px 边框
+抗锯齿缝(同色 BorderBrush 在饱和填充上留浅缝,BorderThickness=0 修复,含 DialogPrimary)。
+修掉(1)才暴露(2),这就是纠缠五轮的原因。两个修复都在位、互相独立、缺一不可。
+
+**长期可选:转标准 BAML 编译**(注:最终元凶与运行时 XAML 架构无关,BAML 也挡不住
+同色边框缝——此项已从"值得考虑"降级为纯可选,仅当需要设计器/编译期校验/热重载时):
+- 是什么:把 XAML 在编译期编成二进制(BAML)嵌进程序集,资源引用全部静态连接。
+- 好处:引用错误在**编译时**报错(这次的坑直接变编译失败,到不了用户屏幕);VS/Rider
+  设计器、智能提示、XAML 热重载全套;启动不再逐文件解析文本。
+- 代价:构建链要从现在的自定义 csc 脚本(build-launcher.ps1)换成 MSBuild 的 WPF 工程
+  (csproj + UseWPF),一次性迁移成本不小。
+- 何时做:启动器 XAML 规模再明显增长、或想要设计器/热重载提效时;现在不为做而做。
+- 迁移时注意:嵌入资源加载(Program.OpenXaml + XamlReader)全部退役,DialogTheme/Resources()
+  的运行时字典机制一并清理。
+
 ## 2026-10-23 — 启动器 Mochizuki 安装检测降为纯提示(不再弹窗/移走/拦截)
 
 实机截图反馈:f3ac3f7f 的检测把他安装记录里的惰性文件(LICENSE、OptiScaler.ini、nvngx

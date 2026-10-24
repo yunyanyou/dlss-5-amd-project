@@ -2133,15 +2133,18 @@ static HRESULT hkD3D12CreateDevice(IUnknown* pAdapter, D3D_FEATURE_LEVEL Minimum
 
     HRESULT result;
     _creatingD3D12Device = true;
-    if (desc.VendorId == VendorId::Intel)
     {
-        ScopedSkipSpoofingGlobal skipSpoofingGlobal {};
-        result = o_D3D12CreateDevice(pAdapter, minLevel, riid, ppDevice);
-    }
-    else
-    {
-        ScopedCreatingD3DDevice skipCreatingD3DDevice {};
-        result = o_D3D12CreateDevice(pAdapter, minLevel, riid, ppDevice);
+        ScopedGameD3D12Device gameDevice;
+        if (desc.VendorId == VendorId::Intel)
+        {
+            ScopedSkipSpoofingGlobal skipSpoofingGlobal {};
+            result = o_D3D12CreateDevice(pAdapter, minLevel, riid, ppDevice);
+        }
+        else
+        {
+            ScopedCreatingD3DDevice skipCreatingD3DDevice {};
+            result = o_D3D12CreateDevice(pAdapter, minLevel, riid, ppDevice);
+        }
     }
     _creatingD3D12Device = false;
 
@@ -2284,16 +2287,19 @@ static HRESULT hkCreateDevice(ID3D12DeviceFactory* pFactory, IUnknown* pAdapter,
     }
 
     HRESULT result;
-    if (desc.VendorId == VendorId::Intel)
     {
-        ScopedSkipSpoofingGlobal skipSpoofingGlobal {};
-        ScopedCreatingD3DDevice skipCreatingD3DDevice {};
-        result = o_CreateDevice(pFactory, pAdapter, minLevel, riid, ppDevice);
-    }
-    else
-    {
-        ScopedCreatingD3DDevice skipCreatingD3DDevice {};
-        result = o_CreateDevice(pFactory, pAdapter, minLevel, riid, ppDevice);
+        ScopedGameD3D12Device gameDevice;
+        if (desc.VendorId == VendorId::Intel)
+        {
+            ScopedSkipSpoofingGlobal skipSpoofingGlobal {};
+            ScopedCreatingD3DDevice skipCreatingD3DDevice {};
+            result = o_CreateDevice(pFactory, pAdapter, minLevel, riid, ppDevice);
+        }
+        else
+        {
+            ScopedCreatingD3DDevice skipCreatingD3DDevice {};
+            result = o_CreateDevice(pFactory, pAdapter, minLevel, riid, ppDevice);
+        }
     }
 
     LOG_DEBUG("o_D3D12CreateDevice result: {:X}", (UINT) result);
@@ -3097,7 +3103,8 @@ static void HookToDevice(ID3D12Device* InDevice)
         ResTrack_Dx12::HookDevice(InDevice);
     }
 
-    if (State::Instance().activeFgOutput == FGOutput::DLSSG && StreamlineProxy::LoadStreamline())
+    if (State::Instance().activeFgOutput == FGOutput::DLSSG && !ScopedCreatingD3DDevice::Active() &&
+        StreamlineProxy::LoadStreamline())
     {
         StreamlineProxy::InitWithD3D12(InDevice);
     }

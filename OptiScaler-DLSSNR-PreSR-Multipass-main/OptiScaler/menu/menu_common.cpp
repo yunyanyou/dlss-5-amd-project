@@ -61,6 +61,7 @@
 #include <misc/IdentifyGpu.h>
 #include <hooks/Amdxc64_Hooks.h>
 #include <low_latency/input/input_common.h>
+#include <low_latency/input/input_xell.h>
 
 #define MARK_ALL_BACKENDS_CHANGED()                                                                                    \
     for (auto& singleChangeBackend : State::Instance().changeBackend)                                                  \
@@ -640,7 +641,7 @@ void MenuCommon::RenderUpscalerCombo(const API api, Upscaler currentUpscaler, co
         for (auto opt : options)
         {
             // Check if GPU is capable of a given backend
-            if (opt == Upscaler::DLSS && !primaryGpu.dlssCapable)
+            if ((opt == Upscaler::DLSS || opt == Upscaler::DLSS_on12) && !primaryGpu.dlssCapable)
                 continue;
 
             // Not all Intel GPUs support native DX11 XeSS but don't think we have a good way to check exactly
@@ -1711,7 +1712,7 @@ void MenuCommon::HandleMenuShortcuts(RenderMenuContext& ctx)
                 else
                 {
                     fgHotkeyLeftDefault = config->FGFollowsGame();
-                    config->FGEnabled = !config->IsFGEnabled();
+                    config->FGEnabled.set_volatile_value(!config->IsFGEnabled());
                 }
                 state.fgChanged = true;
             }
@@ -3873,7 +3874,13 @@ void MenuCommon::RenderFrameGenerationSelection(RenderMenuContext& ctx)
 
         const bool nvngxFgChanged = (replaceFgOutputWithNvngx || showNvngxFgDowndown) &&
                                     state.activeFgNvngx != config->FGNvngxReplacement.value_or_default();
-        state.fgSettingsChanged = state.activeFgOutput != config->FGOutput.value_or_default() ||
+        // Passthrough mode reports NoFG at runtime; treat the configured pair as current so the
+        // restart warning doesn't stay up forever
+        auto configFgOutput = config->FGOutput.value_or_default();
+        if (config->FGInput.value_or_default() == FGInput::XeFG && configFgOutput == FGOutput::XeFG)
+            configFgOutput = FGOutput::NoFG;
+
+        state.fgSettingsChanged = state.activeFgOutput != configFgOutput ||
                                   state.activeFgInput != config->FGInput.value_or_default() || nvngxFgChanged;
 
         if (state.fgSettingsChanged)
@@ -3978,7 +3985,7 @@ void MenuCommon::RenderFrameGenerationSelection(RenderMenuContext& ctx)
 
             ImGui::BeginDisabled(state.dlssgLastSetMode != sl::DLSSGMode::eDynamic);
             static float fpsTarget = config->FGDLSSGFramerateTargetDMFG.value_or_default();
-            MenuUi::SliderFloat("DMFG FPS Target", &fpsTarget, 0, 200, "%.0f");
+            MenuUi::SliderFloat("DMFG FPS Target", &fpsTarget, 0, (std::max)(200, refreshRate), "%.0f");
 
             ShowHelpMarker("An active limit of 0 means auto-detect the display refresh rate");
 
@@ -4039,7 +4046,8 @@ void MenuCommon::RenderFrameGenerationSelection(RenderMenuContext& ctx)
 
         const bool showOutputSpecificFGSettings = state.activeFgInput == FGInput::DLSSG ||
                                                   state.activeFgInput == FGInput::FSRFG ||
-                                                  state.activeFgInput == FGInput::FSRFG30;
+                                                  state.activeFgInput == FGInput::FSRFG30 ||
+                                                  state.activeFgInput == FGInput::XeFG;
 
         const bool showHudCutoff = state.activeFgInput == FGInput::NvngxFG || state.activeFgOutput == FGOutput::FSRFG;
 
@@ -4410,9 +4418,11 @@ void MenuCommon::RenderFrameGenerationRuntimeSettings(RenderMenuContext& ctx)
                     ImGui::TreePop();
                 }
 
+                // Vulkan FSR-FG reports FFX SDK versions, SDK 1.1.3 is FSR 3.1.3
                 auto fg = state.CurrentFG();
-                if (fg != nullptr && strcmp(fg->Name(), "FSR-FG") == 0 &&
-                    FfxApiProxy::VersionDx12_FG() >= feature_version { 3, 1, 3 })
+                auto fptMinVersion =
+                    state.currentVkFG != nullptr ? feature_version { 1, 1, 3 } : feature_version { 3, 1, 3 };
+                if (fg != nullptr && strcmp(fg->Name(), "FSR-FG") == 0 && fg->Version() >= fptMinVersion)
                 {
                     ImGui::Spacing();
 
@@ -4443,6 +4453,9 @@ void MenuCommon::RenderFrameGenerationRuntimeSettings(RenderMenuContext& ctx)
                                        "Opti default value: 0.3");
                         ImGui::PopItemWidth();
 
+                        // FFX's Vulkan swapchain only reads the safety margin and variance factor
+                        ImGui::BeginDisabled(state.currentVkFG != nullptr);
+
                         auto fpHybridSpin = config->FGFPTAllowHybridSpin.value_or_default();
                         if (MenuUi::Checkbox("Enable Hybrid Spin", &fpHybridSpin))
                             config->FGFPTAllowHybridSpin = fpHybridSpin;
@@ -4465,6 +4478,8 @@ void MenuCommon::RenderFrameGenerationRuntimeSettings(RenderMenuContext& ctx)
                             config->FGFPTAllowWaitForSingleObjectOnFence = fpWaitForSingleObjectOnFence;
                         }
                         ShowHelpMarker("Allows WaitForSingleObject instead of spinning for fence value");
+
+                        ImGui::EndDisabled();
 
                         if (MenuUi::Button("Apply Timing Changes"))
                             state.fsrfgFramePaceTuningChanged = true;
@@ -4498,7 +4513,9 @@ void MenuCommon::RenderFrameGenerationRuntimeSettings(RenderMenuContext& ctx)
 
         if (!correctMVs || state.realExclusiveFullscreen)
         {
-            config->FGEnabled.reset();
+            // volatile, not reset: reset() would re-enter follow-game mode and read the game's
+            // FG state, defeating this guard
+            config->FGEnabled.set_volatile_value(false);
             config->FGXeFGDebugView.reset();
         }
 
@@ -4779,12 +4796,38 @@ void MenuCommon::RenderFrameGenerationRuntimeSettings(RenderMenuContext& ctx)
         }
     }
 
-    // Reprojection controls
-    if (state.activeFgOutput == FGOutput::Reprojection && state.activeFgInput != FGInput::NoFG && fgOutput)
+    // Reprojection controls (card shows for any FG output that carries a Reproject)
+    if (auto reprojectionOutput = state.CurrentFG();
+        state.activeFgOutput == FGOutput::Reprojection && state.activeFgInput != FGInput::NoFG && fgOutput &&
+        reprojectionOutput && reprojectionOutput->HasReprojection())
     {
         MenuSectionTitle("Frame Generation (Reprojection)");
 
-        static const char *fillModes[] = { "Stretch Edge", "Dithering", "Noise", "Debug", "Soft Edge" };
+        if (reprojectionOutput->IsActive() && reprojectionOutput->IsReprojectionActive())
+        {
+            MenuUi::Text("Updated camera rotation by: %.1fms",
+                        (float) reprojectionOutput->GetLastTimeSinceSimStartNs() / 1'000'000.f);
+        }
+        else if (reprojectionOutput->IsActive() && reprojectionOutput->GetReproject() &&
+                 reprojectionOutput->GetReproject()->IsBypassed())
+        {
+            MenuUi::TextColored(toneMapColor(ImVec4(1.f, 0.8f, 0.f, 1.f)), "Paused, 3rd person detected");
+        }
+        else
+        {
+            ImGui::TextDisabled("Not updating camera rotation");
+        }
+
+        RenderFGModeSlider(ctx, "Reprojection##mode", 0, nullptr, "Set reprojection on/off");
+
+        ImGui::SameLine();
+
+        MenuUi::Checkbox("Show static elements", &state.fgHudlessCompare);
+        ShowHelpMarker("For fine tuning the depth cutoff\n"
+                    "Shows UI and depth cutoff areas\n"
+                    "Adjust depth cutoff so that only stuff like your gun and hands are marked");
+
+        static const char* fillModes[] = { "Stretch Edge", "Dithering", "Noise", "Debug", "Soft Edge" };
         int fillMode = static_cast<int>(config->ReprojectionFillMode.value_or_default());
         if (MenuUi::Combo("Fill Mode", &fillMode, fillModes, IM_ARRAYSIZE(fillModes)))
             config->ReprojectionFillMode = static_cast<ReprojectionFill>(fillMode);
@@ -4813,27 +4856,74 @@ void MenuCommon::RenderFrameGenerationRuntimeSettings(RenderMenuContext& ctx)
         bool directionCache = config->ReprojectionDirectionCache.value_or_default();
         if (MenuUi::Checkbox("Direction Cache", &directionCache))
             config->ReprojectionDirectionCache = directionCache;
-        ShowHelpMarker("Caches the reprojection direction between frames while the camera is static");
+        ShowHelpMarker("Remembers what was around the camera in previous frames\n"
+                       "and uses it to fill the screen edges and the area under your hands");
+
+        const auto reproject = reprojectionOutput->GetReproject();
+        const bool hasMotionStats = reproject && reproject->HasMotionStats();
 
         bool parallaxAuto = config->ReprojectionParallaxAuto.value_or_default();
         if (MenuUi::Checkbox("Parallax Auto", &parallaxAuto))
             config->ReprojectionParallaxAuto = parallaxAuto;
-        ShowHelpMarker("Estimates the camera parallax from the motion vectors");
+        ShowHelpMarker("Estimates the parallax scale from the game's motion vectors\n"
+                       "Needs some walking around, until then the cache only follows rotation");
 
         ImGui::BeginDisabled(parallaxAuto);
-        float parallaxScale = config->ReprojectionParallaxScale.value_or_default();
-        if (MenuUi::SliderFloat("Parallax Scale", &parallaxScale, 0.0f, 2.0f, "%.3f"))
-            config->ReprojectionParallaxScale = parallaxScale;
-        ShowHelpMarker("Manual parallax strength, 0 keeps rotation only");
+
+        if (parallaxAuto)
+        {
+            float estimate = reproject ? reproject->ParallaxScaleEstimate() : 0.0f;
+            ImGui::BeginDisabled();
+            if (MenuUi::SliderFloat("Parallax Scale", &estimate, 0.0f, 10000.0f, estimate > 0.0f ? "%.1f" : "Estimating...",
+                                    ImGuiSliderFlags_Logarithmic))
+            {
+            }
+            ImGui::EndDisabled();
+        }
+        else
+        {
+            float parallaxScale = config->ReprojectionParallaxScale.value_or_default();
+            if (MenuUi::SliderFloat("Parallax Scale", &parallaxScale, 0.0f, 10000.0f, "%.1f",
+                                    ImGuiSliderFlags_Logarithmic))
+            {
+                config->ReprojectionParallaxScale = parallaxScale;
+            }
+        }
+        ShowHelpMarker("Converts depth distances into the units of the camera position\n"
+                       "so the cache can follow the camera when you walk.\n"
+                       "0 = only follow rotation\n"
+                       "Unreal Engine is usually around 1000");
         ImGui::EndDisabled();
 
         bool thirdPerson = config->ReprojectionThirdPersonDetection.value_or_default();
-        if (MenuUi::Checkbox("Third Person Detection", &thirdPerson))
+        if (MenuUi::Checkbox("Pause in 3rd Person", &thirdPerson))
             config->ReprojectionThirdPersonDetection = thirdPerson;
-        ShowHelpMarker("Detects third person cameras and limits reprojection to the skybox");
+        ShowHelpMarker("Reprojection would swing the character around with the camera,\n"
+                       "so it gets paused while something in the middle follows the camera");
+
+        ImGui::SameLine();
+
+        if (!hasMotionStats)
+        {
+            ImGui::TextDisabled("(no usable motion vectors)");
+        }
+        else if (reproject->ParallaxScale() <= 0.0f)
+        {
+            ImGui::TextDisabled("(needs the parallax scale)");
+        }
+        else if (reproject->ThirdPersonDetected())
+        {
+            MenuUi::TextColored(toneMapColor(ImVec4(1.f, 0.8f, 0.f, 1.f)), "3rd person (%.2f, orbit %.2f)",
+                               reproject->ThirdPersonScore(), reproject->OrbitScore());
+        }
+        else
+        {
+            ImGui::TextDisabled("1st person (%.2f, orbit %.2f)", reproject->ThirdPersonScore(), reproject->OrbitScore());
+        }
 
         ImGui::Spacing();
     }
+
 
     // DLSSG controls
     if (auto dlssg = state.CurrentFG(); state.activeFgOutput == FGOutput::DLSSG && state.activeFgInput != FGInput::NoFG &&
@@ -4887,7 +4977,7 @@ void MenuCommon::RenderFrameGenerationRuntimeSettings(RenderMenuContext& ctx)
 
                 ImGui::BeginDisabled(!config->FGDLSSGForceDMFG.value_or_default());
                 static float fpsTarget = config->FGDLSSGFramerateTargetDMFG.value_or_default();
-                MenuUi::SliderFloat("DMFG FPS Target", &fpsTarget, 0, 200, "%.0f");
+                MenuUi::SliderFloat("DMFG FPS Target", &fpsTarget, 0, (std::max)(200, refreshRate), "%.0f");
 
                 ShowHelpMarker("An active limit of 0 means auto-detect the display refresh rate");
 
@@ -4909,7 +4999,7 @@ void MenuCommon::RenderFrameGenerationRuntimeSettings(RenderMenuContext& ctx)
         }
 
         bool useGamesMarkers = config->FGDLSSGUseGamesReflexMarkers.value_or_default();
-        ImGui::BeginDisabled(!ReflexHooks::gameIsSendingMarkers());
+        ImGui::BeginDisabled(!ReflexHooks::gameIsSendingMarkers() || state.swapchainApi == Vulkan);
         if (MenuUi::Checkbox("Use Game's Reflex Markers", &useGamesMarkers))
         {
             config->FGDLSSGUseGamesReflexMarkers = useGamesMarkers;
@@ -5271,6 +5361,24 @@ void MenuCommon::RenderFrameGenerationRuntimeSettings(RenderMenuContext& ctx)
         ImGui::EndDisabled();
     }
 
+    // Vulkan resource flipping (IFGFeature_Vk / RF_Vk): independent of HUDFix, so it stays
+    // reachable with HUDFix off or FGDisableHUDFix set
+    if (state.api == API::Vulkan && state.activeFgInput == FGInput::Upscaler &&
+        state.activeFgOutput != FGOutput::NoFG)
+    {
+        bool resourceFlip = config->FGResourceFlip.value_or_default();
+        if (MenuUi::Checkbox("Flip (Unity)", &resourceFlip))
+            config->FGResourceFlip = resourceFlip;
+        ShowHelpMarker("Flip Velocity & Depth resources of Unity games");
+
+        ImGui::SameLine(0.0f, 16.0f);
+
+        bool resourceFlipOffset = config->FGResourceFlipOffset.value_or_default();
+        if (MenuUi::Checkbox("Flip Use Offset", &resourceFlipOffset))
+            config->FGResourceFlipOffset = resourceFlipOffset;
+        ShowHelpMarker("Use height difference as offset");
+    }
+
     const FGNvngxReplacement activeNvngxFg = state.activeFgNvngx;
     if (activeNvngxFg != FGNvngxReplacement::None)
     {
@@ -5357,12 +5465,6 @@ void MenuCommon::RenderFrameGenerationRuntimeSettings(RenderMenuContext& ctx)
                     ShowHelpMarker("Makes a copy of the depth buffer\nCan fix broken visuals in some games on AMD "
                                    "GPUs under Windows\nCan cause stutters, so best to use only when necessary");
                 }
-            }
-            else if (state.swapchainApi == Vulkan)
-            {
-                MenuUi::TextColored(toneMapColor(ImVec4(1.f, 0.8f, 0.f, 1.f)),
-                                   "DLSSG is purposefully disabled when this menu is visible");
-                ImGui::Spacing();
             }
         }
 
@@ -5764,6 +5866,34 @@ void MenuCommon::RenderFramerateSettings(RenderMenuContext& ctx)
         {
             currentMethod = "Reflex";
         }
+        else if (InputCommon::can_limit_fps())
+        {
+            // The game's XeFG with its own XeLL
+            if (InputXeLL::IsNative())
+                currentMethod = "Game's XeLL";
+            else
+                switch (activeOutput)
+                {
+                case LowLatencyMode::AntiLag2:
+                    currentMethod = "FSR Anti-Lag 2.0";
+                    break;
+                case LowLatencyMode::LatencyFlex:
+                    currentMethod = "LatencyFlex";
+                    break;
+                case LowLatencyMode::AntiLagVk:
+                    currentMethod = "Vulkan AntiLag";
+                    break;
+                case LowLatencyMode::XeLL:
+                    currentMethod = "XeLL";
+                    break;
+                case LowLatencyMode::FpsLimiter:
+                    currentMethod = "FPS Limiter";
+                    break;
+                default:
+                    currentMethod = "Fallback";
+                    break;
+                }
+        }
         else
         {
             currentMethod = "Fallback";
@@ -5855,16 +5985,17 @@ void MenuCommon::RenderLowLatencySettings(RenderMenuContext& ctx)
     MenuSectionTitle("Low Latency");
 
     static std::vector<MenuOption<LowLatencyInput>> lowLatencyInput = {
-        { LowLatencyInput::None, "None (Off)" },    { LowLatencyInput::Auto, "Auto" },
-        { LowLatencyInput::AntiLag2, "AntiLag 2" }, { LowLatencyInput::Reflex, "Reflex" },
-        { LowLatencyInput::XeLL, "XeLL" },          { LowLatencyInput::UeLowLatency, "UeLowLatency" },
+        { LowLatencyInput::None, "None" },           { LowLatencyInput::Auto, "Auto" },
+        { LowLatencyInput::AntiLag2, "FSR Anti-Lag 2.0" }, { LowLatencyInput::Reflex, "Reflex" },
+        { LowLatencyInput::XeLL, "XeLL" },           { LowLatencyInput::UeLowLatency, "UeLowLatency" },
+        { LowLatencyInput::OptiScaler, "OptiScaler" },
     };
 
     static std::vector<MenuOption<LowLatencyMode>> lowLatencyOutput = {
-        { LowLatencyMode::None, "None (Off)" },
+        { LowLatencyMode::None, "None" },
         { LowLatencyMode::Auto, "Auto" },
         { LowLatencyMode::LatencyFlex, "LatencyFlex" },
-        { LowLatencyMode::AntiLag2, "AntiLag 2" },
+        { LowLatencyMode::AntiLag2, "FSR Anti-Lag 2.0" },
         { LowLatencyMode::XeLL, "XeLL" },
         { LowLatencyMode::AntiLagVk, "AntiLag Vk" },
         { LowLatencyMode::Reflex, "Reflex" },
@@ -5895,28 +6026,120 @@ void MenuCommon::RenderLowLatencySettings(RenderMenuContext& ctx)
 
         auto avalibleInputs = InputCommon::get_avaliable_inputs();
 
-        lowLatencyInput[(uint32_t) LowLatencyInput::AntiLag2].set_disabled(!avalibleInputs[LowLatencyInput::AntiLag2]);
-        lowLatencyInput[(uint32_t) LowLatencyInput::Reflex].set_disabled(!avalibleInputs[LowLatencyInput::Reflex]);
-        lowLatencyInput[(uint32_t) LowLatencyInput::XeLL].set_disabled(!avalibleInputs[LowLatencyInput::XeLL]);
-        lowLatencyInput[(uint32_t) LowLatencyInput::UeLowLatency].set_disabled(
-            !avalibleInputs[LowLatencyInput::UeLowLatency]);
+        // Inputs become available as the game starts sending them
+        for (auto type : { LowLatencyInput::AntiLag2, LowLatencyInput::Reflex, LowLatencyInput::XeLL,
+                           LowLatencyInput::UeLowLatency })
+        {
+            auto& option = lowLatencyInput[(uint32_t) type];
+            option.disabled = !avalibleInputs[type];
+            option.tooltip = option.disabled ? "The game doesn't send it" : "";
+        }
 
-        // need to have a value before combo
-        if (!config->LowLatencyInput.has_value())
-            config->LowLatencyInput = config->LowLatencyInput.value_or_default();
+        lowLatencyInput[(uint32_t) LowLatencyInput::None].set_hidden(true);
 
-        PopulateCombo("Input", config->LowLatencyInput, lowLatencyInput);
+        // Only the default when the game has nothing of its own
+        lowLatencyInput[(uint32_t) LowLatencyInput::OptiScaler].set_hidden(true);
+        lowLatencyInput[(uint32_t) LowLatencyInput::Auto].label = "Auto";
+        lowLatencyInput[(uint32_t) LowLatencyInput::Auto].tooltip =
+            "The best input the game sends: Reflex, XeLL when enabled in the game, AntiLag 2, UE, XeLL.\n"
+            "AntiLag 2 first while the game's FSR-FG reports its frames through it.\n"
+            "Without any, OptiScaler's own with the DLSSG output.";
+
+        auto forcedInput = InputCommon::forced_input();
+        auto input = forcedInput.value_or(config->LowLatencyInput.value_or_default());
+
+        if (input == LowLatencyInput::None)
+            input = LowLatencyInput::Auto;
+
+        auto selectedInput = input;
+
+        ImGui::BeginDisabled(forcedInput.has_value());
+        PopulateCombo("Input", selectedInput, lowLatencyInput);
+        ImGui::EndDisabled();
+
+        if (forcedInput.has_value() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Set by XeFG: the game's own keeps its XeLL");
+        else if (selectedInput != input)
+            config->LowLatencyInput = selectedInput;
 
         ImGui::TableNextColumn();
 
-        lowLatencyOutput[(uint32_t) LowLatencyMode::AntiLagVk].set_disabled(true, "No support");
-        lowLatencyOutput[(uint32_t) LowLatencyMode::Reflex].set_disabled(true, "No support");
+        lowLatencyOutput[(uint32_t) LowLatencyMode::None].set_hidden(true);
 
-        // need to have a value before combo
-        if (!config->LowLatencyOutput.has_value())
-            config->LowLatencyOutput = config->LowLatencyOutput.value_or_default();
+        // Each API has its own, the other API's selection maps to it. The API can change, so no sticky setters.
+        const auto api = InputCommon::uses_api();
+        const bool vulkan = api == API::Vulkan;
+        const bool outputForced = InputCommon::forced_output().has_value();
 
-        PopulateCombo("Output", config->LowLatencyOutput, lowLatencyOutput);
+        // OptiScaler's XeFG paces with XeLL on D3D12 (also for D3D11 games through interop), the GPU's Reflex or
+        // AntiLag 2 output can sleep instead while XeFG keeps an XeLL context of its own
+        const bool optiXefg = state.activeFgOutput == FGOutput::XeFG;
+
+        lowLatencyOutput[(uint32_t) LowLatencyMode::AntiLag2].hidden = vulkan;
+        lowLatencyOutput[(uint32_t) LowLatencyMode::XeLL].hidden =
+            !outputForced && !optiXefg && (vulkan || api == API::DX11);
+        lowLatencyOutput[(uint32_t) LowLatencyMode::AntiLagVk].hidden = !vulkan;
+
+        auto disable = [](MenuOption<LowLatencyMode>& option, bool condition, const char* reason)
+        {
+            option.disabled = condition;
+            option.tooltip = condition ? reason : "";
+        };
+
+        for (auto mode : { LowLatencyMode::Reflex, LowLatencyMode::AntiLag2, LowLatencyMode::AntiLagVk })
+        {
+            auto reason = InputCommon::output_unavailable(mode, api);
+            disable(lowLatencyOutput[(uint32_t) mode], reason != nullptr, reason);
+        }
+
+        disable(lowLatencyOutput[(uint32_t) LowLatencyMode::LatencyFlex], optiXefg, "Not with XeFG");
+
+        lowLatencyOutput[(uint32_t) LowLatencyMode::Auto].label = "Auto";
+        lowLatencyOutput[(uint32_t) LowLatencyMode::Auto].tooltip =
+            vulkan ? "The GPU's own: AntiLag on AMD, Reflex on Nvidia, LatencyFlex otherwise"
+            : api == API::DX11
+                ? "The GPU's own: AntiLag 2 on AMD, Reflex on Nvidia, LatencyFlex otherwise"
+                : "The GPU's own: AntiLag 2 on AMD, Reflex on Nvidia, XeLL on Intel, LatencyFlex otherwise";
+
+        if (optiXefg)
+        {
+            auto& autoTooltip = lowLatencyOutput[(uint32_t) LowLatencyMode::Auto].tooltip;
+            autoTooltip = "XeLL, XeFG paces with it.";
+
+            if (!lowLatencyOutput[(uint32_t) LowLatencyMode::Reflex].disabled)
+                autoTooltip += "\nReflex can do the sleeping instead, XeFG keeps an XeLL context of its own.";
+            else if (!lowLatencyOutput[(uint32_t) LowLatencyMode::AntiLag2].disabled)
+                autoTooltip += "\nAntiLag 2 can do the sleeping instead, XeFG keeps an XeLL context of its own.";
+        }
+
+        // Frame generation decides the output it works with
+        auto forcedOutput = InputCommon::forced_output();
+        auto output = forcedOutput.value_or(config->LowLatencyOutput.value_or_default());
+
+        // An output the GPU can't run works as Auto
+        if (output == LowLatencyMode::None || InputCommon::output_unavailable(output, api))
+            output = LowLatencyMode::Auto;
+
+        // The other API's AntiLag
+        if (vulkan && output == LowLatencyMode::AntiLag2)
+            output = LowLatencyMode::AntiLagVk;
+        else if (!vulkan && output == LowLatencyMode::AntiLagVk)
+            output = LowLatencyMode::AntiLag2;
+
+        // No XeLL on D3D11 unless OptiScaler's XeFG runs it on D3D12, Auto picks the GPU's own
+        if (!forcedOutput.has_value() && !optiXefg && api == API::DX11 && output == LowLatencyMode::XeLL)
+            output = LowLatencyMode::Auto;
+
+        auto selectedOutput = output;
+
+        ImGui::BeginDisabled(forcedOutput.has_value());
+        PopulateCombo("Output", selectedOutput, lowLatencyOutput);
+        ImGui::EndDisabled();
+
+        if (forcedOutput.has_value() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Set by XeFG: the game's own keeps its XeLL (only the FPS limit is OptiScaler's)");
+        else if (selectedOutput != output)
+            config->LowLatencyOutput = selectedOutput;
 
         ImGui::EndTable();
     }
@@ -5925,6 +6148,13 @@ void MenuCommon::RenderLowLatencySettings(RenderMenuContext& ctx)
     {
         ImGui::PushStyleColor(ImGuiCol_Text, toneMapColor(ImVec4(1.f, 0.8f, 0.f, 1.f)));
         ImGui::TextWrapped("Save Settings and restart the game: XeFG keeps the low latency output it started with");
+        ImGui::PopStyleColor();
+    }
+
+    if (auto reason = InputCommon::incompatibility(activeInput, activeOutput))
+    {
+        ImGui::PushStyleColor(ImGuiCol_Text, toneMapColor(ImVec4(1.f, 0.8f, 0.f, 1.f)));
+        ImGui::TextWrapped("Incompatible: %s", reason);
         ImGui::PopStyleColor();
     }
 
