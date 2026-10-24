@@ -602,7 +602,7 @@ namespace OptScalerNR.Launcher
         static void RefreshPanelLanguage()
         {
             var zh = _language == "zh";
-            _window.Title = L("OptiScaler代理切换", "OptiScaler Proxy Switch");
+            _window.Title = L("OptiScaler 代理切换", "OptiScaler Proxy Switch");
             var langZh = _window.FindName("LangZh") as Button;
             var langEn = _window.FindName("LangEn") as Button;
             if (langZh != null)

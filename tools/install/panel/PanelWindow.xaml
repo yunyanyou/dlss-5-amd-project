@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:local="clr-namespace:OptScalerNR.Launcher;assembly=OptiScalerPanel"
-        Title="OptiScaler代理切换"
+        Title="OptiScaler 代理切换"
         Width="900" Height="620"
         MinWidth="900" MinHeight="620"
         Background="{DynamicResource ThemeBackground}"
@@ -407,7 +407,7 @@
             <TextBlock Text="N" Foreground="White" FontWeight="Bold"
                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
           </Border>
-          <TextBlock Text="OptiScaler代理切换" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          <TextBlock Text="OptiScaler 代理切换" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
         </StackPanel>
 
         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">

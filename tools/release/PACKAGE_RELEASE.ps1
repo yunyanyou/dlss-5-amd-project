@@ -349,7 +349,7 @@ NrResidualEdgeProtection=0.0
 ; Shared temporal residual filtering; requires motion/depth. Off by default.
 ; May soften moving detail or trail; adds GPU work and history memory.
 ; Alpha 0..0.95; threshold 0..16 (compressed-colour units of 1/255). Either zero bypasses it.
-NrStabilizerEnabled=true
+NrStabilizerEnabled=false
 NrStabilizerAlpha=0.8
 NrStabilizerThreshold=2.0
 
