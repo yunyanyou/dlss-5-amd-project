@@ -23,7 +23,7 @@ namespace OptScalerNR.Launcher
         static Window _window;
         static string _dir;
         static string _theme = "auto";
-        static ComboBox _themeCombo;
+        static Button _themeToggle, _maxBtn;
         static TextBlock _hardwareText;
         static StackPanel _list;
         static TextBlock _gameText, _wikiText, _optiText, _topStatus, _bottomStatus, _shareHint;
@@ -61,14 +61,33 @@ namespace OptScalerNR.Launcher
             close.Click += (s, e) => _window.Close();
             var min = (Button)_window.FindName("MinBtn");
             min.Click += (s, e) => _window.WindowState = WindowState.Minimized;
+            _maxBtn = (Button)_window.FindName("MaxBtn");
+            if (_maxBtn != null) _maxBtn.Click += (s, e) =>
+                _window.WindowState = _window.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+            _window.StateChanged += (s, e) =>
+            {
+                if (_window.WindowState == WindowState.Maximized)
+                {
+                    _window.BorderThickness = new Thickness(7);
+                    if (_maxBtn != null) _maxBtn.Content = "\x25A3";
+                }
+                else
+                {
+                    _window.BorderThickness = new Thickness(1);
+                    if (_maxBtn != null) _maxBtn.Content = "\x25A2";
+                }
+            };
             _hardwareText = (TextBlock)_window.FindName("HardwareInfo");
-            _themeCombo = (ComboBox)_window.FindName("ThemeCombo");
-            InitThemeCombo();
+            _themeToggle = (Button)_window.FindName("ThemeToggle");
+            InitThemeToggle();
             ((Button)_window.FindName("RefreshBtn")).Click += (s, e) => Refresh();
+            ((Button)_window.FindName("QuickLogButton")).Click += (s, e) => OpenLog();
             Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnSystemThemeChanged;
             _window.Closed += (s, e) => Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnSystemThemeChanged;
-            var author = (TextBlock)_window.FindName("AuthorLink");
-            author.MouseLeftButtonUp += (s, e) => OpenUrl("https://github.com/TheAutomatic/dlss-5-amd-project");
+            ((System.Windows.Documents.Run)_window.FindName("AuthorCaption")).Text = " · 作者：";
+            var author = (System.Windows.Documents.Hyperlink)_window.FindName("AuthorLink");
+            author.RequestNavigate += (s, e) => { OpenUrl("https://github.com/TheAutomatic/dlss-5-amd-project"); e.Handled = true; };
+            ShowVersion();
 
             ((Button)_window.FindName("FolderBtn")).Click += (s, e) => OpenDir();
             ((Button)_window.FindName("ExportBtn")).Click += (s, e) => ExportCode();
@@ -288,21 +307,60 @@ namespace OptScalerNR.Launcher
         }
 
         // ---------------------------------------------------------------- theme
-        // 与启动器一致：ThemeCombo 三选一，auto 跟随系统（SystemEvents 监听）。
-        static void InitThemeCombo()
+        // 与启动器一致：顶栏一个 ThemeToggle 按钮在 auto → light → dark 间循环切换。
+        static void InitThemeToggle()
         {
-            if (_themeCombo == null) return;
-            _themeCombo.Items.Add(new ComboBoxItem { Content = "跟随系统", Tag = "auto" });
-            _themeCombo.Items.Add(new ComboBoxItem { Content = "亮色", Tag = "light" });
-            _themeCombo.Items.Add(new ComboBoxItem { Content = "暗色", Tag = "dark" });
-            _themeCombo.SelectedIndex = 0;
-            _themeCombo.SelectionChanged += (s, e) =>
+            if (_themeToggle == null) return;
+            _themeToggle.Click += (s, e) => SetTheme(_theme == "auto" ? "light" : _theme == "light" ? "dark" : "auto");
+            RefreshThemeToggle();
+        }
+
+        static void SetTheme(string theme)
+        {
+            if (theme != "auto" && theme != "light" && theme != "dark") return;
+            _theme = theme;
+            LauncherTheme.Apply(theme);
+            RefreshThemeToggle();
+        }
+
+        static void RefreshThemeToggle()
+        {
+            if (_themeToggle == null) return;
+            _themeToggle.Content = _theme == "auto" ? "◐" : _theme == "light" ? "☀" : "☾";
+            _themeToggle.ToolTip = "主题：" + ThemeName(_theme) + "（点击切换）";
+        }
+
+        static string ThemeName(string theme)
+        {
+            return theme == "light" ? "浅色" : theme == "dark" ? "深色" : "跟随系统";
+        }
+
+        // 顶栏版本徽章：与启动器一样，向上查找 VERSION 文件。
+        static void ShowVersion()
+        {
+            try
             {
-                var item = _themeCombo.SelectedItem as ComboBoxItem;
-                if (item == null) return;
-                _theme = (string)item.Tag;
-                LauncherTheme.Apply(_theme);
-            };
+                var roots = new List<string>();
+                try { var loc = typeof(PanelWindow).Assembly.Location; if (!string.IsNullOrEmpty(loc)) roots.Add(Path.GetDirectoryName(loc)); } catch { }
+                if (!string.IsNullOrEmpty(AppDomain.CurrentDomain.BaseDirectory)) roots.Add(AppDomain.CurrentDomain.BaseDirectory);
+                foreach (var start in roots)
+                {
+                    var dir = start;
+                    for (int depth = 0; depth < 5 && !string.IsNullOrEmpty(dir); depth++)
+                    {
+                        var candidate = Path.Combine(dir, "VERSION");
+                        if (File.Exists(candidate))
+                        {
+                            var raw = File.ReadAllText(candidate).Trim();
+                            if (!string.IsNullOrEmpty(raw))
+                                ((TextBlock)_window.FindName("VersionTag")).Text = raw.TrimStart('v', 'V');
+                            return;
+                        }
+                        dir = Path.GetDirectoryName(dir.TrimEnd('\\', '/'));
+                    }
+                }
+            }
+            catch { }
         }
 
         static void OnSystemThemeChanged(object sender, Microsoft.Win32.UserPreferenceChangedEventArgs e)
