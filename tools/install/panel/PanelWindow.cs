@@ -615,17 +615,39 @@ namespace OptScalerNR.Launcher
             {
                 var tmp = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
                     "OptiPatcher-" + Guid.NewGuid().ToString("N") + ".asi");
-                var request = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(OptiPatcherUrl);
-                request.Timeout = 30000;
-                request.UserAgent = "OptiScalerPanel";
-                using (var response = request.GetResponse())
-                using (var input = response.GetResponseStream())
-                using (var output = File.Create(tmp))
+                // 与上游安装器一致：优先用系统自带 curl.exe（Happy Eyeballs 回落 IPv4、
+                // http2 等行为常能连上 HttpWebRequest 连不上的链路），失败再退 .NET 请求。
+                var curl = System.IO.Path.Combine(Environment.SystemDirectory, "curl.exe");
+                if (File.Exists(curl))
                 {
-                    input.CopyTo(output);
+                    var info = new ProcessStartInfo
+                    {
+                        FileName = curl,
+                        Arguments = "-f -s -S -L --connect-timeout 10 --max-time 30 -o \"" + tmp + "\" \"" + OptiPatcherUrl + "\"",
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+                    using (var process = Process.Start(info))
+                    {
+                        process.WaitForExit(40000);
+                        if (process.HasExited && process.ExitCode == 0 && IsPeFile(tmp)) downloaded = tmp;
+                    }
                 }
-                if (IsPeFile(tmp)) downloaded = tmp;
-                else File.Delete(tmp);
+                if (downloaded == null)
+                {
+                    var request = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(OptiPatcherUrl);
+                    request.Timeout = 30000;
+                    request.ReadWriteTimeout = 30000;
+                    request.UserAgent = "OptiScalerPanel";
+                    using (var response = request.GetResponse())
+                    using (var input = response.GetResponseStream())
+                    using (var output = File.Create(tmp))
+                    {
+                        input.CopyTo(output);
+                    }
+                    if (IsPeFile(tmp)) downloaded = tmp;
+                    else File.Delete(tmp);
+                }
             }
             catch { }
 
