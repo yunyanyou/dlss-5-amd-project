@@ -204,6 +204,9 @@ namespace OptScalerNR.Launcher
                     LocalArtwork.Load(_heroArtwork, hero, heroFromIcon ? 256 : 1000, heroFromIcon, !heroFromIcon, delegate(System.Windows.Media.ImageSource image)
                     {
                         _heroBgBrush.ImageSource = image;
+                        // 字母水印只在“图标已显示”时隐藏，其余情况（本地图/无图）保持可见。
+                        if (_heroMonogram != null)
+                            _heroMonogram.Visibility = heroFromIcon && image != null ? Visibility.Collapsed : Visibility.Visible;
                     });
                 }));
             });
@@ -280,8 +283,8 @@ namespace OptScalerNR.Launcher
                 AddHeroFact("Wiki", WikiFact(advice), 1);
                 AddHeroFact("OptiPatcher支持", OptiFact(advice), 2);
             }
-            _heroBgBrush.ImageSource = null;
-            _heroMonogram.Visibility = Visibility.Visible;
+            // 刷新时保留当前背景图：LocalArtwork 有缓存，同目录刷新返回同一实例不会重绘；
+            // 清空再加载会闪。换目录时由新结果（或 null）自然替换。
 
             _bottomLed.Fill = current != null ? LauncherTheme.Brush("ThemeSuccess") : LauncherTheme.Brush("ThemeWarning");
             _bottomStatus.Text = current != null
