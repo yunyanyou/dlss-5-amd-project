@@ -259,7 +259,7 @@ namespace OptScalerNR.Launcher
             else
             {
                 AddHeroFact("Wiki", WikiFact(advice), 1);
-                AddHeroFact("OptiPatcher", OptiFact(advice), 2);
+                AddHeroFact("OptiPatcher支持", OptiFact(advice), 2);
             }
             _heroBgBrush.ImageSource = null;
             _heroMonogram.Visibility = Visibility.Visible;
