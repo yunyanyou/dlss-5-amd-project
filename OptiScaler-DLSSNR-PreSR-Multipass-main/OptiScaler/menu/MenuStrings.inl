@@ -52,6 +52,8 @@
 {"Ready Frames", "就绪帧数"},
 {"Wait for consecutive frames with depth, motion vectors and camera data before enabling FG.\nApplies to Streamline / DLSSG input. 0 keeps normal activation.\nPositive values also require the game to request FG. Changes apply on the next activation.", "等待多帧持续具备深度、运动矢量和相机数据后再开启帧生成。\n适用于 Streamline / DLSSG 输入。0 保持原有开启方式。\n正数还要求游戏已请求开启帧生成。更改在下次开启时生效。"},
 {"Hold Ctrl, Shift, Alt or Tab with a key. Release to bind.", "按住 Ctrl、Shift、Alt 或 Tab 并按键，松开后绑定。"},
+{"RenoDX processing:  --.-- ms | Total:  --.-- ms ( --- FPS)", "RenoDX 处理：  --.-- ms | 总计：  --.-- ms ( --- FPS)"},
+{"OptiScaler route:  --.-- ms | Total:  --.-- ms ( --- FPS)", "OptiScaler 路径：  --.-- ms | 总计：  --.-- ms ( --- FPS)"},
 {"Actions sharing a chord fire together; Ctrl+F11 is reserved for Mochizuki.", "使用同一组合键的操作将一同触发；Ctrl+F11 保留给 Mochizuki。"},
 {"Toggle key", "开关键"},
 {"Docked left", "停靠左侧"},
