@@ -1141,6 +1141,7 @@ class Config
     CustomOptional<FSR4Support> Fsr4GpuSupport { FSR4Support::None };
     CustomOptional<FSR4Model, NoDefault> Fsr4Model;
     CustomOptional<uint32_t, NoDefault> Fsr4Preset;
+    CustomOptional<bool> Fsr4DisableDriverHooks { false };
     CustomOptional<bool> Fsr4EnableWatermark { false };
     CustomOptional<bool, SoftDefault> Fsr4DoNotLoadAmdxc64 { false };
     // Reprojection
@@ -1329,7 +1330,10 @@ class Config
 
     // DLSSG
     CustomOptional<int> FGDLSSGInterpolationCount { 1 }; // For Opti's own SL instance
-    CustomOptional<int> FGDLSSGRequiredReadyFrames { 0 }; // 0 preserves the normal Streamline FG activation path
+    // NoDefault so an explicit 0 (user disabling the gate) survives save/reload —
+    // WithDefault {0} would collapse it to auto, resurrecting the game-policy default.
+    // Read it through FGRequiredReadyFramesEffective() which falls back to the game policy.
+    CustomOptional<int, NoDefault> FGDLSSGRequiredReadyFrames;
     CustomOptional<bool> FGDLSSGUseGamesReflexMarkers { true };
     CustomOptional<int, NoDefault>
         FGDLSSGOverrideInterpolationCount; // For overriding game's value sent to SL, could be Nvngx FG, could be noFG
@@ -1386,8 +1390,10 @@ class Config
 
     bool LoadFromPath(const wchar_t* InPath);
     bool SaveIni();
-    // LmxxfAllowEnhancedBarriers resolved: the explicit value, else auto (on for Forza).
     bool AllowEnhancedBarriersEffective();
+    // FGDLSSGRequiredReadyFrames resolved: the explicit value, else the per-game policy
+    // default (NrGamePolicy::fgReadyFrames, e.g. 30 for GacRunnerNG.exe), else 0.
+    int FGRequiredReadyFramesEffective();
     // The host exe's file name contains "forza" (case-insensitive). Cached.
     static bool ExeIsForza();
     // EXE-only early wrapping; UnityPlayer and any-module policies remain independent.
