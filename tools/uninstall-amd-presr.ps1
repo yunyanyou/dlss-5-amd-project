@@ -104,6 +104,7 @@ $projectLeafNames = @(
     'dlssnr_on_amd.ini', 'dlssnr-amd.ini', 'dlssnr-amd-crash.dmp', 'dlssnr-amd-install.txt',
     'LmxxfNrRuntime.dll', 'MochizukiNrRuntime.dll', 'lmxxf-module-package.ps1',
     'Uninstall_OptiScaler_NR.bat','Uninstall_OptiScaler_NR.ps1',
+    'OptiScalerPanel.exe','OptiScaler代理切换.bat','compat-repair.ps1','xess-compat.ps1',
     'OptiScaler/dlssnr/README.md',
     'OptiScaler/dlssnr/design/frame-hold.md',
     'OptiScaler/dlssnr/design/multi-point-anchoring.md',

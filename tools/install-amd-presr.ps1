@@ -2476,6 +2476,34 @@ exit /b %EC%
     Write-Host "Wrote uninstaller: $batDest" -ForegroundColor Green
 }
 
+# Our fork: the proxy-switcher panel rides along with every install. Best effort —
+# a package without the panel (plain upstream layout) simply skips this block.
+$panelSrc = @((Join-Path $release 'OptiScalerPanel.exe'), (Join-Path $Root 'OptiScalerPanel.exe')) |
+    Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+if ($panelSrc) {
+    Install-One $panelSrc 'OptiScalerPanel.exe'
+    $panelBat = Join-Path $game 'OptiScaler代理切换.bat'
+    if (-not (Test-Path -LiteralPath $panelBat -PathType Leaf)) {
+        (@'
+@echo off
+setlocal
+cd /d "%~dp0"
+if not exist "%~dp0OptiScalerPanel.exe" (
+  echo OptiScalerPanel.exe is missing. Unzip the full package again.
+  pause
+  exit /b 1
+)
+start "" "%~dp0OptiScalerPanel.exe" "%~dp0."
+'@) | Set-Content -LiteralPath $panelBat -Encoding ASCII
+        Write-Host "Wrote proxy switcher: $panelBat" -ForegroundColor Green
+    }
+    foreach ($compatTool in @('compat-repair.ps1', 'xess-compat.ps1')) {
+        $compatSrc = @((Join-Path $release $compatTool), (Join-Path $Root $compatTool)) |
+            Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+        if ($compatSrc) { Install-One $compatSrc $compatTool }
+    }
+}
+
 # Small install record so Uninstall knows which proxy name this install used.
 # Uninstall still verifies OptiScaler by VersionInfo; this is a hint, not a trust root.
 $installMark = Join-Path $game 'amd-presr-install.txt'
