@@ -1487,6 +1487,20 @@ void MenuCommon::FGOutputPresent() { fgOutputPresentRate.Present(Util::Milliseco
 
 void MenuCommon::FGOutputPresents(bool presents) { fgOutputPresentRate.SetEnabled(presents); }
 
+void MenuCommon::FGOutputFramesPresented(uint32_t frames)
+{
+    static double lastMs = 0.0;
+    const auto nowMs = Util::MillisecondsNow();
+
+    if (lastMs > 0.0 && nowMs - lastMs < 250.0)
+    {
+        for (uint32_t i = 1; i <= frames; i++)
+            fgOutputPresentRate.Present(lastMs + (nowMs - lastMs) * i / frames);
+    }
+
+    lastMs = nowMs;
+}
+
 static double FGOutputFrameTime(double now) { return fgOutputPresentRate.FrameTime(now); }
 
 struct VersionCheckStatus
@@ -3732,9 +3746,14 @@ void MenuCommon::RenderFrameGenerationSelection(RenderMenuContext& ctx)
         (streamlineVersion == feature_version { 0, 0, 0 } || streamlineVersion > feature_version { 2, 0, 1 });
     inputOptions[nvngxInputIndex].set_disabled(nukemsUnsupportedApi, "Unsupported API");
 
-    // XeFG output requirements
+    // XeFG output requirements: on Vulkan the game presents through the DX12 interop swapchain
+    // (VkwDx12SC, Windows only). XeFG is the upstream-validated combination; FSR-FG could ride the
+    // same bridge architecturally but is untested there, so on Vulkan it keeps its native Vulkan
+    // output instead of being offered through the bridge.
     auto constexpr xefgOutputIndex = (uint32_t) FGOutput::XeFG;
-    outputOptions[xefgOutputIndex].set_disabled(state.swapchainApi == API::Vulkan, "Unsupported API");
+    if (state.swapchainApi == API::Vulkan)
+        outputOptions[xefgOutputIndex].tooltip +=
+            "\n\nVulkan: runs through the DX12 interop swapchain (Windows only)";
     // Unsupported FG input selected
     const auto currentInputIndex = (uint32_t) state.activeFgInput;
     if (config->FGInput != FGInput::NoFG && inputOptions.size() > currentInputIndex &&
@@ -4201,6 +4220,37 @@ void MenuCommon::RenderFrameGenerationSelection(RenderMenuContext& ctx)
                     ShowHelpMarker("Wait for consecutive frames with depth, motion vectors and camera data before enabling FG.\n"
                                    "Applies to Streamline / DLSSG input. 0 keeps normal activation.\n"
                                    "Positive values also require the game to request FG. Changes apply on the next activation.");
+                }
+
+                if (state.activeFgOutput == FGOutput::XeFG)
+                {
+                    // Tri-state: Auto (unset) leaves the plugin's own default (on for RX
+                    // 7000/9000 + new Adrenalin, off under Wine); explicit on/off persists
+                    // with the plugin's native words.
+                    static const char* flipModes[] = { "Auto", "On", "Off" };
+                    const bool set = config->FGXeFGFlipQueue.has_value();
+                    int flipMode = set ? (config->FGXeFGFlipQueue.value() ? 1 : 2) : 0;
+                    ImGui::PushItemWidth(160.0f * menuResScale);
+                    if (MenuUi::BeginCombo("Flip-Queue Pacing (MFG Unlocker 1.7.0+)", flipModes[flipMode]))
+                    {
+                        for (int i = 0; i < 3; i++)
+                            if (MenuUi::Selectable(flipModes[i], flipMode == i))
+                            {
+                                if (i == 0) config->FGXeFGFlipQueue.reset();
+                                else config->FGXeFGFlipQueue = (i == 1);
+                            }
+                        ImGui::EndCombo();
+                    }
+                    ImGui::PopItemWidth();
+
+                    if (set)
+                        MenuUi::TextWrapped("Save Settings and restart the game to apply flip-queue pacing.");
+
+                    ShowHelpMarker("MFG Unlocker 1.7.0's flip-queue pacing for XeFG: presents each batch of generated frames on an even cadence.\n"
+                                   "Writes [XeFG] XeFGFlipQueue in OptiScaler.ini (on/off, the plugin's own words); older MFG Unlocker builds ignore the key.\n"
+                                   "Auto leaves the plugin default (on for RX 7000/9000 with new Adrenalin drivers, off under Wine/Proton).\n"
+                                   "Off is the verified baseline (classic pacing); On may smooth multi-frame-gen pacing but is unverified with OptiScaler and has known instability cases with XeLL.\n"
+                                   "Decided once per process at FG startup - restart the game after changing.");
                 }
 
                 if (showHudCutoff)
@@ -8683,10 +8733,17 @@ void MenuCommon::RenderMainMenuWindow(RenderMenuContext& ctx)
     if (!ctx.newFrame)
         return;
     // Stable identity survives title/language changes; preserve the current brand and game caption.
+    // The banner shows the git SHORT hash — a 40-char SHA in the game window title is unreadable
+    // (field report); the log header keeps the full commit for exact identification.
     if (windowTitle.empty())
-        windowTitle = StrFmt("%s - %s %s %s%s", VER_PRODUCT_NAME, state.gameExe.c_str(),
+    {
+        std::string_view commit { VER_BUILD_COMMIT };
+        commit = commit.substr(0, 7); // GitHub-style short hash
+        windowTitle = StrFmt("OptiScaler(NR) v%s (%.*s) (%s) - %s %s %s%s", NR_PRODUCT_VERSION,
+            (int) commit.size(), commit.data(), VER_BUILD_DATE, state.gameExe.c_str(),
             state.detectedQuirks.empty() ? "" : "(Q)", state.isOptiPatcherSucceed ? "(OP)" : "",
             MenuDocking::WindowIdentity);
+    }
     const std::string localizedTitle = MenuLocale::Label(windowTitle.c_str());
     docking.Submit(config->MenuWindowAnchor.value_or_default(), _isVisible, localizedTitle.c_str(),
         {config->MenuWindowWidth.value_or(700.f) * menuResScale,

@@ -80,6 +80,8 @@ call :NrCoverage || goto fail
 call "%REPO%\tests\host\menu-localization.cmd" "%OUT%\menu" || goto fail
 %CXX% /utf-8 tests\host\dx12_interop_desc.cpp /Fe"%OUT%\dx12_interop_desc.exe" /Fo"%OUT%\dx12_interop_desc.obj" || goto fail
 "%OUT%\dx12_interop_desc.exe" || goto fail
+%CXX% /utf-8 tests\host\vkw_dx12_ownership.cpp /Fe"%OUT%\vkw_dx12_ownership.exe" /Fo"%OUT%\vkw_dx12_ownership.obj" || goto fail
+"%OUT%\vkw_dx12_ownership.exe" "%REPO%\OptiScaler-DLSSNR-PreSR-Multipass-main\OptiScaler\inputs\FG\VkwDx12_Inputs.cpp" "%REPO%\OptiScaler-DLSSNR-PreSR-Multipass-main\OptiScaler\with_dx12\vk_with_dx12_sc.h" || goto fail
 %CXX% /utf-8 tests\host\vulkan_call_scope.cpp /Fe"%OUT%\vulkan_call_scope.exe" /Fo"%OUT%\vulkan_call_scope.obj" || goto fail
 "%OUT%\vulkan_call_scope.exe" || goto fail
 %CXX% /utf-8 tests\host\vulkan_nr_extensions.cpp /Fe"%OUT%\vulkan_nr_extensions.exe" /Fo"%OUT%\vulkan_nr_extensions.obj" /link "%DETOURS%" || goto fail
@@ -104,6 +106,8 @@ call "%REPO%\tests\host\menu-localization.cmd" "%OUT%\menu" || goto fail
 "%OUT%\upscaler_route_diagnostic.exe" || goto fail
 %CXX% /utf-8 tests\host\menu_window_layout.cpp /Fe"%OUT%\menu_window_layout.exe" /Fo"%OUT%\menu_window_layout.obj" || goto fail
 "%OUT%\menu_window_layout.exe" || goto fail
+%CXX% /utf-8 tests\host\fsr4_model_scan_cache.cpp /Fe"%OUT%\fsr4_model_scan_cache.exe" /Fo"%OUT%\fsr4_model_scan_cache.obj" || goto fail
+"%OUT%\fsr4_model_scan_cache.exe" || goto fail
 for %%T in (directinput_registry input_hook_lifetime input_key_lifetime input_window_lifetime shortcut_keys nr_gpu_history amd_pass_initialization) do (
   %CXX% /utf-8 tests\host\%%T.cpp /Fe"%OUT%\%%T.exe" /Fo"%OUT%\%%T.obj" /link user32.lib || goto fail
   "%OUT%\%%T.exe" || goto fail
@@ -182,6 +186,7 @@ echo host release: PASS
 exit /b 0
 
 :Xefg
+"%AMD_TEST_PYTHON%" -B tests\host\test_xefg_present_lifetime.py || exit /b 1
 %CXX% tests\host\nr_multiplier.cpp /Fe"%OUT%\nr_multiplier.exe" /Fo"%OUT%\nr_multiplier.obj" || exit /b 1
 "%OUT%\nr_multiplier.exe" || exit /b 1
 %CXX% tests\host\xefg_dynamic_count.cpp /Fe"%OUT%\xefg_dynamic_count.exe" /Fo"%OUT%\xefg_dynamic_count.obj" || exit /b 1

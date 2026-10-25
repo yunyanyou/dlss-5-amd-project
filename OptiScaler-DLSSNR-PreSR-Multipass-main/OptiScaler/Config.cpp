@@ -246,6 +246,22 @@ bool Config::Reload(std::filesystem::path iniPath)
             FGXeFGDepthInverted.set_from_config(readBool("XeFG", "DepthInverted"));
             FGXeFGJitteredMV.set_from_config(readBool("XeFG", "JitteredMV"));
             FGXeFGHighResMV.set_from_config(readBool("XeFG", "HighResMV"));
+            {
+                // Plugin-native words (optiscaler_host SwitchWord): off/0/false/no/disabled
+                // vs on/1/true/yes/enabled; anything else (incl. auto/absent) stays unset.
+                if (auto flipWord = readString("XeFG", "XeFGFlipQueue", true); flipWord.has_value())
+                {
+                    const std::string& w = flipWord.value();
+                    if (lstrcmpiA(w.c_str(), "off") == 0 || lstrcmpiA(w.c_str(), "0") == 0 ||
+                        lstrcmpiA(w.c_str(), "false") == 0 || lstrcmpiA(w.c_str(), "no") == 0 ||
+                        lstrcmpiA(w.c_str(), "disabled") == 0)
+                        FGXeFGFlipQueue.set_from_config(false);
+                    else if (lstrcmpiA(w.c_str(), "on") == 0 || lstrcmpiA(w.c_str(), "1") == 0 ||
+                             lstrcmpiA(w.c_str(), "true") == 0 || lstrcmpiA(w.c_str(), "yes") == 0 ||
+                             lstrcmpiA(w.c_str(), "enabled") == 0)
+                        FGXeFGFlipQueue.set_from_config(true);
+                }
+            }
             FGXeFGDebugView.set_from_config(readBool("XeFG", "DebugView"));
             FGXeFGForceBorderless.set_from_config(readBool("XeFG", "ForceBorderless"));
             FGXeFGDynamicMFG.set_from_config(readBool(CfgKey::kXeFGSection, CfgKey::XeFGDynamicMFG));
@@ -1732,6 +1748,12 @@ bool Config::SaveIni()
         ini.SetValue("XeFG", "DepthInverted", GetBoolValue(Instance()->FGXeFGDepthInverted.value_for_config()).c_str());
         ini.SetValue("XeFG", "JitteredMV", GetBoolValue(Instance()->FGXeFGJitteredMV.value_for_config()).c_str());
         ini.SetValue("XeFG", "HighResMV", GetBoolValue(Instance()->FGXeFGHighResMV.value_for_config()).c_str());
+        // Always write: skipping leaves a stale on/off in the file after the user
+        // switched back to Auto, silently restoring the old choice after restart.
+        // "auto" reads back as unset (plugin default), matching the menu state.
+        ini.SetValue("XeFG", "XeFGFlipQueue",
+            Instance()->FGXeFGFlipQueue.has_value()
+                ? (Instance()->FGXeFGFlipQueue.value() ? "on" : "off") : "auto");
         ini.SetValue("XeFG", "DebugView", GetBoolValue(Instance()->FGXeFGDebugView.value_for_config()).c_str());
         ini.SetValue("XeFG", "ForceBorderless",
                      GetBoolValue(Instance()->FGXeFGForceBorderless.value_for_config()).c_str());
@@ -2787,6 +2809,12 @@ bool Config::SaveXeFG()
     ini.SetValue("XeFG", "DepthInverted", GetBoolValue(Instance()->FGXeFGDepthInverted.value_for_config()).c_str());
     ini.SetValue("XeFG", "JitteredMV", GetBoolValue(Instance()->FGXeFGJitteredMV.value_for_config()).c_str());
     ini.SetValue("XeFG", "HighResMV", GetBoolValue(Instance()->FGXeFGHighResMV.value_for_config()).c_str());
+        // Always write: skipping leaves a stale on/off in the file after the user
+        // switched back to Auto, silently restoring the old choice after restart.
+        // "auto" reads back as unset (plugin default), matching the menu state.
+        ini.SetValue("XeFG", "XeFGFlipQueue",
+            Instance()->FGXeFGFlipQueue.has_value()
+                ? (Instance()->FGXeFGFlipQueue.value() ? "on" : "off") : "auto");
 
     auto pathWStr = absoluteFileName.wstring();
     LOG_INFO("Trying to save ini to: {0}", wstring_to_string(pathWStr));

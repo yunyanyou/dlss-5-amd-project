@@ -17,6 +17,18 @@
 3. **`hk_K32_GetModuleHandleExA/W` 过滤 `GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS`**
    - 当 `dwFlags` 含 `GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS` 时，`lpModuleName` 是内存地址而非模块名字符串，直接透传给原函数早退。
 
+
+### HudlessColor Present retag lifetime
+
+The initial `XeFG_Dx12::SetResource` cache remains borrowed under the input lifetime contract.
+When `Dispatch` extends HudlessColor validity to `UntilPresentFromDispatch`, it takes one
+`AddRef` under that frame slot's `_resourceMutex`, before changing validity. A non-copyable
+stack owner in `Present` releases it under the same mutex on every exit, including failed
+dispatch/tagging. The retag uses a snapshot rather than an unlocked pointer into the cache.
+Ownership is deliberately independent of `_frameResources`: `NewFrame` slot reuse and
+`ReleaseResourceCopies` can clear entries without losing the outstanding reference or
+releasing it prematurely; the scoped owner still performs exactly one `Release`.
+
 ## 2. 动态多帧生成（Dynamic MFG）
 
 在 [XeFG_DynamicCount.h](../OptiScaler-DLSSNR-PreSR-Multipass-main/OptiScaler/framegen/xefg/XeFG_DynamicCount.h) 与 [XeFG_Dx12.cpp](../OptiScaler-DLSSNR-PreSR-Multipass-main/OptiScaler/framegen/xefg/XeFG_Dx12.cpp) 中，宿主实现了基于目标帧率的动态多帧生成控制器：
@@ -131,3 +143,53 @@ AMD 宿主上无法开启也无法被伪装骗开。其本体是插件自带的 
 
 XeLL 互锁（`hostLatency` 熔断）、kernel32 FirstCreate 同步、GetModuleHandleEx 用法
 经逐字比对与 1.6.1 一致；XeMFG standalone 在检测到 OptiScaler 时硬关闭。
+
+## Vulkan 游戏的 XeFG:VkwDx12SC DX12 互操作交换链(dashdogy 0ebe836e/50dd7859 吸收)
+
+**它解决了什么。** Vulkan 游戏此前没有任何 DX12 FG 输出:XeFG 输出在菜单里被
+置灰("Unsupported API")。VkwDx12SC(对应 DX11 侧的 Dx11wDx12SC)把游戏的
+VkSwapchain 变成隐藏窗口上的真实交换链,呈现时把图像拷入 D3D12 共享纹理,经
+`FGHooks::CreateSwapChain` 建立的 DX12 FG 交换链在游戏窗口上呈现;FG 输入
+(深度/运动矢量,Streamline Vulkan tag 与 NVNGX EvaluateFeature 两条来路)经
+同一拷贝桥写入共享纹理,时间线信号量与 D3D12 共享栅栏同步
+(`State::swapchainInteropApi = VkwDx12`)。
+
+**仅限 Windows。** 互操作依赖 `VK_KHR_win32_surface` + 隐藏 HWND + D3D12 共享
+纹理,三者都不存在于 Wine/Proton(dxvk/vkd3d-proton 自持呈现)。因此
+`VkwDx12SC::Wanted()` 在 `isRunningOnLinux`、Mochizuki Proton 增强作用域
+(`ScopedGameD3D12Device`,即 vkd3d 收养路径)或 Vulkan 钩子跳过时一律返回
+false;`hkvkQueuePresentKHR` 的 interop 呈现分支额外要求 `!dxgiBacked`,不与
+DXGI 支撑的呈现路径争抢。Proton 下行为与吸收前完全一致。
+
+**插件无关。** XeFG 2x 独立可用;MFG-Unlocker 插件只在其上叠加倍率解锁与
+翻转队列节奏(XeFGFlipQueue 等),两者关系同 DX12 原生路径。
+
+**诚实边界。** 上游验证过的组合是 XeFG-on-Vulkan;FSR-FG 理论上可走同一桥
+(架构上只是另一个 DX12 FG 输出)但上游未测试,故 `Wanted()` 仍只对
+`FGOutput::XeFG` 放行,Vulkan 上的 FSR-FG 维持原生 Vulkan 输出,菜单不再置灰
+XeFG 并注明"Vulkan:经 DX12 互操作交换链(仅 Windows)"。
+
+Streamline 输入经 `VkwDx12Inputs::SetResource` 进桥后仍向
+`StreamlineFGActivationGate` 上报就绪信号(ReportDepth/MotionVectors 在路由
+之后无条件执行)——这些就是喂给 FG 交换链的 DLSSG 输入本体,门控语义不变,
+无需豁免。
+
+**队列族所有权交接(2026-10-25 修复)。** 共享纹理均为 `VK_SHARING_MODE_EXCLUSIVE`,
+时间线信号量只保证跨 API 的执行顺序,不替代队列族所有权操作(Vulkan 规范将 D3D12
+的访问视作 `VK_QUEUE_FAMILY_EXTERNAL` 的访问)。每个跨边界纹理现在带成对的
+release/acquire barrier(`vk_with_dx12_sc.h` 的 `VkwDx12ReleaseToD3D12` /
+`VkwDx12AcquireFromD3D12`,契约测试 `tests/host/vkw_dx12_ownership.cpp`,host ci):
+Vulkan→D3D12 在信号 `_vkDone` 的同一提交末尾以互操作队列族 release 到
+EXTERNAL、布局落 GENERAL、`dstAccessMask=0`;复用时(下一帧 Vulkan 重写)在已等过
+D3D12 完成的拷贝前从 EXTERNAL acquire 回同一队列族、`oldLayout=UNDEFINED`(内容
+整体重写)。呈现图像的执行锚是该提交对 `_dxDone`@`copiedValue` 的时间线等待,
+FG 输入的执行锚是 `SetResource` 里的 `WaitForInputSlot` CPU 等待。队列族用真实
+索引不硬编码:呈现路径(`RecordCopy` 与 present 拷贝)用呈现队列族
+(`Present` 经 `DeviceCreated` 建立的 queue→family 表解析);evaluate 命令缓冲里的
+ValidNow 输入用其**命令池的队列族**——`Vulkan_Hooks` 钩住 `vkCreateCommandPool` /
+`vkAllocateCommandBuffers` / `vkFreeCommandBuffers` / `vkDestroyCommandPool`(设备销毁
+清账),`VkwDx12SC::CommandBufferFamily` 查池族;池未被跟踪时回落呈现队列族并一次性
+WARN(首帧呈现前呈现族未知则取设备首个 compute 族,拷贝 shader 本就要求 compute)。
+锁序:`VkwDx12SC::_mutex` 先于 `VkwDx12Inputs::inputsMutex`(`QueuePresent` 持
+`_mutex` 贯穿 `Present`→`RecordPresentCopies`,`SetResource` 在锁 inputsMutex 前解析
+evaluate 族,测试断言该顺序)。不切 CONCURRENT,信号量/栅栏原样保留只提供执行顺序。

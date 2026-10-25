@@ -239,6 +239,8 @@ assert(GetNrGamePolicy("other.exe",true).earlyExeWrap);
 assert(!GetNrGamePolicy("other.exe").earlyExeWrap);
 auto dl=GetNrGamePolicy("DyingLightGame_TheBeast_x64_rwdi.exe");
 assert(!dl.earlyExeWrap&&dl.earlyAnyModuleWrap&&!dl.enhancedBarriers&&!dl.earlyUnityPlayerWrap);
+auto nsmc=GetNrGamePolicy("GacRunnerNG.exe");
+assert(!nsmc.earlyExeWrap&&nsmc.earlyAnyModuleWrap&&!nsmc.enhancedBarriers&&!nsmc.earlyUnityPlayerWrap);
 assert(!GetNrGamePolicy("othergame.exe").earlyAnyModuleWrap);
 CustomOptional<bool,NoDefault> preference; assert(!preference.has_value());
 assert(preference.value_or(forza.earlyExeWrap)); preference=false; assert(!preference.value_or(forza.earlyExeWrap));
@@ -469,6 +471,7 @@ int main() {
                 "XeFGFramerateTargetDMFG",
                 "XeFGRoundingDMFG",
                 "XeFGDynamicAllow1X",
+                "XeFGFlipQueue",  # Read by MFG Unlocker 1.7.0+ (plugin-owned semantics, our ini).
                 # Host-owned public INI keys (foundation A1/A2, D1-D3, LL input, HUDless binding
                 # capture): no upstream runtime environment aliases cross the boundary.
                 "Fsr4GpuSupport", "Fsr4Model",
