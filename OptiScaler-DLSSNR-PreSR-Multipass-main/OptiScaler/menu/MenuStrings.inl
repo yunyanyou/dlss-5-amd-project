@@ -1,4 +1,4 @@
-// English source text is a UI lookup key, never a config identifier.
+﻿// English source text is a UI lookup key, never a config identifier.
 {"Only the installed model is selectable. Install the missing model set to enable the other entry.", "只能选择已安装的模型。安装缺失的模型集后另一项才会启用。"},
 {"Capture poll backoff", "捕获轮询退避"},
 {"Allows the use of a Reactive mask\n", "允许使用 Reactive 掩码\n"},
@@ -49,6 +49,8 @@
 {"Compute-queue motion rescale", "计算队列运动矢量重缩放"},
 {"INT4 mixed is available only with the 310.8.0 (original) model.", "INT4 混合模式仅在 310.8.0（原始）模型下可用。"},
 {"Each entry is enabled only when its model file is present under dlssnr-amd.", "每项仅在其模型文件存在于 dlssnr-amd 下时才启用。"},
+{"Ready Frames", "就绪帧数"},
+{"Wait for consecutive frames with depth, motion vectors and camera data before enabling FG.\nApplies to Streamline / DLSSG input. 0 keeps normal activation.\nPositive values also require the game to request FG. Changes apply on the next activation.", "等待多帧持续具备深度、运动矢量和相机数据后再开启帧生成。\n适用于 Streamline / DLSSG 输入。0 保持原有开启方式。\n正数还要求游戏已请求开启帧生成。更改在下次开启时生效。"},
 {"Hold Ctrl, Shift, Alt or Tab with a key. Release to bind.", "按住 Ctrl、Shift、Alt 或 Tab 并按键，松开后绑定。"},
 {"Actions sharing a chord fire together; Ctrl+F11 is reserved for Mochizuki.", "使用同一组合键的操作将一同触发；Ctrl+F11 保留给 Mochizuki。"},
 {"Toggle key", "开关键"},

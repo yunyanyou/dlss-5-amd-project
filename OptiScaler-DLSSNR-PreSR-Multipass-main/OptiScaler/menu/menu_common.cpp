@@ -2470,7 +2470,9 @@ void MenuCommon::RenderPerformanceOverlay(RenderMenuContext& ctx)
                 else if (kind == DlssNr::Backend::Kind::Mochizuki) {
                     const auto timing = DlssNr::AmdBridge::MochizukiTimingDetails();
                     const auto now = GetTickCount64();
-                    if (!timing.gpu_samples)
+                    if (timing.reserved0 & 1u)
+                        firstLine += MenuLocale::Translate(" | NR: N/A");
+                    else if (!timing.gpu_samples)
                         firstLine += MenuLocale::Translate(" | NR: N/A (waiting)");
                     else if (now < timing.gpu_tick || now - timing.gpu_tick > 2000)
                         firstLine += MenuLocale::Translate(" | NR: N/A (stale)");
@@ -4185,6 +4187,20 @@ void MenuCommon::RenderFrameGenerationSelection(RenderMenuContext& ctx)
                         ShowHelpMarker("Select source for frametime\n"
                                        "Might help frame pacing and stutter issues");
                     }
+                }
+
+                if (state.activeFgInput == FGInput::DLSSG)
+                {
+                    auto requiredReadyFrames = config->FGDLSSGRequiredReadyFrames.value_or_default();
+                    ImGui::PushItemWidth(160.0f * menuResScale);
+                    if (MenuUi::SliderInt("Ready Frames", &requiredReadyFrames, 0, 300,
+                                         requiredReadyFrames == 0 ? "0 (Off)" : "%d", ImGuiSliderFlags_AlwaysClamp))
+                        config->FGDLSSGRequiredReadyFrames = requiredReadyFrames;
+                    ImGui::PopItemWidth();
+
+                    ShowHelpMarker("Wait for consecutive frames with depth, motion vectors and camera data before enabling FG.\n"
+                                   "Applies to Streamline / DLSSG input. 0 keeps normal activation.\n"
+                                   "Positive values also require the game to request FG. Changes apply on the next activation.");
                 }
 
                 if (showHudCutoff)

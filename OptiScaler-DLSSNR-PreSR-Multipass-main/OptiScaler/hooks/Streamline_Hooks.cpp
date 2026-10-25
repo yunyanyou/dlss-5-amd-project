@@ -397,8 +397,21 @@ static sl::Result dummy_slDLSSGGetState(const sl::ViewportHandle& viewport, sl::
     return sl::Result::eOk;
 }
 
+static void ReportStreamlineFGRequest(const sl::DLSSGOptions& options)
+{
+    auto& state = State::Instance();
+    if (state.activeFgInput == FGInput::DLSSG)
+    {
+        // Capture options even at RequiredReadyFrames=0, so enabling the wait at runtime retains the request.
+        const bool requested = options.mode == sl::DLSSGMode::eOn || options.mode == sl::DLSSGMode::eAuto ||
+                               options.mode == sl::DLSSGMode::eDynamic;
+        state.slFGInputs.SetFGRequested(requested);
+    }
+}
+
 static sl::Result dummy_slDLSSGSetOptions(const sl::ViewportHandle& viewport, const sl::DLSSGOptions& options)
 {
+    ReportStreamlineFGRequest(options);
     auto& state = State::Instance();
 
     // Only reading v1 fields, safe for any struct version
@@ -440,6 +453,16 @@ sl::Result StreamlineHooks::hkslGetFeatureFunction(sl::Feature feature, const ch
     }
 
     return o_slGetFeatureFunction(feature, functionName, function);
+}
+
+sl::Result StreamlineHooks::hkslSetFeatureLoaded(sl::Feature feature, bool loaded)
+{
+    if (feature == sl::kFeatureDLSS_G)
+    {
+        return sl::Result::eOk;
+    }
+
+    return o_slSetFeatureLoaded(feature, loaded);
 }
 
 sl::Result StreamlineHooks::hkslSetTag(const sl::ViewportHandle& viewport, const sl::ResourceTag* tags,
@@ -637,6 +660,11 @@ sl::Result StreamlineHooks::hkslEvaluateFeature(sl::Feature feature, const sl::F
         }
     }
 
+    // Some games attach FG resources to DLSS evaluation and never evaluate DLSS-G itself.
+    if (State::Instance().activeFgInput == FGInput::DLSSG &&
+        (feature == sl::kFeatureDLSS || feature == sl::kFeatureDLSS_G))
+        State::Instance().slFGInputs.ReportEvaluate(static_cast<uint32_t>(frame));
+
     auto result = o_slEvaluateFeature(feature, frame, inputs, numInputs, cmdBuffer);
     return result;
 }
@@ -744,6 +772,11 @@ bool StreamlineHooks::hkslEvaluateFeature_sl1(sl1::CommandBuffer* cmdBuffer, sl1
         {
             State::Instance().s_sl1FGInputs.evaluateState();
             State::Instance().s_sl1FGInputs.evaluateFeature(cmdBuffer, feature, frameIndex, id);
+        }
+        else if (marker == sl1::ReflexMarker::eReflexMarkerRenderSubmitEnd)
+        {
+            // Complete the resources replayed at RenderSubmitStart without replaying them a second time.
+            State::Instance().s_sl1FGInputs.ReportEvaluate(frameIndex);
         }
         else if (marker == sl1::ReflexMarker::eReflexMarkerPresentStart)
         {
@@ -1271,6 +1304,8 @@ bool StreamlineHooks::hkcommon_slOnPluginLoad(sl::param::IParameters* params, co
 
 sl::Result StreamlineHooks::hkslDLSSGSetOptions(const sl::ViewportHandle& viewport, const sl::DLSSGOptions& options)
 {
+    ReportStreamlineFGRequest(options);
+
     if (Calls().o_slDLSSGSetOptions.load() == nullptr)
         return sl::Result::eErrorFeatureMissing;
 
@@ -1814,6 +1849,10 @@ sl::Result StreamlineHooks::hkslPCLSetMarker(sl::PCLMarker marker, const sl::Fra
             {
                 State::Instance().s_sl1FGInputs.evaluateState();
             }
+            else if (marker == sl::PCLMarker::eRenderSubmitEnd)
+            {
+                State::Instance().s_sl1FGInputs.ReportEvaluate(static_cast<uint32_t>(frame));
+            }
             else if (marker == sl::PCLMarker::ePresentStart)
             {
                 State::Instance().s_sl1FGInputs.markPresent(frame);
@@ -2157,6 +2196,8 @@ void StreamlineHooks::hookInterposer(HMODULE slInterposer)
                 KernelBaseProxy::GetProcAddress_()(slInterposer, "slGetFeatureVersion"));
             o_slGetFeatureFunction = reinterpret_cast<decltype(&slGetFeatureFunction)>(
                 KernelBaseProxy::GetProcAddress_()(slInterposer, "slGetFeatureFunction"));
+            o_slSetFeatureLoaded = reinterpret_cast<decltype(&slSetFeatureLoaded)>(
+                KernelBaseProxy::GetProcAddress_()(slInterposer, "slSetFeatureLoaded"));
 
             if (o_slInit != nullptr)
             {
@@ -2198,6 +2239,9 @@ void StreamlineHooks::hookInterposer(HMODULE slInterposer)
 
                     if (o_slGetFeatureFunction != nullptr)
                         DetourAttach(&(PVOID&) o_slGetFeatureFunction, hkslGetFeatureFunction);
+
+                    if (o_slSetFeatureLoaded != nullptr)
+                        DetourAttach(&(PVOID&) o_slSetFeatureLoaded, hkslSetFeatureLoaded);
                 }
 
                 // if (o_slAllocateResources != nullptr)
@@ -2226,6 +2270,7 @@ void StreamlineHooks::hookInterposer(HMODULE slInterposer)
                     o_slGetFeatureRequirements = nullptr;
                     o_slGetFeatureVersion = nullptr;
                     o_slGetFeatureFunction = nullptr;
+                    o_slSetFeatureLoaded = nullptr;
                 }
             }
         }

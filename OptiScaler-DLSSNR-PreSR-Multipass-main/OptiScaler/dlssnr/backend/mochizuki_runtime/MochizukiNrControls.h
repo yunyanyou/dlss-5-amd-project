@@ -188,7 +188,7 @@ extern "C"
         float gpu_ms_median;          /* Vulkan core total over the last 120 samples; excludes bridge copies */
         float gpu_ms_p95;
         float build_seconds;           /* the last network build */
-        uint32_t reserved0;            /* 0; keeps frames 8-aligned without implicit padding */
+        uint32_t reserved0;            /* bit 0: current direct recording has no timestamp sampler */
         uint64_t frames;               /* frames run in this session */
         uint32_t history_consumed_pct; /* of the last 64 frames, those that used the history */
         uint32_t failed;               /* 1: the session failed; last_error says why */
@@ -217,6 +217,10 @@ extern "C"
         uint32_t network_requested, network_effective; /* 0 original, 1 small; effective valid after frame_w > 0 */
         /* Route-specific network-scope quantiles from the same completed-frame window as total. */
         float gpu_ms_network_median, gpu_ms_network_p95;
+        /* Direct recording timing supply for the current core runtime (zero before it exists):
+         * certified harvest scope rereads, and rereads rejected as unavailable or invalid.
+         * gpu_samples above remains the session's cumulative accepted-sample count. */
+        uint64_t recording_timing_reads, recording_timing_rejected;
         /* struct_size includes the current definition's tail padding. */
     } MochizukiNrInfo;
 

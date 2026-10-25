@@ -2507,6 +2507,7 @@ struct ProductRuntime : nr::Runtime
     MochizukiStageTiming stageTiming;
     uint32_t renoPasses = 0;
     uint64_t id = 0;
+    uint64_t harvestedTimingSerial = 0; // generation-local; never compare serials across networks
     bool graphAco = false; // Actual compiler provenance, not requested ACO mode.
     CompilePolicy graphPolicy = CompilePolicy::WindowsDefault;
     NetworkKey key {};
@@ -2797,8 +2798,15 @@ struct Recording
     std::unique_ptr<MochizukiStageTiming> directTiming;
     uint32_t directTimingSlot = MochizukiStageTiming::kUnavailable;
     uint64_t completedExecutions = 0;
+    // Begin admissions include batches aborted before native submission. Only End's
+    // proven submissions may be certified against the published tail.
+    uint64_t submittedExecutions = 0, harvestedExecutionOrdinal = 0;
+    uint64_t harvestAttempts = 0, acceptedSamples = 0, rejectedSamples = 0, coalescedExecutions = 0;
+    uint32_t recordedDispatches = 0;
+    bool recordedHistoryConsumed = false;
     uint64_t directSerial = 0;
     bool invalidated = false, uncertain = false;
+    bool directRecordFailed = false;
     // inlineExecution is this recording's mode, not the create-time INLINE_QUEUE bit.
     // privateBuffers is a checked-out set. Split recordings share the session set.
     bool inlineExecution = false, privateBuffers = false, ended = false;
@@ -2831,6 +2839,7 @@ struct Session
     std::atomic<bool> frameAbiRejected { false };
     std::atomic<bool> adoptedLegacyRejected { false };
     uint64_t directRecorded = 0, directSubmitted = 0, directCompleted = 0;
+    bool directTimingLog = false; // Set by the serialized host poll; no marker work when disabled.
     std::shared_ptr<FrameBuffers> allocation;
     std::shared_ptr<ImageInput> colourInput;
     std::shared_ptr<ImageInput> motionInput;
@@ -3096,7 +3105,8 @@ struct Session
     float encodeMsLast = -1.f, transferMsLast = -1.f; // stage timing, last accepted sample (statsMutex)
     uint32_t gpuMsCount = 0, gpuMsNext = 0;
     uint64_t statsSerial = 0, gpuSamples = 0, gpuTick = 0;
-    uint64_t statsNetworkId = 0;
+    uint64_t statsNetworkId = 0; // legacy bridge aggregation only
+    std::atomic<bool> directTimingUnavailable {false};
     ProductRuntime* pendingTimingNetwork = nullptr;
     uint32_t pendingTimingSlot = MochizukiStageTiming::kUnavailable;
 
@@ -3120,6 +3130,7 @@ struct Session
     std::atomic<bool> infoBuilding { false };
     std::atomic<uint32_t> infoModelWidth { 0 }, infoModelHeight { 0 }, infoFrameWidth { 0 }, infoFrameHeight { 0 },
         infoMaxPasses { 0 }, infoPasses { 1 }, motionRefused { 0 }, dispatches { 0 };
+    std::atomic<uint64_t> infoRecordingTimingReads { 0 }, infoRecordingTimingRejected { 0 };
     std::atomic<float> infoBuildSeconds { 0 };
     std::atomic<float> infoPrepEv { NAN };
     std::atomic<float> infoWhite { 1.f };
@@ -4790,6 +4801,7 @@ struct Session
         LogNetworkTime(why);
         finished = lastFinished.load();
         infoInt4 = infoReno = infoNetwork = 0;
+        infoRecordingTimingReads = infoRecordingTimingRejected = 0;
         exposureSnapshot = runtime && runtime->reno ? runtime->reno->exposure_state() : nullptr;
         return std::move(runtime);
     }
@@ -4814,6 +4826,7 @@ struct Session
             if (runtime)
                 old = TakeNetwork("replacing the network", oldFinished);
             runtime = std::move(built);
+            infoRecordingTimingReads = infoRecordingTimingRejected = 0;
             if (runtime->reno && runtime->reno->seed_from(exposureSnapshot))
                 nr::logf("[mochizuki] network #%llu inherited shared scalar exposure state", static_cast<unsigned long long>(runtime->id));
             exposureSnapshot.reset();
@@ -4862,13 +4875,9 @@ struct Session
         }
         buildHold = {};
         SetNetworkDeferred("");
-        {
-            std::lock_guard stats(statsMutex);
-            gpuMsCount = gpuMsNext = 0;
-            gpuTick = 0;
-            encodeMsLast = transferMsLast = -1.f;
-            statsNetworkId = statsSerial = 0;
-        }
+        // Keep the session timing window across network/pass-capacity changes.
+        // Each ProductRuntime tracks its own harvest serial, so a new generation
+        // starts accepting samples immediately without invalidating the display.
         infoFrameWidth = net.width;
         infoFrameHeight = net.height;
         infoInt4 = runtime->int4_mixed();
@@ -5009,6 +5018,7 @@ struct Session
                     exposureSnapshot = runtime->reno ? runtime->reno->exposure_state() : nullptr;
                     runtime->destroyReason = "vram_reclaim";
                     runtime.reset();
+                    infoRecordingTimingReads = infoRecordingTimingRejected = 0;
                 }
                 if (freeGeometry)
                     ReleaseGeometry();
@@ -5488,6 +5498,7 @@ struct Session
             exposureSnapshot = runtime && runtime->reno ? runtime->reno->exposure_state() : nullptr;
             if (runtime) runtime->destroyReason = "vram_refused";
             runtime.reset();
+            infoRecordingTimingReads = infoRecordingTimingRejected = 0;
         }
         const UINT64 freed = known && vram.Read(after, budget) && before > after ? before - after : 0;
         if (freed)
@@ -6650,6 +6661,7 @@ struct Session
         if (runtime) runtime->destroyReason = sessionEndReason;
         if (built) built->destroyReason = sessionEndReason;
         runtime.reset();
+        infoRecordingTimingReads = infoRecordingTimingRejected = 0;
         built.reset();
         exposureSnapshot.reset();
         retired.clear();
@@ -7560,6 +7572,9 @@ int32_t GetInfo(void* context, MochizukiNrInfo* out)
         info.model_h = s->infoModelHeight;
         info.max_passes = s->infoMaxPasses;
         info.motion_refused_dxgi = s->motionRefused;
+        info.reserved0 = s->directTimingUnavailable.load() ? 1u : 0u;
+        info.recording_timing_reads = s->infoRecordingTimingReads.load(std::memory_order_relaxed);
+        info.recording_timing_rejected = s->infoRecordingTimingRejected.load(std::memory_order_relaxed);
         {
             std::lock_guard stats(s->statsMutex);
             info.gpu_samples = s->gpuSamples;
@@ -7694,6 +7709,16 @@ extern "C" __declspec(dllexport) int32_t MochizukiNrSetControls(void* context, c
 extern "C" __declspec(dllexport) int32_t MochizukiNrGetInfo(void* context, MochizukiNrInfo* info)
 {
     return GetInfo(context, info);
+}
+
+// Serialized lifecycle poll, unlike the atomic-only GetInfo snapshot.
+extern "C" __declspec(dllexport) int32_t MochizukiNrPollDirectCompletions(void* context, uint32_t timingLog)
+{
+    auto* s = static_cast<Session*>(context);
+    if (!s) return LMXXF_NR_INVALID_ARGUMENT;
+    s->directTimingLog = timingLog != 0;
+    ObserveDirectCompletions(s);
+    return LMXXF_NR_OK;
 }
 
 extern "C" __declspec(dllexport) int32_t MochizukiNrGetControlDefaults(MochizukiNrControls* controls)

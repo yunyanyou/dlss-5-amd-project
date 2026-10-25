@@ -2,6 +2,10 @@
 #include "../lmxxf_runtime/LmxxfNrApi.h"
 #include "MochizukiNrControls.h"
 
+// MochizukiNrInfo (declared in MochizukiNrControls.h) is an exact-size package contract.
+// Its additive recording_timing_* diagnostics report core certified-harvest rereads/rejections;
+// they do not include RenoDX timing. Host/runtime headers must be updated together.
+
 // Separate frame contract; the shared v2 table supplies recording ownership and
 // submission operations. It never reinterprets lmxxf's frame or the older fork ABI.
 #define MOCHIZUKI_NR_FRAME_FLAG_TEMPORAL (1u << 8)
@@ -54,11 +58,14 @@ typedef struct MochizukiNrFrameInfo
 
 typedef int32_t (*PFN_MochizukiNrPrepareFrame)(void*, const MochizukiNrFrameInfo*, LmxxfNrJob*);
 typedef int32_t (*PFN_MochizukiNrGetApi)(uint32_t, LmxxfNrApi*);
-// Both exports are required by the current package, alongside the exact-size frame ABI.
+// These direct exports are required by the current package, alongside the exact-size frame ABI.
 // Get returns OK + nonzero for an adopted vkd3d device, OK + zero on Windows,
 // and an error when the adopted device cannot expose its current command buffer.
 typedef int32_t (*PFN_MochizukiNrGetDirectCommandBuffer)(void* context, void* native_list, uint64_t* command_buffer);
 typedef int32_t (*PFN_MochizukiNrRecordDirect)(void* context, void* job, void* native_list, uint64_t command_buffer);
+// Observational only. Host holds RecordingMutex, as for Begin/End/Collect;
+// timingLog gates per-recipe supply/generation markers, not timing collection.
+typedef int32_t (*PFN_MochizukiNrPollDirectCompletions)(void* context, uint32_t timingLog);
 
 #ifdef __cplusplus
 extern "C" {
@@ -67,6 +74,7 @@ MOCHIZUKI_NR_EXPORT int32_t MochizukiNrGetApi(uint32_t version, LmxxfNrApi* out)
 MOCHIZUKI_NR_EXPORT int32_t MochizukiNrPrepareFrame(void*, const MochizukiNrFrameInfo*, LmxxfNrJob*);
 MOCHIZUKI_NR_EXPORT int32_t MochizukiNrGetDirectCommandBuffer(void* context, void* native_list, uint64_t* command_buffer);
 MOCHIZUKI_NR_EXPORT int32_t MochizukiNrRecordDirect(void* context, void* job, void* native_list, uint64_t command_buffer);
+MOCHIZUKI_NR_EXPORT int32_t MochizukiNrPollDirectCompletions(void* context, uint32_t timingLog);
 #ifdef __cplusplus
 }
 #endif
