@@ -1373,3 +1373,7 @@
 {"Flip-Queue Pacing (MFG Unlocker 1.7.0+)", "翻转队列节拍（MFG Unlocker 1.7.0+）"},
 {"Save Settings and restart the game to apply flip-queue pacing.", "保存设置并重启游戏后生效翻转队列节拍。"},
 {"MFG Unlocker 1.7.0's flip-queue pacing for XeFG: presents each batch of generated frames on an even cadence.\nWrites [XeFG] XeFGFlipQueue in OptiScaler.ini (on/off, the plugin's own words); older MFG Unlocker builds ignore the key.\nAuto leaves the plugin default (on for RX 7000/9000 with new Adrenalin drivers, off under Wine/Proton).\nOff is the verified baseline (classic pacing); On may smooth multi-frame-gen pacing but is unverified with OptiScaler and has known instability cases with XeLL.\nDecided once per process at FG startup - restart the game after changing.", "MFG Unlocker 1.7.0 为 XeFG 提供的翻转队列节拍：将每批生成帧以均匀节奏呈现。\n会在 OptiScaler.ini 写入 [XeFG] XeFGFlipQueue（on/off，沿用插件自己的用语）；旧版 MFG Unlocker 会忽略该键。\nAuto 保持插件默认（RX 7000/9000 配新 Adrenalin 驱动时开启，Wine/Proton 下关闭）。\nOff 是已验证的基线（经典节拍）；On 可能令多帧生成的节拍更平滑，但与 OptiScaler 的组合未经验证，且已知与 XeLL 同开存在不稳定案例。\n在帧生成启动时按进程决定一次——更改后请重启游戏。"},
+{"FSR4 driver hooks disabled: automatic model selection and preset correction disabled.", "FSR4 驱动钩子已禁用：自动模型选择与预设修正不可用。"},
+{"(Driver hooks disabled; overrides inactive)", "（驱动钩子已禁用；覆盖不生效）"},
+{"(Auto · preset correction unavailable)", "（Auto · 预设修正不可用）"},
+{"Fsr4DisableDriverHooks=true also prevents explicit model/preset overrides.\nModel listing remains read-only. Set it to false in [FSR] and restart to enable hooks.", "Fsr4DisableDriverHooks=true 同时会阻止显式的模型/预设覆盖。\n模型列表保持只读。在 [FSR] 里设为 false 并重启游戏即可恢复钩子。"},
