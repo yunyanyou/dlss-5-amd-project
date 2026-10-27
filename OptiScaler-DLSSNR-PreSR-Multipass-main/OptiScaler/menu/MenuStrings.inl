@@ -138,7 +138,6 @@
 {"Split query splice", "切分查询拼接"},
 {"Lets split NR run on lists that keep a non-timestamp query open across\nEvaluate (otherwise rejected as open_query, e.g. pipeline-statistics scopes).\nThe open pair is ended on the producer half and reopened on the continuation;\nthe game's query result then covers only the post-split half, changing what an\nengine profiler reads.\nAuto: on for Crimson Desert, off otherwise. Applies immediately.\nINI: NrSplitQuerySplice.", "允许切分模式在 Evaluate 时刻仍有未闭合非时间戳查询的命令列表上执行（否则将以 open_query 拒绝切分，例如管线统计查询）。\n切分时会在前半段列表补 EndQuery、后半段列表补 BeginQuery；游戏读取的查询结果只覆盖切分之后的部分，引擎性能统计会因此改变。\n自动：红色沙漠开启，其他游戏关闭。立即生效。\nINI：NrSplitQuerySplice。"},
 {"Allow skin tone / colour changes", "允许肤色色调和色彩变化"},
-{"Allow supported additional game colour formats through a private FP16 output.\nRestart the game after changing this setting.", "通过私有 FP16 输出支持额外的游戏色彩格式。修改后需重启游戏。"},
 {"Allows WaitForSingleObject instead of spinning for fence value", "使用 WaitForSingleObject 等待 Fence，代替持续自旋。"},
 {"Allows XeLL to work without FG on non-Intel cards.\n\nDisables FG options\n\nRequires a restart", "允许非 Intel 显卡在关闭帧生成时使用 XeLL，会禁用帧生成选项。需重启。"},
 {"Allows the use of a Reactive mask\nKeep in mind that a Reactive mask sent to DLSS\nwill not produce a good image in combination with FSR/XeSS", "允许使用响应遮罩。游戏为 DLSS 提供的遮罩不一定适合 FSR / XeSS，可能影响画质。"},
