@@ -1879,19 +1879,21 @@ namespace OptScalerNR.Launcher
 
         // ---- wiki 检测：照搬 tools/proxy-switch.ps1 的两级检测 + OptiPatcher 支持列表 ----
 
+        // DataContractJsonSerializer fills these through reflection; auto-properties keep the
+        // compiler from warning CS0649 on the private nested types.
         [System.Runtime.Serialization.DataContract]
         sealed class PanelProxyDoc
         {
-            [System.Runtime.Serialization.DataMember(Name = "profiles")] public PanelProxyProfile[] Profiles;
+            [System.Runtime.Serialization.DataMember(Name = "profiles")] public PanelProxyProfile[] Profiles { get; set; }
         }
         [System.Runtime.Serialization.DataContract]
         sealed class PanelProxyProfile
         {
-            [System.Runtime.Serialization.DataMember(Name = "id")] public string Id;
-            [System.Runtime.Serialization.DataMember(Name = "names")] public string[] Names;
-            [System.Runtime.Serialization.DataMember(Name = "pathSegments")] public string[] PathSegments;
-            [System.Runtime.Serialization.DataMember(Name = "preferred")] public string Preferred;
-            [System.Runtime.Serialization.DataMember(Name = "alternatives")] public string[] Alternatives;
+            [System.Runtime.Serialization.DataMember(Name = "id")] public string Id { get; set; }
+            [System.Runtime.Serialization.DataMember(Name = "names")] public string[] Names { get; set; }
+            [System.Runtime.Serialization.DataMember(Name = "pathSegments")] public string[] PathSegments { get; set; }
+            [System.Runtime.Serialization.DataMember(Name = "preferred")] public string Preferred { get; set; }
+            [System.Runtime.Serialization.DataMember(Name = "alternatives")] public string[] Alternatives { get; set; }
         }
 
         sealed class WikiAdvice
