@@ -16,6 +16,8 @@
 #include "upscalers/dlss/DLSSFeature_Dx12.h"
 
 #include <framegen/nvngx/Nvngx_FG.h>
+#include <proxies/FfxApi_Proxy.h>
+#include "upscalers/dlssd/DLSSDFeature.h"
 #include "FG/FSR3_Dx12_FG.h"
 #include "FG/XeFG_Inputs_Dx12.h"
 #include "FG/Upscaler_Inputs_Dx12.h"
@@ -653,12 +655,56 @@ static NVSDK_NGX_Result TryCreateOptiFeature(ID3D12GraphicsCommandList* InCmdLis
     if (InFeatureID == NVSDK_NGX_Feature_SuperSampling)
     {
         upscalerBackend = GetUpscalerBackend();
+
+        // FSR-RR is only ever created for Ray Reconstruction requests; fall back to the
+        // regular FFX backend for ordinary upscaling requests while it is configured.
+        if (upscalerBackend == Upscaler::FSR_RR)
+            upscalerBackend = Upscaler::FFX;
+
         LOG_INFO("Creating {} upscaler feature", UpscalerDisplayName(upscalerBackend));
     }
     else
     {
-        upscalerBackend = Upscaler::DLSSD;
-        LOG_INFO("Creating DLSSD (Ray Reconstruction) feature");
+        DLSSDFeature::SyncCreateParams(InParameters);
+
+        const auto primaryGpu = IdentifyGpu::getPrimaryGpu();
+        const bool dlssdCapable = primaryGpu.vendorId == VendorId::Nvidia && state.NVNGX_DLSSD_Path.has_value();
+        const Upscaler preferredUpscaler = GetUpscalerBackend();
+        const bool preferDlssd =
+            primaryGpu.vendorId == VendorId::Nvidia ||
+            (dlssdCapable && (preferredUpscaler == Upscaler::DLSS || preferredUpscaler == Upscaler::DLSSD ||
+                              !FfxApiProxy::IsDenoiserApiImplementedDx12()));
+        const bool fsrRrCapable = primaryGpu.vendorId != VendorId::Nvidia &&
+                                  Config::Instance()->FsrRrEnabled.value_or_default() &&
+                                  FfxApiProxy::IsDenoiserApiImplementedDx12();
+
+        if (preferDlssd)
+        {
+            upscalerBackend = Upscaler::DLSSD;
+            LOG_INFO("Creating DLSSD (Ray Reconstruction) feature");
+        }
+        else if (fsrRrCapable)
+        {
+            upscalerBackend = Upscaler::FSR_RR;
+            LOG_INFO("Creating FSR_RR (Ray Regeneration) feature");
+        }
+        else if (Config::Instance()->FsrRrEnabled.value_or_default())
+        {
+            // The user asked for FSR-RR takeover on a non-NVIDIA GPU but the denoiser API is not
+            // the implemented RR 1.2. Failing openly beats silently running undenoised RR inputs
+            // through DLSSD's FSR2 fallback. No context exists yet at this point.
+            LOG_ERROR("FSR-RR is enabled but the denoiser API is not implemented (RR 1.2 required)");
+            return NVSDK_NGX_Result_Fail;
+        }
+        else
+        {
+            // Non-NVIDIA, gate off: this RR request has no supported handler. Routing it
+            // into DLSSD would let the factory fall back to plain FSR 2 and report success
+            // on undenoised Ray Reconstruction inputs - the exact downgrade this
+            // migration forbids - so fail openly instead.
+            LOG_ERROR("Ray Reconstruction request on a non-NVIDIA GPU with FSR-RR disabled; no supported handler");
+            return NVSDK_NGX_Result_Fail;
+        }
     }
 
     // Root signature restoration setup
@@ -708,6 +754,9 @@ static NVSDK_NGX_Result TryCreateOptiFeature(ID3D12GraphicsCommandList* InCmdLis
 
     IFeature_Dx12* feature = Dx12Contexts[handleId].feature.get();
 
+    Dx12Contexts[handleId].featureKey = upscalerBackend;
+    Dx12Contexts[handleId].featureID = InFeatureID;
+
     // Initialize feature
     if (feature->Init(D3D12Device, InCmdList, InParameters))
     {
@@ -717,7 +766,19 @@ static NVSDK_NGX_Result TryCreateOptiFeature(ID3D12GraphicsCommandList* InCmdLis
     }
     else
     {
+        // FSR-RR has no silent FSR2 fallback: a Ray Reconstruction feature that failed to
+        // initialize must surface a failure, never run undenoised input through an upscaler.
+        if (upscalerBackend == Upscaler::FSR_RR)
+        {
+            LOG_ERROR("FSR-RR feature initialization failed");
+            D3D12Hooks::SetRootSignatureTracking(true);
+            Dx12Contexts.erase(handleId);
+            return NVSDK_NGX_Result_Fail;
+        }
+
         LOG_ERROR("Feature '{}' initialization failed falling back to FSR 2.1.2", UpscalerDisplayName(upscalerBackend));
+        Dx12Contexts[handleId].featureKey = Upscaler::FSR21;
+        Dx12Contexts[handleId].featureID = InFeatureID;
         state.newBackend = Upscaler::FSR21;
         state.changeBackend[handleId] = true;
     }
@@ -937,6 +998,41 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_GetFeatureRequirements(
         return NVSDK_NGX_Result_Success;
     }
 
+    // FSR Ray Regen check
+    if (IdentifyGpu::getPrimaryGpu().vendorId != VendorId::Nvidia &&
+        FeatureDiscoveryInfo->FeatureID == NVSDK_NGX_Feature_RayReconstruction &&
+        Config::Instance()->FsrRrEnabled.value_or_default())
+    {
+        if (!FfxApiProxy::IsDenoiserReady())
+            FfxApiProxy::InitFfxDx12();
+
+        /* Somewhat flawed check. ffxQuery can't be used for RR to check support because
+        this runs before the D3D12Device* is captured, and the newer FFX APIs require it
+        to validate support. Slightly inconvenient, but actually a non-issue.
+
+        InitNGXParameters() executes later, after the device is available, so full validation
+        can be done there. All this does is allow the game to actually check the params
+        instead of failing early.
+        */
+        if (FfxApiProxy::IsSRReady() && FfxApiProxy::IsDenoiserReady())
+        {
+            LOG_DEBUG("Reporting support for DLSSD -> FSR Ray Regeneration");
+
+            if (OutSupported == nullptr)
+            {
+                static auto tmp = NVSDK_NGX_FeatureRequirement();
+                OutSupported = &tmp;
+            }
+
+            OutSupported->FeatureSupported = NVSDK_NGX_FeatureSupportResult_Supported;
+            OutSupported->MinHWArchitecture = 0;
+            strcpy_s(OutSupported->MinOSVersion, "10.0.10240.16384");
+            return NVSDK_NGX_Result_Success;
+        }
+        else
+            LOG_DEBUG("DLSSD -> FSR Ray Regeneration not supported");
+    }
+
     if (Config::Instance()->DLSSEnabled.value_or_default() && IdentifyGpu::getPrimaryGpu().dlssCapable &&
         NVNGXProxy::NVNGXModule() == nullptr)
     {
@@ -986,6 +1082,17 @@ static NVSDK_NGX_Result TryEvaluateOptiFeature(ID3D12GraphicsCommandList* InCmdL
 
     if (feature == nullptr) // Prevent source api name flicker when dlssg is active
         state.setInputApiName = state.currentInputApiName;
+    if (feature == nullptr && ctxData.changeBackendCounter == 0 && !state.changeBackend[handleId])
+    {
+        // The handle has no feature and no rebuild is pending: the backend switch's
+        // replacement refused to create (e.g. the FSR-RR gate was turned off). Fail
+        // explicitly instead of dereferencing below and let the game recreate it.
+        // A pending rebuild (counter > 0 or changeBackend armed) must proceed normally:
+        // phase 1 destroys the old feature, phase 2 creates the new one.
+        LOG_ERROR("Handle {} has no feature and no rebuild is pending", handleId);
+        return NVSDK_NGX_Result_FAIL_FeatureNotFound;
+    }
+    // A pending rebuild may temporarily have no feature. Continue to ChangeFeature below.
 
     const auto targetApiName =
         !state.setInputApiName.has_value() ? ApiUpscalerInput::DLSS_DX12 : state.setInputApiName.value();
@@ -1054,6 +1161,14 @@ static NVSDK_NGX_Result TryEvaluateOptiFeature(ID3D12GraphicsCommandList* InCmdL
             D3D12Hooks::SetRootSignatureTracking(true);
             return NVSDK_NGX_Result_Success;
         }
+    }
+
+    // A completed rebuild must supply a feature before the normal evaluation path.
+    if (feature == nullptr)
+    {
+        D3D12Hooks::SetRootSignatureTracking(true);
+        LOG_ERROR("Handle {} has no feature after backend reconstruction", handleId);
+        return NVSDK_NGX_Result_FAIL_FeatureNotFound;
     }
 
     // Fallback to FSR 2.1.2 if feature failed to initialize and user didn't explicitly request it
@@ -1239,10 +1354,31 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
     DlssNr::AmdBridge::Restore(InParameters);
 
     // Same pass, for OptiScaler's own upscalers rather than native DLSS.
+    // FSR-RR counts as a verified post-upscale consumer here: its denoise+SR completed on this
+    // frame, so the AMD branch may process the output when ApplyAfterRR is on. Native RR
+    // (forcePost) stays rejected by the branch itself.
+    const auto rrCtxIt = Dx12Contexts.find(InFeatureHandle->Id);
+    const bool isFsrRr = rrCtxIt != Dx12Contexts.end() && rrCtxIt->second.feature != nullptr &&
+                         rrCtxIt->second.feature->GetUpscalerType() == Upscaler::FSR_RR;
+    // FSR-RR honours the user's ApplyAfterRR choice: off means the RR/SR chain still runs and
+    // NR is skipped; on means this frame's verified FSR-RR output may be processed post-upscale.
+    const bool rrNrAllowed = isFsrRr && Config::Instance()->DlssNrApplyAfterRR.value_or_default();
+    const bool forcePost = feature == NVSDK_NGX_Feature_RayReconstruction && !rrNrAllowed;
     if (optiResult == NVSDK_NGX_Result_Success && feature != NVSDK_NGX_Feature_FrameGeneration &&
         nrOutputExtent.width && nrOutputExtent.height)
-        DlssNr::EvaluateAfterUpscale(InCmdList, InParameters, nullptr,
-                                     feature == NVSDK_NGX_Feature_RayReconstruction, 0, nrOutputExtent);
+    {
+        // With the before-SR placement the FSR-RR feature already ran the model itself, between its
+        // denoise and its upscale (FSRDFeatureDx12::EvaluateInternal); the post-upscale call would
+        // only decline on placement and run the same model a second time.
+        if (rrNrAllowed && Config::Instance()->DlssNrRunBeforeSr.value_or_default())
+        {
+            LOG_DEBUG("FSR-RR frame: NR carried by the feature's before-SR stage; skipping the post-upscale call");
+        }
+        else
+        {
+            DlssNr::EvaluateAfterUpscale(InCmdList, InParameters, nullptr, forcePost, 0, nrOutputExtent);
+        }
+    }
 
     return optiResult;
 }

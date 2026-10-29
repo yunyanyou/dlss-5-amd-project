@@ -11,6 +11,8 @@
 #include "upscalers/fsr2/FSR2Feature_Dx12.h"
 #include "upscalers/fsr2_212/FSR2Feature_Dx12_212.h"
 #include "upscalers/ffx/FFXFeature_Dx12.h"
+#include "upscalers/fsr31/FSRDFeature_Dx12.h"
+#include <proxies/FfxApi_Proxy.h>
 #include "upscalers/xess/XeSSFeature_Dx12.h"
 #include "FeatureProvider_Dx11.h"
 #include <misc/IdentifyGpu.h>
@@ -67,6 +69,22 @@ bool FeatureProvider_Dx12::GetFeature(Upscaler upscaler, UINT handleId, NVSDK_NG
             break;
         }
 
+    case Upscaler::FSR_RR:
+        if (FfxApiProxy::IsDenoiserApiImplementedDx12() && Config::Instance()->FsrRrEnabled.value_or_default())
+        {
+            *feature = std::make_unique<FSRDFeatureDx12>(handleId, parameters);
+            break;
+        }
+        else
+        {
+            // FSR-RR has no upscaler fallback: a Ray Reconstruction request without the denoiser
+            // API - or with the gate turned off - is a failure, not a quality downgrade.
+            LOG_ERROR("FSR-RR unavailable (denoiser API: {}, gate: {})",
+                      FfxApiProxy::IsDenoiserApiImplementedDx12(),
+                      Config::Instance()->FsrRrEnabled.value_or_default());
+            return false;
+        }
+
     default:
         *feature = std::make_unique<FSR2FeatureDx12_212>(handleId, parameters);
         upscaler = Upscaler::FSR21;
@@ -74,6 +92,14 @@ bool FeatureProvider_Dx12::GetFeature(Upscaler upscaler, UINT handleId, NVSDK_NG
     }
 
     bool loaded = (*feature)->ModuleLoaded();
+
+    if (!loaded && upscaler == Upscaler::FSR_RR)
+    {
+        // Same contract as the init-failure path: an FSR-RR request must not be handed
+        // to a plain upscaler that would run the undenoised input and report success.
+        LOG_ERROR("FSR-RR feature created but its module is not loaded");
+        return false;
+    }
 
     if (!loaded)
     {
@@ -93,6 +119,20 @@ bool FeatureProvider_Dx12::GetFeature(Upscaler upscaler, UINT handleId, NVSDK_NG
     return loaded;
 }
 
+// The old feature's sizes, flags and quality, written into the block the new feature is created from.
+static void ApplyCreateSize(ContextData<IFeature_Dx12>* contextData)
+{
+    auto* params = contextData->createParams;
+    params->Set(NVSDK_NGX_Parameter_DLSS_Feature_Create_Flags, contextData->createFlags);
+    params->Set(NVSDK_NGX_Parameter_Width, contextData->createWidth);
+    params->Set(NVSDK_NGX_Parameter_Height, contextData->createHeight);
+    params->Set(NVSDK_NGX_Parameter_OutWidth, contextData->createOutWidth);
+    params->Set(NVSDK_NGX_Parameter_OutHeight, contextData->createOutHeight);
+    params->Set(NVSDK_NGX_Parameter_PerfQualityValue, contextData->createQuality);
+    if (contextData->featureID == NVSDK_NGX_Feature_RayReconstruction)
+        DLSSDFeature::SyncCreateParams(params);
+}
+
 bool FeatureProvider_Dx12::ChangeFeature(Upscaler upscaler, ID3D12Device* device, ID3D12GraphicsCommandList* cmdList,
                                          UINT handleId, NVSDK_NGX_Parameter* parameters,
                                          ContextData<IFeature_Dx12>* contextData)
@@ -103,9 +143,43 @@ bool FeatureProvider_Dx12::ChangeFeature(Upscaler upscaler, ID3D12Device* device
     if (!state.changeBackend[handleId])
         return false;
 
-    const bool dlssOnNonCapable = !IdentifyGpu::getPrimaryGpu().dlssCapable && state.newBackend == Upscaler::DLSS;
+    const bool dlssOnNonCapable =
+        !IdentifyGpu::getPrimaryGpu().dlssCapable && (state.newBackend == Upscaler::DLSS || state.newBackend == Upscaler::DLSSD);
     if (state.newBackend == Upscaler::Reset || dlssOnNonCapable)
         state.newBackend = cfg.Dx12Upscaler.value_or_default();
+
+    if (contextData->featureID == NVSDK_NGX_Feature_RayReconstruction)
+    {
+        const auto primaryGpu = IdentifyGpu::getPrimaryGpu();
+        const bool dlssdCapable = primaryGpu.dlssCapable && state.NVNGX_DLSSD_Path.has_value();
+        const bool fsrRrCapable = primaryGpu.vendorId != VendorId::Nvidia &&
+                                  Config::Instance()->FsrRrEnabled.value_or_default() &&
+                                  FfxApiProxy::IsDenoiserApiImplementedDx12();
+
+        if ((state.newBackend == Upscaler::DLSS || state.newBackend == Upscaler::DLSSD) && dlssdCapable)
+        {
+            state.newBackend = Upscaler::DLSSD;
+            contextData->featureKey = Upscaler::DLSSD;
+        }
+        else if ((state.newBackend == Upscaler::FFX || state.newBackend == Upscaler::FSR_RR) && fsrRrCapable)
+        {
+            state.newBackend = Upscaler::FSR_RR;
+            contextData->featureKey = Upscaler::FSR_RR;
+        }
+        else if (contextData->featureKey == Upscaler::FSR_RR && !fsrRrCapable)
+        {
+            // The gate was turned off (or the denoiser API went away) since this context was
+            // created. Keep the RR identity: GetFeature refuses FSR-RR without the gate and the
+            // switch fails openly. Rewriting the handle to a plain SR backend would run the
+            // game's undenoised Ray Reconstruction inputs through Super Resolution and report
+            // success, which is exactly the silent downgrade this migration forbids.
+            state.newBackend = Upscaler::FSR_RR;
+        }
+        else if (state.newBackend != contextData->featureKey)
+        {
+            state.newBackend = contextData->featureKey;
+        }
+    }
 
     contextData->changeBackendCounter++;
 
@@ -129,21 +203,27 @@ bool FeatureProvider_Dx12::ChangeFeature(Upscaler upscaler, ID3D12Device* device
             const bool isPassthrough = state.newBackend == Upscaler::DLSSD || state.newBackend == Upscaler::DLSS;
 
             contextData->createParams = isPassthrough ? parameters : GetNGXParameters(API::DX12, false);
+            contextData->createParamsOwned = !isPassthrough;
+            contextData->createFlags = dc->GetFeatureFlags();
+            contextData->createWidth = dc->RenderWidth();
+            contextData->createHeight = dc->RenderHeight();
+            contextData->createOutWidth = dc->DisplayWidth();
+            contextData->createOutHeight = dc->DisplayHeight();
+            contextData->createQuality = dc->PerfQualityValue();
             unsigned int dynamicResolution = 0;
             parameters->Get("OptiScaler.DynamicResolution", &dynamicResolution);
             contextData->createParams->Set("OptiScaler.DynamicResolution", dynamicResolution);
-            contextData->createParams->Set(NVSDK_NGX_Parameter_DLSS_Feature_Create_Flags, dc->GetFeatureFlags());
-            contextData->createParams->Set(NVSDK_NGX_Parameter_Width, dc->RenderWidth());
-            contextData->createParams->Set(NVSDK_NGX_Parameter_Height, dc->RenderHeight());
-            contextData->createParams->Set(NVSDK_NGX_Parameter_OutWidth, dc->DisplayWidth());
-            contextData->createParams->Set(NVSDK_NGX_Parameter_OutHeight, dc->DisplayHeight());
-            contextData->createParams->Set(NVSDK_NGX_Parameter_PerfQualityValue, dc->PerfQualityValue());
+            ApplyCreateSize(contextData);
 
             dc = nullptr;
 
             State::Instance().currentFeature = nullptr;
 
-            Util::DelayedDestroy(std::move(contextData->feature));
+            if (contextData->feature && contextData->feature->GetUpscalerType() == Upscaler::FSR_RR)
+                FSRDFeatureDx12::DestroyWhenRetired(
+                    std::unique_ptr<FSRDFeatureDx12>(static_cast<FSRDFeatureDx12*>(contextData->feature.release())));
+            else
+                Util::DelayedDestroy(std::move(contextData->feature));
 
             // LOG_DEBUG("sleeping before reset of current feature for 1000ms");
             // std::this_thread::sleep_for(std::chrono::milliseconds(1000));
@@ -158,9 +238,14 @@ bool FeatureProvider_Dx12::ChangeFeature(Upscaler upscaler, ID3D12Device* device
             state.newBackend = Upscaler::Reset;
             state.changeBackend[handleId] = false;
 
-            if (contextData->createParams != nullptr)
+            if (contextData->createParamsOwned && contextData->createParams != nullptr)
             {
                 TryDestroyNGXParameters(contextData->createParams, NVNGXProxy::D3D12_DestroyParameters());
+                contextData->createParams = nullptr;
+                contextData->createParamsOwned = false;
+            }
+            else
+            {
                 contextData->createParams = nullptr;
             }
 
@@ -177,14 +262,25 @@ bool FeatureProvider_Dx12::ChangeFeature(Upscaler upscaler, ID3D12Device* device
     {
         LOG_INFO("Creating new {} upscaler", UpscalerDisplayName(state.newBackend));
         contextData->feature.reset();
+        // The game's block was refilled by the evaluates since: a Ray Reconstruction switched back from FSR-RR was
+        // created at display size (1920x1080 for a 1280x720 frame in Cyberpunk) and the GPU hung.
+        if (!contextData->createParamsOwned)
+            ApplyCreateSize(contextData);
+
 
         if (!GetFeature(state.newBackend, handleId, contextData->createParams, &contextData->feature))
         {
-            LOG_ERROR("Upscaler can't created");
+            // FSR-RR can refuse creation (gate off / denoiser API gone). The old feature was
+            // already destroyed at counter 1, so abort the switch here and leave the counter
+            // armed: falling through to counter 3 would dereference the null feature.
+            LOG_ERROR("Upscaler can't be created; backend switch aborted for handle {}", handleId);
+            contextData->changeBackendCounter = 0;
+            state.changeBackend[handleId] = false;
             return false;
         }
 
         return true;
+
     }
 
     // init feature
@@ -229,13 +325,13 @@ bool FeatureProvider_Dx12::ChangeFeature(Upscaler upscaler, ID3D12Device* device
             state.changeBackend[handleId] = false;
         }
 
-        // If this is an OptiScaler fake NVNGX param table, delete it
-        int optiParam = 0;
-
-        if (contextData->createParams->Get("OptiScaler", &optiParam) == NVSDK_NGX_Result_Success && optiParam == 1)
+        // Delete only the temporary table this provider created. The game's own table is
+        // still referenced by the feature during Evaluate and must outlive ChangeFeature.
+        if (contextData->createParamsOwned && contextData->createParams != nullptr)
         {
             TryDestroyNGXParameters(contextData->createParams, NVNGXProxy::D3D12_DestroyParameters());
             contextData->createParams = nullptr;
+            contextData->createParamsOwned = false;
         }
     }
 

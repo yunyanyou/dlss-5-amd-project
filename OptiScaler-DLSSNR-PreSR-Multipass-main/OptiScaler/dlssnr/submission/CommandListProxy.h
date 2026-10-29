@@ -58,6 +58,8 @@ IRecordingResources : public IUnknown
     virtual HRESULT STDMETHODCALLTYPE ObserveResources(std::shared_ptr<RecordingObserver> observer) = 0;
     virtual bool STDMETHODCALLTYPE InContinuation() = 0;
     virtual bool STDMETHODCALLTYPE CanAppendCompute() = 0;
+    // Which of CanAppendCompute's conditions failed; only meaningful after it returned false.
+    virtual const char* STDMETHODCALLTYPE AppendComputeRejection() = 0;
     virtual bool STDMETHODCALLTYPE CanRecordInline() = 0;
     virtual const char* STDMETHODCALLTYPE InlineRejectionReason() = 0;
     virtual HRESULT STDMETHODCALLTYPE BeginInlineState(UINT count, ID3D12Resource** resources,
@@ -69,6 +71,11 @@ IRecordingResources : public IUnknown
     // BeginInlineState this never rejects, scans sources or moves layouts: it only redirects bookkeeping.
     virtual void STDMETHODCALLTYPE BeginPrivateBindings() = 0;
     virtual void STDMETHODCALLTYPE EndPrivateBindings() = 0;
+    // Authoritative input layouts for a stage that consumed the resources through an external
+    // runtime (e.g. FFX) and therefore knows their post-dispatch layouts by contract rather than
+    // by observation. Replaces tombstoned book entries with known states.
+    virtual void STDMETHODCALLTYPE DeclareInputLayouts(UINT count, ID3D12Resource** resources,
+                                                       const D3D12_BARRIER_LAYOUT* layouts) = 0;
     virtual HRESULT STDMETHODCALLTYPE BeginSplitState(UINT count, ID3D12Resource** resources,
                                                        D3D12_RESOURCE_STATES* states) = 0;
     virtual void STDMETHODCALLTYPE TraceNrInputState(const char* backend, uint64_t frame, const char* role,
@@ -211,7 +218,34 @@ class CommandListProxy final : public ID3D12GraphicsCommandList10, public ILogic
             return S_OK;
         } catch (...) { return E_OUTOFMEMORY; }
     }
-    bool STDMETHODCALLTYPE CanAppendCompute() override { return !rawInterfaceEscaped && !presentCommandsUsed && !renderPassActive && !enhancedBarriersSeen; }
+    bool STDMETHODCALLTYPE CanAppendCompute() override
+    {
+        return !rawInterfaceEscaped && !presentCommandsUsed && !renderPassActive && !enhancedBarriersSeen;
+    }
+    const char* STDMETHODCALLTYPE AppendComputeRejection() override
+    {
+        if (rawInterfaceEscaped) return "raw interface escaped";
+        if (presentCommandsUsed) return "present commands used";
+        if (renderPassActive) return "render pass active";
+        if (enhancedBarriersSeen) return "enhanced barriers seen";
+        return "eligible";
+    }
+    void STDMETHODCALLTYPE DeclareInputLayouts(UINT count, ID3D12Resource** resources,
+                                               const D3D12_BARRIER_LAYOUT* layouts) override
+    {
+        for (UINT i = 0; resources && layouts && i < count; ++i)
+        {
+            if (!resources[i]) continue;
+            EnhancedBarrierBook::State state {};
+            state.texture = true;
+            state.known = true;
+            state.layout = layouts[i];
+            state.access = D3D12_BARRIER_ACCESS_SHADER_RESOURCE;
+            state.legacy = false;
+            state.invalidated = false;
+            enhancedBook.Restore(resources[i], state);
+        }
+    }
     bool STDMETHODCALLTYPE CanRecordInline() override
     {
         if (rawInterfaceEscaped) inlineRejection = "native_interface_escaped";

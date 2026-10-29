@@ -244,6 +244,9 @@ void ExecuteBatch(ID3D12CommandQueue* q, UINT n, ID3D12CommandList* const* c)
     }
     else
         executeOriginal(q, n, c);
+    // The FSR-RR retirement tracker listens on every submission path: the Detours hook
+    // in SubmissionHooks and this product's own queue hook share it.
+    DlssNr::Submission::GpuBatch::Tracker::Instance().OnExecuted(n, c, q);
     {
         std::lock_guard guard(observedMutex);
         if (observedLists.size() > 256)
@@ -951,7 +954,20 @@ bool Evaluate(ID3D12GraphicsCommandList* cmd, NVSDK_NGX_Parameter* params, ID3D1
         if (!post && mochiNativePost)
             post = DlssNr::PostSr::Prepare(cmd, f, renderWidth, renderHeight, reason,
                                            DlssNr::PostSr::GuideMode::WritebackOnly);
-        if (!post) { coverage.Set(Coverage::Outcome::BridgeBypass, reason.c_str()); b->InvalidateHistory(); Message(reason.c_str()); return true; }
+        if (!post)
+        {
+            // The menu shows the reason; the log must too, or a field session has no record of it.
+            static std::string lastLoggedReason;
+            if (reason != lastLoggedReason)
+            {
+                lastLoggedReason = reason;
+                LOG_WARN("AMD NR post-SR prepare declined: {}", reason);
+            }
+            coverage.Set(Coverage::Outcome::BridgeBypass, reason.c_str());
+            b->InvalidateHistory();
+            Message(reason.c_str());
+            return true;
+        }
         postReport.prepared = true;
     }
     const auto kind = static_cast<DlssNr::Backend::Kind>(g_activeKind.load(std::memory_order_acquire));
