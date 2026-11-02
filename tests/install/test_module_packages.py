@@ -63,11 +63,13 @@ Add-Type -TypeDefinition 'public static class PackageFixture { public static int
                      'lmxxf-module-package.ps1', 'stage-lmxxf-beside-optiscaler.cmd',
                      'stage-lmxxf-beside-optiscaler.ps1', 'release/check-module-contract.ps1',
                      'release/check-release-freshness.ps1', 'release/package-signing.ps1', 'lmxxf-sync/manifest.json',
-                     'build/build-launcher.ps1', 'install/launcher-worker.ps1', 'install/proxy-probe.ps1',
+                     'build/build-launcher.ps1', 'build/build-panel.ps1', 'compat-repair.ps1',
+                     'install/launcher-worker.ps1', 'install/proxy-probe.ps1',
                      'install/library-scan.ps1', 'install/install-capabilities.ps1',
                      'install/lmxxf-model.py', 'install/lmxxf-small.ps1', 'install/lmxxf-small-manifest.json'):
             shutil.copy2(REPO / 'tools' / name, self.root / 'tools' / name)
         shutil.copytree(REPO / 'tools/install/launcher', self.root / 'tools/install/launcher')
+        shutil.copytree(REPO / 'tools/install/panel', self.root / 'tools/install/panel')
         shutil.copytree(REPO / 'assets/compatibility', self.root / 'assets/compatibility')
         shutil.copy2(REPO / 'tools/install/xess-compat.ps1', self.root / 'tools/install/xess-compat.ps1')
         for name in ('LICENSE', 'NOTICE', 'OptiScaler-DLSSNR-PreSR-Multipass-main/LICENSE',
@@ -348,12 +350,12 @@ Add-Type -TypeDefinition 'public static class PackageFixture { public static int
         # Check the installed artifact: the packager replaces the source DlssNr section.
         # A source-template-only addition used to disappear from the shipped ini.
         expected = {
-            'NrTimingEnabled': 'false', 'NrTimingLog': 'false',
+            'NrTimingLog': 'false',
             'NrOverallIntensity': '1.0', 'NrStabilizerEnabled': 'false',
             'NrResidualLowGain': '1.0', 'NrResidualDetailGain': '1.0',
             'NrResidualSkinProtection': '0.0', 'NrResidualEdgeProtection': '0.0',
-            'NrStabilizerAlpha': '0.8', 'NrStabilizerThreshold': '4.0',
-            'MochizukiStyle': '0', 'MochizukiModelScale': '1.0',
+            'NrStabilizerAlpha': '0.8',
+            'MochizukiStyle': '1', 'MochizukiModelScale': '1.0',
             'MochizukiTemporal': 'true', 'MochizukiPreprocess': 'false',
             'MochizukiDynamicResolution': '1', 'MochizukiPass2Override': 'false',
             'DLSS5_STYLE': '1', 'DLSS5_NETWORK_1080_ROWS': '1152',
@@ -369,6 +371,19 @@ Add-Type -TypeDefinition 'public static class PackageFixture { public static int
             parsed.read_string(path.read_text(encoding='utf-8-sig'))
             for key, value in expected.items():
                 self.assertEqual(parsed['DlssNr'][key], value, f'{path}: {key}')
+        # 657919ca ships user-tuned defaults: the packager turns NR timing on and
+        # tightens the stabilizer threshold in the shipped ini, while the source
+        # template keeps its own values.
+        shipped_overrides = {'NrTimingEnabled': 'true', 'NrStabilizerThreshold': '2.0'}
+        for path in (game / 'OptiScaler.ini', extracted / 'OptiScaler.ini'):
+            parsed = configparser.ConfigParser(interpolation=None, strict=True)
+            parsed.read_string(path.read_text(encoding='utf-8-sig'))
+            for key, value in shipped_overrides.items():
+                self.assertEqual(parsed['DlssNr'][key], value, f'{path}: {key}')
+        template = configparser.ConfigParser(interpolation=None, strict=True)
+        template.read_string((REPO / 'OptiScaler-DLSSNR-PreSR-Multipass-main/OptiScaler.ini').read_text(encoding='utf-8-sig'))
+        for key, value in {'NrTimingEnabled': 'false', 'NrStabilizerThreshold': '4.0'}.items():
+            self.assertEqual(template['DlssNr'][key], value, f'template: {key}')
         for key, value in {'DLSS5_VIT_ADAPTIVE': '1', 'DLSS5_VIT_REUSE_PERIOD': '16',
                            'DLSS5_VIT_REUSE_GLOBAL': '1', 'DLSS5_VIT_REUSE_LOCAL': '50',
                            'DLSS5_VIT_REUSE_IMAGE': '1'}.items():
