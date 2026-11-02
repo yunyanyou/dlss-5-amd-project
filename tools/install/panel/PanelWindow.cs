@@ -81,7 +81,7 @@ namespace OptScalerNR.Launcher
         static Button _iniSaveButton, _iniQuickSaveButton, _iniImportButton, _iniRenameButton, _iniDeleteButton, _iniApplyButton, _iniFolderButton;
         static string[] _iniProfileNames = new string[0];
         static string _iniSelectedProfile = "";
-        static bool _iniUpdating, _iniPluginsEnabled, _iniInitialized, _panelBusy;
+        static bool _iniUpdating, _iniInitialized, _panelBusy;
         static int _iniSelectionGeneration;
         static string _iniStatus = "", _iniStatusDetail = "";
         static System.Threading.Mutex _targetMutex;
@@ -1277,7 +1277,6 @@ namespace OptScalerNR.Launcher
             try
             {
                 _iniSelectedProfile = "";
-                _iniPluginsEnabled = false;
                 _iniProfileNames = new string[0];
                 _iniStatus = "";
                 _iniStatusDetail = "";
@@ -1291,7 +1290,6 @@ namespace OptScalerNR.Launcher
                     {
                         var saved = _iniProfiles.GetSelection(game.Key);
                         _iniSelectedProfile = FindIniName(saved);
-                        _iniPluginsEnabled = _iniProfiles.GetPluginsForGame(game.Key, game.Directory);
                     }
                 }
             }
@@ -1499,7 +1497,6 @@ namespace OptScalerNR.Launcher
         {
             var game = CaptureIniGame();
             var name = _iniSelectedProfile;
-            var plugins = _iniPluginsEnabled;
             if (!CanUseIniGame(game)) return false;
             var locked = false;
             var busy = false;
@@ -1511,7 +1508,7 @@ namespace OptScalerNR.Launcher
                 SetBusy(true);
                 busy = true;
                 RefreshProfileActions();
-                var backup = _iniProfiles.Apply(game.Directory, name, plugins);
+                var backup = _iniProfiles.Apply(game.Directory, name);
                 SetIniStatus("applied", Path.GetFileName(backup));
                 return true;
             }
@@ -1574,7 +1571,7 @@ namespace OptScalerNR.Launcher
                 default: text = _iniProfiles == null ? L("配置库不可用。", "Profile library unavailable.")
                     : CaptureIniGame() == null ? L("选择游戏以使用共享配置。", "Select a game to use shared profiles.")
                     : _iniProfileNames.Length == 0 ? L("暂无共享配置。可保存当前游戏 INI 或导入。", "No shared profiles yet. Save the current game INI or import one.")
-                    : L("配置对所有游戏可见；选择与插件开关按游戏保存。", "Profiles are shared; selection and plugin setting are saved per game."); break;
+                    : L("配置对所有游戏可见；当前选择按游戏保存。", "Profiles are shared; the current selection is saved per game."); break;
             }
             _iniProfileStatus.Text = text;
         }
