@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -241,8 +241,8 @@ namespace OptScalerNR.Launcher
             _optiPatcherToggle = (CheckBox)window.FindName("OptiPatcherToggle");
             if (_optiPatcherToggle != null)
             {
-                _optiPatcherToggle.Checked += (s, e) => { RememberOptiPatcherChoice(); ApplyOptiPatcherPluginLock(); };
-                _optiPatcherToggle.Unchecked += (s, e) => { RememberOptiPatcherChoice(); ApplyOptiPatcherPluginLock(); };
+                _optiPatcherToggle.Checked += (s, e) => { RememberOptiPatcherChoice(); };
+                _optiPatcherToggle.Unchecked += (s, e) => { RememberOptiPatcherChoice(); };
             }
             _openLogButton = (Button)window.FindName("OpenLogButton");
             _logView = (TextBox)window.FindName("LogView");
@@ -1385,8 +1385,17 @@ namespace OptScalerNR.Launcher
             if (_selectedGame == null) return;
             try
             {
-                var dir = _selectedGame.RootDirectory;
-                if (Directory.Exists(dir))
+                // The install location is the chosen EXE's directory; the added Root
+                // (folder-scan games) is only a fallback when no EXE is set. Directory
+                // buttons point where the install buttons point.
+                string dir = null;
+                if (!string.IsNullOrEmpty(_selectedGame.Exe))
+                {
+                    try { dir = Path.GetDirectoryName(_selectedGame.Exe); } catch { }
+                }
+                if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
+                    dir = _selectedGame.RootDirectory;
+                if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
                 {
                     Process.Start("explorer.exe", dir);
                 }
@@ -2103,10 +2112,26 @@ namespace OptScalerNR.Launcher
 
         string SelectMochizukiModels(string action)
         {
-            var dialog = CreateMochizukiModelDialog();
+            return SelectModelDialog(CreateMochizukiModelDialog(), action);
+        }
+
+        string SelectModelDialog(Window dialog, string action)
+        {
             var accepted = dialog.ShowDialog() == true;
             if (dialog.Uid == "modelSource") ChooseModelSource(action);
             return accepted ? dialog.Tag as string : null;
+        }
+
+        void AddModelSourceChoice(StackPanel panel, Window dialog, bool originalAvailable, bool smallAvailable)
+        {
+            if (originalAvailable && smallAvailable) return;
+            var source = new Button {
+                Name = "ChooseModelSource", Content = L("选择模型来源 DLL…", "Choose model source DLL…"),
+                HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 12, 0, 0),
+                IsEnabled = _selectedGame != null && _selectedGame.HasExecutable
+            };
+            source.Click += delegate { dialog.Uid = "modelSource"; dialog.DialogResult = false; };
+            panel.Children.Add(source);
         }
 
         Window CreateMochizukiModelDialog()
@@ -2165,16 +2190,7 @@ namespace OptScalerNR.Launcher
                 radio.Checked += delegate { dialog.Tag = value; proceed.IsEnabled = true; };
                 panel.Children.Add(radio);
             }
-            if (!originalAvailable || !smallAvailable)
-            {
-                var source = new Button {
-                    Name = "ChooseModelSource", Content = L("选择模型来源 DLL…", "Choose model source DLL…"),
-                    HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 12, 0, 0),
-                    IsEnabled = _selectedGame != null && _selectedGame.HasExecutable
-                };
-                source.Click += delegate { dialog.Uid = "modelSource"; dialog.DialogResult = false; };
-                panel.Children.Add(source);
-            }
+            AddModelSourceChoice(panel, dialog, originalAvailable, smallAvailable);
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
             var cancel = new Button { Content = L("取消", "Cancel"), IsCancel = true, MinWidth = 100, Margin = new Thickness(4) };
             proceed.Click += delegate { dialog.DialogResult = true; };
@@ -2218,6 +2234,7 @@ namespace OptScalerNR.Launcher
                 radio.Checked += delegate { dialog.Tag = value; proceed.IsEnabled = true; };
                 panel.Children.Add(radio);
             }
+            AddModelSourceChoice(panel, dialog, original, small);
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
             var cancel = new Button { Content = L("取消", "Cancel"), IsCancel = true, MinWidth = 100, Margin = new Thickness(4) };
             proceed.Click += delegate { if (dialog.Tag != null) dialog.DialogResult = true; };
@@ -2225,10 +2242,9 @@ namespace OptScalerNR.Launcher
             return dialog;
         }
 
-        string SelectLmxxfModels()
+        string SelectLmxxfModels(string action)
         {
-            var dialog = CreateLmxxfModelDialog();
-            return dialog.ShowDialog() == true ? dialog.Tag as string : null;
+            return SelectModelDialog(CreateLmxxfModelDialog(), action);
         }
 
         bool PrepareMissingModelSource(string action, List<string> selected)
@@ -2315,7 +2331,7 @@ namespace OptScalerNR.Launcher
             if (installing && checkedBackends.Contains("lmxxf") &&
                 (!keepModelChoice || string.IsNullOrEmpty(_decisions.LmxxfModels)))
             {
-                _decisions.LmxxfModels = SelectLmxxfModels();
+                _decisions.LmxxfModels = SelectLmxxfModels(action);
                 if (string.IsNullOrEmpty(_decisions.LmxxfModels)) { ReleaseLock(); return; }
             }
             if (installing && checkedBackends.Contains("mochizuki") &&
@@ -2494,7 +2510,10 @@ namespace OptScalerNR.Launcher
                                     // Fresh install: only a non-default value counts as the user's choice
                                     // (the package template ships Language=en). Update: the existing file is
                                     // the user's, so an explicit en is preserved too.
-                                    bool updateInstall = string.Equals(action, "update", StringComparison.OrdinalIgnoreCase);
+                                    // Any operation on an existing ini (install, update, repair, restore)
+                                    // treats the file as the user's; only a fresh template default can be
+                                    // overridden. Matching the ini-ownership rule in AGENTS.md.
+                                    bool updateInstall = !string.Equals(action, "install", StringComparison.OrdinalIgnoreCase);
                                     bool userChosen = current.Length > 0 &&
                                         (!current.Equals("en", StringComparison.OrdinalIgnoreCase) || updateInstall);
                                     if (!userChosen)
@@ -2615,7 +2634,7 @@ namespace OptScalerNR.Launcher
                 }
                 else if (d.Id == "lmxxfModels")
                 {
-                    _decisions.LmxxfModels = SelectLmxxfModels();
+                    _decisions.LmxxfModels = SelectLmxxfModels(action);
                     if (string.IsNullOrEmpty(_decisions.LmxxfModels)) return false;
                 }
                 else if (d.Id == "mochizukiModels")

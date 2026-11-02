@@ -1,4 +1,4 @@
-## 2026-10-23 — 启动器按钮"白边"事故:WPF 运行时 XAML 的模板静默回退(已修)
+﻿## 2026-10-23 — 启动器按钮"白边"事故:WPF 运行时 XAML 的模板静默回退(已修)
 
 **给以后看的人(说人话版)**:启动器所有界面是运行时从嵌入资源读 XAML 字符串搭起来的
 (不是常规的编译期 XAML)。按钮样式(MainWindow.xaml)和按钮模板(DialogTheme.xaml)
@@ -1352,3 +1352,57 @@ lmxxf 额外多槽吞吐回落；更少的 16/8 段没有进一步收益，因�
   逐键; DLSS5_HIP_*/FIT_LARGE/VIT_* 补一行语义。
 - 刻意不补: 仅迁移用的旧拼写(QueuePriorityLegacy/LmxxfFitLarge/LmxxfPdl 等, SaveIni 只写新拼写);
   readUnifiedBool 循环读的 DLSS5_* 均已在模板。验证: 键集 diff 无丢失/无重复, 恰好 +8。
+
+## 2026-11-01: GpuBatch 生命周期第 1 步（观测与诊断），复用契约改造分两步走
+
+- 背景两缺口: ①tracker 记录对原生 list 永不回收(仅 CPU 元数据开销, 无显存泄漏); ②槽位/feature 按"fence 完成"即复用,
+  退休后重放不受保护——重放是否真实发生无字段数据, 不能定策略, 也不能断言游戏普遍受影响。
+- 完整修复定为中等偏难: 难点在"资源何时可释放"需要提交层观测不到的游戏意图, 不能简单套"Reset+GPU 完成"
+  (游戏可能长期保留已关闭 list 待重放)。第 2 步(统一复用契约)等本步字段数据再定"重放保证深度"参数。
+- 实现(GpuBatchTracker.h): Record 对 wrapped list 经 IRecordingResources::ObserveResources 注册观察者,
+  复用 proxy 既有 Invalidated(RecordingIdentity) 管道(Reset 旧代 + 最终 Release); entry 增 stableId
+  (proxy 单调 ID, 免疫地址复用)。失效作废仅限从未提交的录制; 已提交的保留 fence 退休——同步修正 OnExecuted
+  generation 不匹配路径的同款错误(原来把已提交旧代 entry 也标 Discarded, 存在提前复用风险)。
+- 诊断: 每分钟 LOG_DEBUG 仪表(entries/native/inFlight/replays/invalidations); "首次完成后重放"计数器
+  仅对 stableId≠0 生效——原生池每帧 Reset+重录+重提, 指针不变, 在提交层与真重放不可区分, 计入会污染策略数据;
+  首次触发 LOG_WARN。>1024 在飞录制告警保留(纯诊断, 不再拒绝/删改)。
+- 锁序: ObserveResources 持 RecordingMutex, 故注册在 tracker mutex_ 之外; Invalidated 反向只取叶子 mutex_。
+- 验证: tests/host/gpu_batch_tracker.cpp(WARP, ci 层)六用例——原生记录/退休、原生重放 re-arm 不计数、
+  wrapped 同代重提计数+1 且 re-arm、Reset 立即作废未提交、Reset 不提前退休已提交(queue->Wait 手动阻塞
+  fence 保证确定性)、销毁立即作废未提交; host ci 全绿。
+
+## 2026-11-01: ASI 插件加载改为默认开启，移除启动器开关
+
+- 现象: 启动器"加载 ASI 插件"勾选框位于"安装选项（下次安装或更新时生效）"块内，但安装器从不读它
+  （launcher→worker 请求无该字段，Setup.ps1 无对应参数）。勾选仅写入启动器元数据，游戏 INI 保持不变；
+  模板值 `LoadAsiPlugins=auto` 在宿主里 `readBool` 无法识别 → 落到编译默认 `false`。
+  即"不覆盖 ini + 只勾选 + 安装"组合下 ASI 插件实际不会加载。
+- 决定: 不再提供开关，默认对所有安装开启。
+  - 模板 `OptiScaler.ini`: `LoadAsiPlugins=true`，注释同步。
+  - 安装器 `install-amd-presr.ps1`: 安装结束后只要 `OptiScaler.ini` 存在就无条件写 `true`
+    （删除"仅 OptiPatcher / 仅存在自定义 .asi 且为 auto"两个条件分支）。
+  - 启动器: 删除 `PluginToggle` 勾选框及 `_iniPluginToggle`/`_iniPluginsEnabled`/`IniPluginsChanged`；
+    删除每游戏插件偏好元数据（`PluginsByGame`/`SetPlugins`/`GetPlugins`/`GetPluginsForGame`）；
+    `IniProfiles.Apply()` 去掉 pluginsEnabled 形参，应用配置时固定写 `true`；
+    OptiPatcher 对开关的联动锁定（`OptiPatcherPinsPlugins`/`ApplyOptiPatcherPluginLock`）随之删除。
+- 语义澄清: `auto` 在宿主里仍是 `false`（`readBool` 认不出 `auto` → 编译默认 `false`），我们只是安装时强制写 `true`；
+  模板注释已按此改写。
+- 取舍: 这会覆盖用户在此前 INI 里显式写的 `false`（产品决策：ASI 是默认能力，用户仍可在 ini 手动改回）。
+- 验证: `tests/install/launcher-state.ps1` PASS；`launcher-localization.ps1` PASS(583)；
+  安装器两个相关用例（总是启用 / 自定义插件保留）32s PASS；启动器冒烟存活。
+
+## 2026-11-02: Crimson Desert 的 RR 开关与 Streamline VRAM 警告结论
+
+- RR ↔ 普通超分的自动切换依据"游戏是否重建 NGX feature"：游戏内切换 RR 时它会重建
+  （日志证据：`Creating FSR_RR` / `Creating FSR 3.X` 成对出现），我们在创建点按 RR feature
+  类型路由（RR→FSR_RR，普通超分→FFX）。宿主看不到游戏内部的 RR 布尔开关；若某游戏不重建
+  feature，就不会发生切换，需要另做"RR 专属输入（如 DLSSD.DiffuseHitDistance）连续缺失"的
+  启发式，目前**未实现**。
+- 切换后旧 FSR-RR 上下文不销毁的原因是游戏不调用 ReleaseFeature（日志无释放行），handle
+  仍被持有；`DestroyWhenRetired` 的延迟队列已改为在公共 Evaluate 路径回收（`ae2a8c72`），
+  但游戏未释放的 handle 仍占显存，属于游戏侧行为。
+- `Exceeded VRAM budget` 是 Streamline 在 `slEvaluateFeatureInternal` 的**告警性**估算
+  （4K 输出 + FSR-RR 时每帧一条），实测不影响帧率；本次"卡爆"的实际原因是 11-01 引入的
+  无限重建循环（`26c90d07`，已由 `cfc5d812` 回退）。
+- 调查中顺带修掉：`normals bind` 每帧两条日志（游戏在两个 normals 资源间交替）改为按不同
+  绑定去重（`b98045f4`）；正式包文件日志默认开启（`5be93e33`）。

@@ -1608,12 +1608,22 @@ bool FSRDFeatureDx12::QueryDenoiserVersions()
 
 void FSRDFeatureDx12::DestroyDenoiserContext()
 {
-    // The deferred-destruction queue guarantees this is only reached with all recordings
-    // retired (or at process shutdown). Direct destruction with outstanding recordings
-    // would be a lifetime bug; say so loudly instead of silently releasing.
+    // The deferred-destruction queue guarantees feature teardown only happens with all
+    // recordings retired (or at process shutdown). The one legitimate remaining case is the
+    // first validated frame's in-place context recreation: the whole-instance ticket is
+    // stamped on entry to that same evaluate, before anything referencing the denoiser
+    // context has been recorded, so it is outstanding here by construction. Only recorded
+    // preprocessor/converter work turns that into a real lifetime bug.
     if (!RecordingsRetired() && !State::Instance().isShuttingDown)
-        LOG_ERROR("FSR-RR context destroyed while {} recording(s) are still outstanding",
-                  _recordingTickets.size());
+    {
+        if (_preprocessorHasRecordedWork)
+            LOG_ERROR("FSR-RR context destroyed while {} recording(s) are still outstanding",
+                      _recordingTickets.size());
+        else
+            LOG_INFO("[RR_DIAG] context recreated with {} pending whole-instance ticket(s); "
+                     "no preprocessor work recorded yet",
+                     _recordingTickets.size());
+    }
 
     if (_pDenoiserCtx != nullptr)
     {
@@ -1939,11 +1949,6 @@ bool FSRDFeatureDx12::EvaluateInternal(ID3D12GraphicsCommandList* InCommandList,
         if (isDenoiserReady && !isFfxDebug && Config::Instance()->DlssNrEnabled.value_or_default() &&
             cfg.DlssNrApplyAfterRR.value_or_default())
         {
-            constexpr auto composedState =
-                D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-            const auto handOver = cfg.ColorResourceBarrier.has_value()
-                                      ? static_cast<D3D12_RESOURCE_STATES>(cfg.ColorResourceBarrier.value())
-                                      : D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
             ID3D12Resource* composed = FSRDConvShader->GetCompositionOutput();
 
             // Re-arm the proxy's layout book before NR reads these inputs: the FFX dispatch
@@ -1974,9 +1979,10 @@ bool FSRDFeatureDx12::EvaluateInternal(ID3D12GraphicsCommandList* InCommandList,
                     recorder->DeclareInputLayouts(bookCount, bookInputs, bookLayouts);
             }
  
-            ResourceBarrier(InCommandList, composed, composedState, handOver);
+            // The composed texture is UAV-only and already shader-readable. The
+            // title's ColorResourceBarrier can be RENDER_TARGET (UE default), which
+            // is invalid for this texture. NR receives its owned read-state contract.
             ID3D12Resource* edited = DlssNr::EvaluateAfterDenoise(InCommandList, InParameters, composed);
-            ResourceBarrier(InCommandList, composed, handOver, composedState);
 
             if (edited != nullptr)
                 upscalerDesc.color = ffxApiGetResourceDX12(edited, FFX_API_RESOURCE_STATE_COMPUTE_READ);
@@ -2776,6 +2782,11 @@ bool FSRDFeatureDx12::ResolveSignalTypes(bool isReady, bool hasCurrentSLConstant
             // the rebuilt instance resolve on its own first frame, where nothing has
             // been recorded yet. The resolution is deliberately not latched, so the
             // fresh instance repeats it rather than inheriting a stale decision.
+            // Do not gate this on RecordingsRetired(): the whole-instance ticket is stamped
+            // on entry to this evaluate, so it is always outstanding on the first validated
+            // frame and gating on it turns the in-place recreation into an infinite rebuild
+            // loop. _preprocessorHasRecordedWork is the real "GPU work recorded" signal: the
+            // outstanding ticket alone references nothing that used this context yet.
             LOG_INFO("[RR_INPUT] automatic specular classification needs {} -> {}; requesting a feature rebuild "
                      "because this instance has already recorded GPU work",
                      GetSignalTypeName(_specularSignalDescType), GetSignalTypeName(resolvedType));
@@ -2985,11 +2996,21 @@ bool FSRDFeatureDx12::PrepareDenoiseConvInput(const NVSDK_NGX_Parameter& inParam
     // between "the source alpha is empty" and "the conversion dropped it" without this, and the
     // RR-facing probe reports the converted buffer's format rather than the title's.
     {
-        static const void* loggedNormalsPtr = nullptr;
+        // Titles commonly rotate the normals binding between a small pool of textures every
+        // frame; a single "last pointer" therefore counts as changed on every frame and logged
+        // two lines per frame (Crimson Desert: ~100 lines/s, 700 KB in 45 s). Remember the
+        // points already reported instead, so each distinct binding is logged once.
+        // The set is bounded; past it, unknown pointers stay silent instead of logging (and
+        // running the probe) on every frame again — resolution switches, feature rebuilds and
+        // level loads would otherwise reintroduce the per-frame cost this guard exists to avoid.
+        static std::vector<const void*> loggedNormalsPtrs;
+        static constexpr size_t kLoggedNormalsPtrLimit = 16;
+        const void* normalsPtr = _convDesc.Resources.InNormals;
 
-        if (loggedNormalsPtr != _convDesc.Resources.InNormals)
+        if (std::find(loggedNormalsPtrs.begin(), loggedNormalsPtrs.end(), normalsPtr) == loggedNormalsPtrs.end() &&
+            loggedNormalsPtrs.size() < kLoggedNormalsPtrLimit)
         {
-            loggedNormalsPtr = _convDesc.Resources.InNormals;
+            loggedNormalsPtrs.push_back(normalsPtr);
 
             const auto normalsFormat =
                 _convDesc.Resources.InNormals ? _convDesc.Resources.InNormals->GetDesc().Format : DXGI_FORMAT_UNKNOWN;

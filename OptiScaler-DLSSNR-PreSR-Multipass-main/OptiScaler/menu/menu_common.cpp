@@ -613,7 +613,7 @@ static bool RenderRatioOverrideSlider(const char* label, CustomOptional<int, NoD
 static State::FfxVersionList* GetFfxVersionList(Upscaler backend, API api)
 {
     auto& state = State::Instance();
-    if (backend == Upscaler::FFX_on12 || (backend == Upscaler::FFX && api == DX12))
+    if (backend == Upscaler::FFX_on12 || ((backend == Upscaler::FFX || backend == Upscaler::FSR_RR) && api == DX12))
     {
         FFXFeature::EnsureVersionsDx12();
         return &state.ffxUpscalerVersionsDx12;
@@ -629,8 +629,8 @@ static State::FfxVersionList* GetFfxVersionList(Upscaler backend, API api)
 void MenuCommon::RenderUpscalerCombo(const API api, Upscaler currentUpscaler, const std::vector<Upscaler>& options)
 {
     auto primaryGpu = IdentifyGpu::getPrimaryGpu();
-
-    // Determine display name
+    // Frames the switch-refused hint stays visible for after a refused selection.
+    static int s_rrRefuseFrames = 0;
     Upscaler targetBackend = State::Instance().newBackend;
     if (targetBackend == Upscaler::Reset)
         targetBackend = currentUpscaler;
@@ -649,13 +649,62 @@ void MenuCommon::RenderUpscalerCombo(const API api, Upscaler currentUpscaler, co
             if (opt == Upscaler::XeSS && api == API::DX11 && primaryGpu.vendorId != VendorId::Intel)
                 continue;
 
+            // FSR-RR needs the RR 1.2 denoiser API. No vendor exclusion: spoofed or
+            // misdetected vendors must not hide the entry from its actual users.
+            if (opt == Upscaler::FSR_RR && !FfxApiProxy::IsDenoiserApiImplementedDx12())
+                continue;
+
             bool isSelected = (currentUpscaler == opt);
             if (MenuUi::Selectable(UpscalerDisplayName(opt, api).c_str(), isSelected))
             {
-                State::Instance().newBackend = opt;
+                if (opt != Upscaler::FSR_RR && currentUpscaler == Upscaler::FSR_RR)
+                {
+                    // An RR feature context cannot move to a plain SR backend: that would
+                    // upscale undenoised Ray Reconstruction inputs and report success. The
+                    // routing would also swallow the switch back to FSR-RR while resetting
+                    // the denoiser history, so refuse here with feedback instead.
+                    LOG_WARN("Backend switch to {} refused: this game's Ray Reconstruction context "
+                             "stays on FSR-RR while the gate is enabled. Uncheck 'Enable FSR Ray "
+                             "Regeneration' and restart the game to leave it.",
+                             UpscalerDisplayName(opt, api));
+                    s_rrRefuseFrames = 600; // ~10s of menu frames
+                }
+                else
+                {
+                    if (opt == Upscaler::FSR_RR)
+                    {
+                        // Selecting FSR-RR means "take over the game's Ray Reconstruction
+                        // requests". An RR feature context routes the FFX backend + the
+                        // FsrRrEnabled gate to FSR-RR at the next backend switch, so set both:
+                        // the switch happens on the next frame, no game restart. In a game
+                        // without an RR request this acts as plain FFX with the gate armed.
+                        Config::Instance()->FsrRrEnabled = true;
+                        opt = Upscaler::FFX;
+                    }
+                    State::Instance().newBackend = opt;
+                }
             }
+            if (opt == Upscaler::FSR_RR && ImGui::IsItemHovered())
+                ImGui::SetTooltip(
+                    "AMD FidelityFX Ray Regeneration: denoise + upscale the game's Ray Reconstruction\n"
+                    "requests. Only games that expose a DLSS Ray Reconstruction option use it; in\n"
+                    "others this selects FSR 3.X. Takes effect on the next frame, no restart needed.\n"
+                    "Requires the packaged denoiser DLL.");
         }
         ImGui::EndCombo();
+    }
+    if (currentUpscaler == Upscaler::FSR_RR && ImGui::IsItemHovered())
+        ImGui::SetTooltip("This Ray Reconstruction context is locked to FSR-RR while the gate is on:\n"
+                          "routing it to a plain upscaler would run undenoised inputs. To leave it,\n"
+                          "uncheck 'Enable FSR Ray Regeneration' below and restart the game.");
+    if (s_rrRefuseFrames > 0)
+    {
+        --s_rrRefuseFrames;
+        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 180, 50, 255));
+        ImGui::TextWrapped("Switch refused: a Ray Reconstruction context stays on FSR-RR while it is "
+                           "enabled. Uncheck 'Enable FSR Ray Regeneration' and restart the game to use "
+                           "another upscaler.");
+        ImGui::PopStyleColor();
     }
 }
 
@@ -669,7 +718,8 @@ void MenuCommon::AddDx11Backends(Upscaler upscaler)
 void MenuCommon::AddDx12Backends(Upscaler upscaler)
 {
     RenderUpscalerCombo(API::DX12, upscaler,
-                        { Upscaler::XeSS, Upscaler::FSR21, Upscaler::FSR22, Upscaler::FFX, Upscaler::DLSS });
+                        { Upscaler::XeSS, Upscaler::FSR21, Upscaler::FSR22, Upscaler::FFX, Upscaler::DLSS,
+                          Upscaler::FSR_RR });
 }
 
 void MenuCommon::AddVulkanBackends(Upscaler upscaler)
@@ -3119,18 +3169,27 @@ void MenuCommon::RenderActiveUpscalerSettings(RenderMenuContext& ctx)
     // FSR Ray Regeneration
 
 
-    // FSR-RR master gate: applies at the next Ray Reconstruction feature creation or
-    // backend switch, not retroactively to an already-running feature.
+    // FSR-RR master gate: the persistent allow/deny switch. It governs feature creation
+    // at game start and is the only way to turn takeover off; the backend combo's
+    // "FSR Ray Regeneration" entry turns it on and switches immediately.
     {
         bool fsrRrEnabled = config->FsrRrEnabled.value_or_default();
         if (ImGui::Checkbox("Enable FSR Ray Regeneration", &fsrRrEnabled))
             config->FsrRrEnabled = fsrRrEnabled;
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip(
-                "Experimental: AMD's FSR Ray Regeneration takes over the game's Ray Reconstruction\n"
-                "requests (denoise with FidelityFX RR 1.2, then FFX upscaling). Needs a supported\n"
-                "AMD GPU and the packaged denoiser DLL; the log reports why if it stays unavailable.\n"
-                "Takes effect at the next feature creation or backend switch.");
+                "Persistent master switch: allows FSR Ray Regeneration to take over the game's\n"
+                "Ray Reconstruction requests (FidelityFX RR 1.2 denoise + FFX upscaling).\n"
+                "Governs feature creation at game start; unchecking is how you turn it off.\n"
+                "To activate right now, pick 'FSR Ray Regeneration' in the backend list\n"
+                "above — that switches on the next frame, no restart needed.");
+        if (currentFeature->GetUpscalerType() != Upscaler::FSR_RR)
+        {
+            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
+            ImGui::TextWrapped("Off by default. To use it now: pick 'FSR Ray Regeneration' in the "
+                               "backend list above (no restart). Tuning panel appears once active.");
+            ImGui::PopStyleColor();
+        }
     }
     if (currentFeature->GetUpscalerType() == Upscaler::FSR_RR)
 
@@ -5001,7 +5060,8 @@ void MenuCommon::RenderActiveUpscalerSettings(RenderMenuContext& ctx)
 
 
         // FFX -----------------
-        if (!usesDlssd && (currentBackend == Upscaler::FFX || currentBackend == Upscaler::FFX_on12))
+        if (!usesDlssd && (currentBackend == Upscaler::FFX || currentBackend == Upscaler::FFX_on12 ||
+                           currentBackend == Upscaler::FSR_RR))
         {
             MenuSectionTitle("FFX Settings");
 

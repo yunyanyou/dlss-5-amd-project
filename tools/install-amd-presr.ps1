@@ -579,13 +579,26 @@ Close the game completely, then run Setup.bat again.
 # Also flag a live process whose image lives in the game folder.
 # Our own running binaries are not the game: users who extract the whole package into the game
 # folder would otherwise self-lock (the launcher itself launched this installer).
+# Crash reporters are excluded: Crashpad/Unreal/Unity helpers and WER routinely outlive a crashed
+# game (or belong to unrelated apps that ship the same helper name), and they never hold the DLLs
+# we replace. Real file locks are already caught by the check above.
+$crashHelperNames = '^(crashpad_handler|unitycrashhandler(32|64)?|crashreportclient(editor)?|werfault|werfaultsecure)$'
 $gameExes = @(Get-ChildItem -LiteralPath $game -Filter '*.exe' -File -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -notin @('OptScalerNR.Launcher.exe', 'dlssnr_on_amd_setup.exe', 'person-worker.exe') } |
+    Where-Object {
+        $_.Name -notin @('OptScalerNR.Launcher.exe', 'dlssnr_on_amd_setup.exe', 'person-worker.exe') -and
+        $_.BaseName -notmatch $crashHelperNames
+    } |
     Select-Object -ExpandProperty Name)
 if ($gameExes.Count -gt 0) {
+    $gamePrefix = [IO.Path]::GetFullPath($game).TrimEnd('\', '/') + '\'
     $running = Get-Process -ErrorAction SilentlyContinue | Where-Object {
         $n = "$($_.ProcessName).exe"
-        ($gameExes -contains $n)
+        if ($gameExes -notcontains $n) { return $false }
+        # A same-named process elsewhere on the machine (another app's helper) is not the game.
+        $image = $null
+        try { $image = $_.Path } catch { }
+        if ([string]::IsNullOrEmpty($image)) { return $true }
+        return $image.StartsWith($gamePrefix, [StringComparison]::OrdinalIgnoreCase)
     }
     if ($running) {
         $names = ($running | ForEach-Object { "$($_.ProcessName).exe (PID $($_.Id))" }) -join ', '
@@ -857,7 +870,7 @@ function Test-MochizukiModelFile([string]$Path, [uint32]$Entries = 599) {
         }
 
         # Fallback to python full tensor validation
-        $modelTool = Find-FirstFile @((Join-Path $Root 'mochizuki-model.py'), (Join-Path $PSScriptRoot 'install/mochizuki-model.py'))
+        $modelTool = Find-FirstFile @((Join-Path $Root 'model-tools/mochizuki-model.py'), (Join-Path $Root 'mochizuki-model.py'), (Join-Path $PSScriptRoot 'install/mochizuki-model.py'))
         if ($modelTool) {
             $py = Get-Command 'python' -ErrorAction SilentlyContinue
             if ($py) {
@@ -1175,8 +1188,8 @@ if ($installMochizuki) {
                 Fail "Model preparation failed: $($_.Exception.Message). The existing installation was preserved."
             }
         } else {
-            $modelTool = Find-FirstFile @((Join-Path $Root 'mochizuki-model.py'), (Join-Path $PSScriptRoot 'install/mochizuki-model.py'))
-            $pythonHelper = Find-FirstFile @((Join-Path $Root 'mochizuki-python.ps1'), (Join-Path $PSScriptRoot 'install/mochizuki-python.ps1'))
+            $modelTool = Find-FirstFile @((Join-Path $Root 'model-tools/mochizuki-model.py'), (Join-Path $Root 'mochizuki-model.py'), (Join-Path $PSScriptRoot 'install/mochizuki-model.py'))
+            $pythonHelper = Find-FirstFile @((Join-Path $Root 'model-tools/mochizuki-python.ps1'), (Join-Path $Root 'mochizuki-python.ps1'), (Join-Path $PSScriptRoot 'install/mochizuki-python.ps1'))
             if (-not $pythonHelper) {
                 Fail 'Model preparation failed: Python detection helper missing. Re-extract the complete OptiScaler package.'
             }
@@ -2394,8 +2407,10 @@ if ($isInteractiveUser) {
     }
 }
 
-# Enable LoadAsiPlugins=true in OptiScaler.ini
-if ($installedOptiPatcher -and (Test-Path -LiteralPath $gameIni -PathType Leaf)) {
+# ASI plugins are on by default: an ASI component is part of this product, so the install
+# always writes true, overriding an explicit false in the game ini on purpose. Users who do
+# not want it can set false by hand afterwards; the launcher no longer exposes a toggle.
+if (Test-Path -LiteralPath $gameIni -PathType Leaf) {
     Set-IniSettings $gameIni 'Plugins' ([ordered]@{ 'LoadAsiPlugins' = 'true' })
     Write-Host 'Enabled LoadAsiPlugins=true in OptiScaler.ini.' -ForegroundColor Green
 }
@@ -2427,18 +2442,6 @@ try {
             } else {
                 Copy-Item -LiteralPath $_.FullName -Destination $destFile -Force
             }
-        }
-    }
-    # Replacing the INI can reset loading to auto while user ASIs remain in place.
-    $customAsiPresent = @(Get-ChildItem -LiteralPath $resolvedPluginsDir -File -Filter '*.asi' -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -notmatch '(?i)OptiPatcher.*\.asi$' }).Count
-    if ($customAsiPresent -gt 0 -and (Test-Path -LiteralPath $gameIni -PathType Leaf)) {
-        $loadAsi = Get-IniSetting $gameIni 'Plugins' 'LoadAsiPlugins'
-        if ([string]::IsNullOrWhiteSpace($loadAsi) -or $loadAsi -ieq 'auto') {
-            Set-IniSettings $gameIni 'Plugins' ([ordered]@{ 'LoadAsiPlugins' = 'true' })
-            Write-Host "Enabled LoadAsiPlugins=true in OptiScaler.ini ($customAsiPresent custom ASI plugin(s) present)." -ForegroundColor Green
-        } else {
-            Write-Host "Keeping explicit LoadAsiPlugins=$loadAsi; custom plugins do not change this setting."
         }
     }
 } catch {
