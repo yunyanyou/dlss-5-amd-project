@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include <dlssnr/amd/AmdBridge.h>
 #include <dlssnr/amd/NrColourState.h>
 #include <dlssnr/SrPlacement.h>
@@ -388,6 +388,22 @@ NrState g_nr;
 DlssNr::NrSessionActivity g_nativeActivity;
 enum class NrActivityBackend { None, Native, Amd };
 std::atomic<NrActivityBackend> g_activityBackend { NrActivityBackend::None };
+// Latest reason NR declined to run, and the in-feature seam's own bookkeeping. Both are read by the
+// menu; the seam counter also lets the NGX outer layer avoid running the same frame twice.
+std::mutex g_skipReasonMutex;
+std::string g_lastSkipReason;
+// Per-evaluate seam bookkeeping. Both are thread-local: the feature seam and the outer call that
+// checks it run synchronously on the same thread, while another thread may be evaluating a
+// different feature. A process-wide counter would attribute that other thread's seam to this call.
+thread_local unsigned long long t_featureSeamAttempts = 0;
+struct SeamOutcome
+{
+    bool ran = false;
+    std::string reason;
+};
+thread_local SeamOutcome t_seamOutcome;
+std::mutex g_featureSeamStatusMutex;
+std::string g_featureSeamStatus;
 std::unique_ptr<DlssNr_Dx12> g_compose;
 
 // What the pass costs on the GPU, for the breakdown in the overlay.
@@ -1561,6 +1577,12 @@ void ReportSkipOnce(const char* reason)
 
     if (seen.insert(reason).second)
         LOG_INFO("DLSS-NR did not run: {}", reason);
+    {
+        std::lock_guard lock(g_skipReasonMutex);
+        g_lastSkipReason = reason;
+    }
+    t_seamOutcome.ran = false;
+    t_seamOutcome.reason = reason;
 }
 
 } // namespace
@@ -3060,6 +3082,10 @@ void EvaluateInternal(ID3D12GraphicsCommandList* cmdList, NVSDK_NGX_Parameter* p
 {
     const Config& cfg = *Config::Instance();
 
+    // Each attempt starts unhandled; every exit path below either sets ran or leaves a reason.
+    t_seamOutcome.ran = false;
+    t_seamOutcome.reason.clear();
+
     // Release the AMD host session only on the off transition: Evaluate runs
     // every frame while disabled, and teardown must not repeat.
     DlssNr::AmdBridge::PollReleases();
@@ -3074,6 +3100,10 @@ void EvaluateInternal(ID3D12GraphicsCommandList* cmdList, NVSDK_NGX_Parameter* p
             DlssNr::AmdBridge::OnNrDisabled();
         }
         ReportSkipOnce("it is switched off");
+        {
+            std::lock_guard lock(g_featureSeamStatusMutex);
+            g_featureSeamStatus = "NR is switched off";
+        }
         return;
     }
     s_nrWasEnabled = true;
@@ -3111,6 +3141,8 @@ void EvaluateInternal(ID3D12GraphicsCommandList* cmdList, NVSDK_NGX_Parameter* p
         if (DlssNr::AmdBridge::Evaluate(cmdList, params, timingQueue, beforeUpscale, outputExtent, ownedColourState))
         {
             g_activityBackend.store(NrActivityBackend::Amd, std::memory_order_release);
+            t_seamOutcome.ran = true;
+            t_seamOutcome.reason.clear();
             return;
         }
     }
@@ -3406,6 +3438,11 @@ ID3D12Resource* EvaluateAfterDenoise(ID3D12GraphicsCommandList* cmdList, NVSDK_N
     if (cmdList == nullptr || params == nullptr || composed == nullptr || !DlssNr::AmdBridge::HasFiles())
         return nullptr;
 
+    // FSR-RR + NR master switch is the whole condition: the placement decision inside
+    // EvaluateInternal already honours RunBeforeSR, and ApplyAfterRR is no longer required for this
+    // combination (it only governs native RR's post-upscale placement).
+    ++t_featureSeamAttempts;
+
     // The bridge reads the colour from the block and substitutes its answer there: show it the composed frame,
     // take the answer, and leave the title's colour behind.
     ID3D12Resource* title = nullptr;
@@ -3422,6 +3459,16 @@ ID3D12Resource* EvaluateAfterDenoise(ID3D12GraphicsCommandList* cmdList, NVSDK_N
 
     DlssNr::AmdBridge::Restore(params);
     params->Set(NVSDK_NGX_Parameter_Color, title);
+
+    {
+        // This attempt's own outcome, not the process-wide activity flag: a background success from
+        // an earlier frame must not make a skipped frame look like it ran.
+        std::lock_guard lock(g_featureSeamStatusMutex);
+        g_featureSeamStatus = t_seamOutcome.ran
+                                  ? "FSR-RR: NR runs between denoise and SR"
+                                  : (t_seamOutcome.reason.empty() ? "FSR-RR: NR seam did not run"
+                                                                  : t_seamOutcome.reason);
+    }
     return answer;
 }
 
@@ -3563,6 +3610,14 @@ CalibrationReading Calibration()
 }
 
 bool IsRunning() { return g_nr.feature != nullptr && !g_nr.failed; }
+
+unsigned long long FeatureSeamAttempts() { return t_featureSeamAttempts; }
+
+std::string FeatureSeamStatus()
+{
+    std::lock_guard lock(g_featureSeamStatusMutex);
+    return g_featureSeamStatus;
+}
 bool IsActiveForFrameGeneration()
 {
     if (!Config::Instance()->DlssNrEnabled.value_or_default())

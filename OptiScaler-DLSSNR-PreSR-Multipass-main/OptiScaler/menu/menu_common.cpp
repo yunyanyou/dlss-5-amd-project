@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "../dlssnr/amd/AmdBridge.h"
 #include "../dlssnr/NrTimingDisplay.h"
 #include "NrGpuHistoryPlot.h"
@@ -3161,6 +3161,15 @@ void MenuCommon::RenderActiveUpscalerSettings(RenderMenuContext& ctx)
 
             ImGui::Text("[Warning] FSR-RR version mismatch | Installed: %d.%d.%d | Expected: %d.%d.%d", rrVer.major,
                         rrVer.minor, rrVer.patch, rrImplemented.major, rrImplemented.minor, rrImplemented.patch);
+            // Name the file that actually answered the version query: the usual cause is a denoiser
+            // DLL other than the packaged one (game folder / System32 copy, or an FfxDx12RRPath
+            // override), and the provider ABI is version-specific.
+            const auto loaderPath = FfxApiProxy::Dx12Module_Denoiser_Path();
+            if (!loaderPath.empty())
+                ImGui::TextWrapped("Loaded: %s", wstring_to_string(loaderPath).c_str());
+            ImGui::TextWrapped("This build supports 1.2.0 only. Use the amd_fidelityfx_denoiser_dx12.dll "
+                               "shipped in the package's OptiScaler folder (clear FfxDx12RRPath if it points "
+                               "at another copy).");
 
             ImGui::PopStyleColor();
         }
@@ -3183,11 +3192,26 @@ void MenuCommon::RenderActiveUpscalerSettings(RenderMenuContext& ctx)
                 "Governs feature creation at game start; unchecking is how you turn it off.\n"
                 "To activate right now, pick 'FSR Ray Regeneration' in the backend list\n"
                 "above — that switches on the next frame, no restart needed.");
-        if (currentFeature->GetUpscalerType() != Upscaler::FSR_RR)
+        // Requirement: never claim a state that is not live. The gate only decides what the next
+        // feature creation selects, so a pending value must say so explicitly.
+        const bool featureIsFsrRr = currentFeature->GetUpscalerType() == Upscaler::FSR_RR;
+        if (!featureIsFsrRr)
         {
             ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
-            ImGui::TextWrapped("Off by default. To use it now: pick 'FSR Ray Regeneration' in the "
-                               "backend list above (no restart). Tuning panel appears once active.");
+            ImGui::TextWrapped(fsrRrEnabled
+                                   ? "Enabled, but not active yet: applies when the game creates its next "
+                                     "Ray Reconstruction feature (restart the game, or switch the backend "
+                                     "list above)."
+                                   : "Off by default. Pick 'FSR Ray Regeneration' in the backend list "
+                                     "above to switch now; this switch alone only applies on the next "
+                                     "feature creation (restart or backend switch).");
+            ImGui::PopStyleColor();
+        }
+        else if (!fsrRrEnabled)
+        {
+            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 180, 50, 255));
+            ImGui::TextWrapped("FSR-RR is still active for this feature: disabling applies after the game "
+                               "recreates the feature (restart or backend switch).");
             ImGui::PopStyleColor();
         }
     }

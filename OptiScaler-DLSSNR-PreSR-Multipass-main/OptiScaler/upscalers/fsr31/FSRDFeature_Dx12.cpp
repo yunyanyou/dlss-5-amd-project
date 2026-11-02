@@ -1439,12 +1439,32 @@ bool FSRDFeatureDx12::CreateDenoiserContext()
     // history reset -- every time a preset moved. This field is an allocation ceiling and each
     // dispatch already supplies its own logical size below it, so the headroom simply absorbs that
     // jitter. An alignment of 8 costs well under a percent of the allocation.
+    // The ceiling is only an allocation limit. The creation size is the preset's *optimal* render
+    // size: dynamic resolution normally scales down from it and returns under light load, so it is
+    // a good starting upper bound but NOT a contract — DLSS distinguishes optimal/minimum/maximum
+    // render sizes, and a title may dispatch above the optimal one. Two safeguards follow from
+    // that: a small rounding headroom (a title and Streamline can round the same preset
+    // differently — Crimson Desert created at 2258x1270 and dispatched 2272x1280, which used to
+    // cost a failed evaluation plus a rebuild right after a preset change), and
+    // _observedMaxRender* below, so a title that really does scale above the creation size makes
+    // the next recreation large enough instead of rebuilding to the same too-small ceiling.
+    // Allocating for the display resolution instead was considered and rejected: it reserves
+    // denoiser history for a size most titles never use (up to 2.25x area at 4K output).
     constexpr uint32_t kRenderCeilingAlignment = 8;
+    constexpr uint32_t kRenderCeilingHeadroomDivisor = 20; // 1/20 = 5% for preset rounding
     const auto ceilingFor = [](uint32_t extent)
+    {
+        const uint32_t padded = extent + std::max<uint32_t>(kRenderCeilingAlignment, extent / kRenderCeilingHeadroomDivisor);
+        return (padded + kRenderCeilingAlignment - 1) / kRenderCeilingAlignment * kRenderCeilingAlignment;
+    };
+
+    const auto aligned = [](uint32_t extent)
     { return (extent + kRenderCeilingAlignment - 1) / kRenderCeilingAlignment * kRenderCeilingAlignment; };
 
-    const uint32_t maxRenderWidth = std::max(_denoiserCtxDesc.maxRenderSize.width, ceilingFor(RenderWidth()));
-    const uint32_t maxRenderHeight = std::max(_denoiserCtxDesc.maxRenderSize.height, ceilingFor(RenderHeight()));
+    const uint32_t maxRenderWidth = std::max({ _denoiserCtxDesc.maxRenderSize.width, ceilingFor(RenderWidth()),
+                                               aligned(_observedMaxRenderWidth) });
+    const uint32_t maxRenderHeight = std::max({ _denoiserCtxDesc.maxRenderSize.height, ceilingFor(RenderHeight()),
+                                                aligned(_observedMaxRenderHeight) });
     _denoiserCtxDesc = { .header = { .type = FFX_API_CREATE_CONTEXT_DESC_TYPE_DENOISER,
                                      // Chain backend desc into context desc
                                      .pNext = &backendDesc.header },
@@ -1661,9 +1681,11 @@ bool FSRDFeatureDx12::UpdateSize()
     // earlier submitted command lists may still reference them.
     if (renderWidth > maxWidth || renderHeight > maxHeight)
     {
-        LOG_ERROR("[RR_DIAG] render size {}x{} exceeds the FSR-RR creation ceiling {}x{}; requesting feature "
-                  "recreation instead of releasing in-flight resources",
-                  renderWidth, renderHeight, maxWidth, maxHeight);
+        LOG_WARN("[RR_DIAG] render size {}x{} exceeds the FSR-RR creation ceiling {}x{}; requesting feature "
+                 "recreation instead of releasing in-flight resources",
+                 renderWidth, renderHeight, maxWidth, maxHeight);
+        _observedMaxRenderWidth = std::max(_observedMaxRenderWidth, renderWidth);
+        _observedMaxRenderHeight = std::max(_observedMaxRenderHeight, renderHeight);
         InvalidateDenoiserHistory();
         State::Instance().changeBackend[Handle()->Id] = true;
         return false;
@@ -1680,6 +1702,11 @@ bool FSRDFeatureDx12::UpdateSize()
 
     _lastDenoiserRenderWidth = renderWidth;
     _lastDenoiserRenderHeight = renderHeight;
+    if (renderWidth > _observedMaxRenderWidth || renderHeight > _observedMaxRenderHeight)
+    {
+        _observedMaxRenderWidth = std::max(_observedMaxRenderWidth, renderWidth);
+        _observedMaxRenderHeight = std::max(_observedMaxRenderHeight, renderHeight);
+    }
 
     return true;
 }
@@ -1946,8 +1973,13 @@ bool FSRDFeatureDx12::EvaluateInternal(ID3D12GraphicsCommandList* InCommandList,
         // accumulates the enhanced frame. Honours [DlssNr] RunBeforeSR and ApplyAfterRR: RR frames
         // run NR at exactly one seam or none, and ApplyAfterRR=false must leave the RR+SR output
         // untouched at BOTH seams (the after-upscale seam declines on its own).
+        // FSR-RR + the NR master switch is the whole condition. This seam is the verified placement
+        // for our emulated Ray Reconstruction (denoise -> NR -> SR at render resolution); the old
+        // ApplyAfterRR gate belonged to native RR's post-upscale path and must not hide this one.
+        // EvaluateInternal still honours RunBeforeSR and reports a reason when the placement or the
+        // backend cannot run.
         if (isDenoiserReady && !isFfxDebug && Config::Instance()->DlssNrEnabled.value_or_default() &&
-            cfg.DlssNrApplyAfterRR.value_or_default())
+            cfg.DlssNrRunBeforeSr.value_or_default())
         {
             ID3D12Resource* composed = FSRDConvShader->GetCompositionOutput();
 
@@ -1958,9 +1990,19 @@ bool FSRDFeatureDx12::EvaluateInternal(ID3D12GraphicsCommandList* InCommandList,
             if (Microsoft::WRL::ComPtr<DlssNr::Submission::IRecordingResources> recorder;
                 SUCCEEDED(InCommandList->QueryInterface(IID_PPV_ARGS(&recorder))))
             {
-                ID3D12Resource* bookInputs[2] = {};
-                D3D12_BARRIER_LAYOUT bookLayouts[2] = {};
+                // The composed colour is the surface NR reads as Color. Without declaring it the
+                // layout book keeps it known=false (enhanced barriers observed, layout unresolved),
+                // and the backend rejects the whole frame with enhanced_layout_partial_or_pending
+                // even though motion/depth are fine.
+                ID3D12Resource* bookInputs[3] = {};
+                D3D12_BARRIER_LAYOUT bookLayouts[3] = {};
                 UINT bookCount = 0;
+                if (composed)
+                {
+                    bookInputs[bookCount] = composed;
+                    bookLayouts[bookCount] = D3D12_BARRIER_LAYOUT_SHADER_RESOURCE;
+                    ++bookCount;
+                }
                 ID3D12Resource* motion = nullptr;
                 ID3D12Resource* depth = nullptr;
                 if (TryGetNGXVoidPointer(*InParameters, NVSDK_NGX_Parameter_MotionVectors, motion) && motion)
@@ -1969,7 +2011,7 @@ bool FSRDFeatureDx12::EvaluateInternal(ID3D12GraphicsCommandList* InCommandList,
                     bookLayouts[bookCount] = D3D12_BARRIER_LAYOUT_SHADER_RESOURCE;
                     ++bookCount;
                 }
-                if (TryGetNGXVoidPointer(*InParameters, NVSDK_NGX_Parameter_Depth, depth) && depth && bookCount < 2)
+                if (TryGetNGXVoidPointer(*InParameters, NVSDK_NGX_Parameter_Depth, depth) && depth && bookCount < 3)
                 {
                     bookInputs[bookCount] = depth;
                     bookLayouts[bookCount] = D3D12_BARRIER_LAYOUT_SHADER_RESOURCE;
