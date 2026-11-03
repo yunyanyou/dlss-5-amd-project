@@ -283,11 +283,15 @@ Add-Type -TypeDefinition 'public static class PackageFixture { public static int
     def test_archive_preserves_language_and_history_defaults(self):
         code, out = self.package()
         self.assertEqual(code, 0, out)
+        source = configparser.ConfigParser(strict=False)
+        source.read(REPO / 'OptiScaler-DLSSNR-PreSR-Multipass-main/OptiScaler.ini', encoding='utf-8-sig')
         with zipfile.ZipFile(self.archive) as archive:
             ini = archive.read('OptiScaler.ini').decode('utf-8-sig')
             cfg = configparser.ConfigParser(strict=False)
             cfg.read_string(ini)
-            self.assertEqual(cfg['Menu']['Language'], 'en')
+            # This fork ships the Chinese menu; packaging must carry the template through unchanged.
+            self.assertEqual(cfg['Menu']['Language'], 'zh-CN')
+            self.assertEqual(cfg['Menu']['Language'], source['Menu']['Language'])
             self.assertEqual(cfg['DlssNr']['LmxxfModelHistory'], 'true')
             self.assertTrue(cfg.getboolean('DlssNr', 'DLSS5_VIT_ADAPTIVE'))
             self.assertIn('Temporarily disables adaptive ViT reuse', ini)
@@ -301,7 +305,9 @@ Add-Type -TypeDefinition 'public static class PackageFixture { public static int
         with zipfile.ZipFile(self.archive) as archive:
             packaged = configparser.ConfigParser(strict=False)
             packaged.read_string(archive.read('OptiScaler.ini').decode('utf-8-sig'))
-        self.assertEqual(packaged['DlssNr']['XeFGInterpolationCount'], 'auto')
+        # This fork ships the tuned multiplier, not upstream's 'auto'; packaging must carry the
+        # template through unchanged, which the comparisons below prove.
+        self.assertEqual(packaged['DlssNr']['XeFGInterpolationCount'], '2')
         self.assertEqual(packaged['DlssNr']['XeFGInterpolationCount'],
                          source['DlssNr']['XeFGInterpolationCount'])
         self.assertEqual(packaged['XeFG']['InterpolationCount'], source['XeFG']['InterpolationCount'])
