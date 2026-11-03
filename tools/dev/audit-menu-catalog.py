@@ -70,21 +70,53 @@ def visible_key(text: str) -> str:
 
 # Widget calls whose FIRST argument is a translated label.
 CALL = re.compile(r'\bMenu(?:Ui|Locale)::(\w+)\s*\(')
+# Bare wrappers in the menu code that forward their first argument into
+# MenuUi (DlssNr_Menu.cpp lambdas, MenuCommon tooltip helpers).
+BARE_CALL = re.compile(r'(?<![\w:])(HelpMarker|ShowHelpMarker|ShowTooltip|slider|kernelToggle)\s*\(')
 LABEL_FNS = {
     'Checkbox', 'SliderFloat', 'SliderInt', 'SliderScalar', 'InputText', 'InputInt',
     'InputFloat', 'Button', 'SmallButton', 'RadioButton', 'Selectable', 'TreeNode',
     'CollapsingHeader', 'SeparatorText', 'Text', 'TextWrapped', 'TextDisabled',
     'TextUnformatted', 'MenuItem', 'BulletText', 'Label', 'ValueLabel', 'BeginPopupModal',
     'OpenPopup', 'Combo', 'InputScalarN', 'ListBox', 'BeginTabItem', 'TabItemButton',
+    'HelpMarker',
 }
 LIT_GROUP = re.compile(r'(?:"(?:[^"\\]|\\.)*"\s*)+')
 CITY = re.compile(r'\b(?:MenuSectionTitle|MenuCard)\s*\(')
 
 
-def concatenated_literals(source: str):
-    """Every string literal in the file (joined runs), for the dead-key index."""
-    for chunk in STR.findall(source):
-        yield unescape(chunk)
+def strip_comments(source: str) -> str:
+    """Remove // and /* */ comments outside string literals, so adjacent
+    literals split by a trailing comment still join in the index."""
+    out = []
+    i = 0
+    n = len(source)
+    while i < n:
+        ch = source[i]
+        if ch == '"':
+            j = i + 1
+            while j < n:
+                if source[j] == '\\':
+                    j += 2
+                    continue
+                if source[j] == '"':
+                    break
+                j += 1
+            out.append(source[i:j + 1])
+            i = j + 1
+            continue
+        if ch == '/' and i + 1 < n and source[i + 1] == '/':
+            j = source.find('\n', i)
+            i = n if j == -1 else j  # keep the newline itself
+            continue
+        if ch == '/' and i + 1 < n and source[i + 1] == '*':
+            j = source.find('*/', i + 2)
+            i = n if j == -1 else j + 2
+            out.append(' ')
+            continue
+        out.append(ch)
+        i += 1
+    return ''.join(out)
 
 
 def call_arguments(source: str, start: int):
@@ -152,6 +184,11 @@ def call_literals(source: str):
         for text in call_arguments(source, m.end()):
             yield text
             break
+    for m in BARE_CALL.finditer(source):
+        for text in call_arguments(source, m.end()):
+            if text:
+                yield text
+            break
 
 
 def live_keys(source: str):
@@ -181,20 +218,28 @@ def main():
             text = path.read_text(encoding='utf-8-sig', errors='replace')
         except OSError:
             continue
-        for lit in live_keys(text):
+        for lit in live_keys(strip_comments(text)):
             live.add(lit)
     print(f'live label candidates: {len(live)} (from {len(SURFACE)} files)')
 
-    # Full-tree literal set for dead-key checks (exact-match against catalog keys).
+    # Full-tree literal set for dead-key checks: single literals, their visible
+    # forms, and whitespace-adjacent concatenation runs (a label split across
+    # lines is one runtime key, so the index must know the joined form too).
     tree_lits = set()
     for path in ALL_SOURCES:
         try:
             text = path.read_text(encoding='utf-8-sig', errors='replace')
         except OSError:
             continue
-        for lit in concatenated_literals(text):
-            tree_lits.add(lit)
-            tree_lits.add(visible_key(lit))
+        text = strip_comments(text)
+        for group in LIT_GROUP.finditer(text):
+            lits = [unescape(x) for x in STR.findall(group.group(0))]
+            tree_lits.update(lits)
+            joined = ''.join(lits)
+            tree_lits.add(joined)
+            tree_lits.add(visible_key(joined))
+            for lit in lits:
+                tree_lits.add(visible_key(lit))
     print(f'full-tree literal candidates: {len(tree_lits)}')
 
     gaps = sorted(k for k in live
