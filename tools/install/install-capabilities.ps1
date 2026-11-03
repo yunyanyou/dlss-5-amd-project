@@ -192,26 +192,44 @@ function Get-OptScalerBackendCapabilities([string]$pkgRoot, [string]$gameDir, [s
         missingPackageFiles = @()
     }
 
-    # --- mochizuki ---
-    $mochiRuntime = $null
+    # --- mochizuki: the official ASI plugin, not a built-in runtime ---
+    $mochiAsi = $null
     $mochiModel = $null
+    $mochiSmall = $null
+    $mochiExperimental = $null
+    $mochiInt4 = $null
     $mochiNv = $null
     if ($pkgRoot) {
-        $cand = Join-Path $pkgRoot 'MochizukiNrRuntime.dll'
-        if (Test-Path -LiteralPath $cand -PathType Leaf) { $mochiRuntime = $cand }
+        foreach ($cand in @((Join-Path $pkgRoot 'OptiScaler\plugins\dlssnr-amd.asi'), (Join-Path $pkgRoot 'dlssnr-amd.asi'))) {
+            if (Test-Path -LiteralPath $cand -PathType Leaf) { $mochiAsi = $cand; break }
+        }
         $cand = Join-Path $pkgRoot 'dlssnr-amd\dlssnr.bin'
-        if (Test-MochizukiModelHeaderFile $cand) { $mochiModel = $cand }
+        if ((Test-Path -LiteralPath $cand -PathType Leaf) -and (Get-Item -LiteralPath $cand).Length -gt 0) { $mochiModel = $cand }
         $cand = Join-Path $pkgRoot 'dlssnr-amd\dlssnr-small.bin'
-        if (-not $mochiModel -and (Test-MochizukiModelHeaderFile $cand 255)) { $mochiModel = $cand }
+        if ((Test-Path -LiteralPath $cand -PathType Leaf) -and (Get-Item -LiteralPath $cand).Length -gt 0) { $mochiSmall = $cand }
+        $cand = Join-Path $pkgRoot 'dlssnr-amd\dlssnr-small-experimental.bin'
+        if ((Test-Path -LiteralPath $cand -PathType Leaf) -and (Get-Item -LiteralPath $cand).Length -gt 0) { $mochiExperimental = $cand }
+        $cand = Join-Path $pkgRoot 'dlssnr-amd\dlssnr-int4.bin'
+        if ((Test-Path -LiteralPath $cand -PathType Leaf) -and (Get-Item -LiteralPath $cand).Length -gt 0) { $mochiInt4 = $cand }
         $cand = Join-Path $pkgRoot 'nvngx_dlssnr.dll'
         if (Test-Path -LiteralPath $cand -PathType Leaf) { $mochiNv = $cand }
     }
     if ($gameDir) {
         if (-not $mochiModel) {
             $cand = Join-Path $gameDir 'dlssnr-amd\dlssnr.bin'
-            if (Test-MochizukiModelHeaderFile $cand) { $mochiModel = $cand }
+            if ((Test-Path -LiteralPath $cand -PathType Leaf) -and (Get-Item -LiteralPath $cand).Length -gt 0) { $mochiModel = $cand }
+        }
+        if (-not $mochiSmall) {
             $cand = Join-Path $gameDir 'dlssnr-amd\dlssnr-small.bin'
-            if (-not $mochiModel -and (Test-MochizukiModelHeaderFile $cand 255)) { $mochiModel = $cand }
+            if ((Test-Path -LiteralPath $cand -PathType Leaf) -and (Get-Item -LiteralPath $cand).Length -gt 0) { $mochiSmall = $cand }
+        }
+        if (-not $mochiExperimental) {
+            $cand = Join-Path $gameDir 'dlssnr-amd\dlssnr-small-experimental.bin'
+            if ((Test-Path -LiteralPath $cand -PathType Leaf) -and (Get-Item -LiteralPath $cand).Length -gt 0) { $mochiExperimental = $cand }
+        }
+        if (-not $mochiInt4) {
+            $cand = Join-Path $gameDir 'dlssnr-amd\dlssnr-int4.bin'
+            if ((Test-Path -LiteralPath $cand -PathType Leaf) -and (Get-Item -LiteralPath $cand).Length -gt 0) { $mochiInt4 = $cand }
         }
         if (-not $mochiNv) {
             $cand = Join-Path $gameDir 'nvngx_dlssnr.dll'
@@ -224,84 +242,37 @@ function Get-OptScalerBackendCapabilities([string]$pkgRoot, [string]$gameDir, [s
         }
     }
     $missingMochiPackage = @()
-    if (-not $mochiRuntime) { $missingMochiPackage += 'MochizukiNrRuntime.dll' }
-    else {
-        $inventory = Join-Path $pkgRoot 'mochizuki-owned.txt'
-        if (-not (Test-Path -LiteralPath $inventory -PathType Leaf)) { $missingMochiPackage += 'mochizuki-owned.txt' }
-        else {
-            $assets = @(Get-Content -LiteralPath $inventory -ErrorAction SilentlyContinue | Where-Object { $_.Trim() -and -not $_.StartsWith('#') })
-            if ($assets.Count -eq 0) { $missingMochiPackage += 'mochizuki-owned.txt' }
-            foreach ($asset in $assets) {
-                $relative = 'dlssnr-amd/' + $asset.Trim()
-                if (-not (Test-Path -LiteralPath (Join-Path $pkgRoot $relative) -PathType Leaf)) { $missingMochiPackage += $relative }
-            }
-        }
-        foreach ($relative in @('mochizuki-int4.ps1', 'model-tools/dlssnr-int4-weights.exe', 'model-tools/dlssnr-int4.sha256')) {
-            if (-not (Test-Path -LiteralPath (Join-Path $pkgRoot $relative) -PathType Leaf)) { $missingMochiPackage += $relative }
+    if (-not $mochiAsi) { $missingMochiPackage += 'OptiScaler/plugins/dlssnr-amd.asi' }
+    if ($mochiAsi) {
+        foreach ($relative in @('dlssnr-amd/shaders', 'dlssnr-amd/aco', 'model-tools/dlssnr_extract_model.exe')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $pkgRoot $relative))) { $missingMochiPackage += $relative }
         }
     }
     $canMochiRuntime = $missingMochiPackage.Count -eq 0
-    $hasMochiModel = [bool]$mochiModel
-    $unsupportedMochiSource = $false
-    if (-not $hasMochiModel -and $mochiNv) {
-        # Match Setup's accepted sources; presence alone must not claim preparation is ready.
-        $unsupportedMochiSource = $true
-        foreach ($candidate in $sourceDlls) {
-            if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
-            try { $hash = Get-OptScalerFileSha256 $candidate } catch { continue }
-            if ($hash -in @('2bc19bc09a7b89dd44f73e2ac0108fcc586e2154bdd0830f242f4f040e28789f',
-                           'e16bcf15e16e13f527491cdf7845b2fe6521a738d8f7c9c721866a8496e1fc8e')) {
-                $unsupportedMochiSource = $false
-                $mochiNv = $candidate
-                break
-            }
-        }
-        if ($unsupportedMochiSource) { $mochiNv = $null }
-    }
+    $hasMochiModel = [bool]($mochiModel -or $mochiSmall)
     $mochiPreparable = (-not $hasMochiModel) -and [bool]$mochiNv
-    $mochiOriginalReady = $false
-    $mochiSmallReady = $false
-    foreach ($root in @($pkgRoot, $gameDir)) {
-        if (-not $root) { continue }
-        if (Test-MochizukiModelHeaderFile (Join-Path $root 'dlssnr-amd/dlssnr.bin') 599) { $mochiOriginalReady = $true }
-        if (Test-MochizukiModelHeaderFile (Join-Path $root 'dlssnr-amd/dlssnr-small.bin') 255) { $mochiSmallReady = $true }
-    }
-    # Per-model source capability must scan every candidate, like Setup does: the single $mochiNv
-    # pick stops at the first accepted source (pkg 310.8.0 shadows a game 310.9.16 that Setup would
-    # prefer for small), and when a model is already installed the earlier hash filter is skipped
-    # entirely, so $mochiNv alone must not authorize preparation. Only the 310.9.16 build
-    # ($mochizukiNewNvSha) can prepare dlssnr-small.bin; both accepted builds prepare the original.
-    $mochiSourceProvidesOriginal = $false
-    $mochiSourceProvidesSmall = $false
-    foreach ($candidate in $sourceDlls) {
-        if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
-        try { $hash = Get-OptScalerFileSha256 $candidate } catch { continue }
-        if ($hash -in @('2bc19bc09a7b89dd44f73e2ac0108fcc586e2154bdd0830f242f4f040e28789f',
-                        'e16bcf15e16e13f527491cdf7845b2fe6521a738d8f7c9c721866a8496e1fc8e')) {
-            $mochiSourceProvidesOriginal = $true
-        }
-        if ($hash -eq '2bc19bc09a7b89dd44f73e2ac0108fcc586e2154bdd0830f242f4f040e28789f') {
-            $mochiSourceProvidesSmall = $true
-        }
-    }
-    $mochiPreparation = if ($canMochiRuntime) { 'ready' } else { 'missing-runtime' }
-    if ($canMochiRuntime -and -not ($mochiOriginalReady -and $mochiSmallReady)) {
-        if (-not (Get-Command Ensure-NativeModelExtractor -ErrorAction SilentlyContinue)) {
-            $helper = if ($pkgRoot -and (Test-Path -LiteralPath (Join-Path $pkgRoot 'model-tools/mochizuki-python.ps1') -PathType Leaf)) { Join-Path $pkgRoot 'model-tools/mochizuki-python.ps1' } elseif ($pkgRoot) { Join-Path $pkgRoot 'mochizuki-python.ps1' } else { $null }
-            if (-not $helper -or -not (Test-Path -LiteralPath $helper -PathType Leaf)) {
-                $mochiPreparation = 'missing-helper'
-            } else {
-                . $helper
-                if (-not (Find-MochizukiPython)) { $mochiPreparation = 'missing-python' }
-            }
-        }
-    }
+    $mochiOriginalReady = [bool]$mochiModel
+    $mochiSmallReady = [bool]$mochiSmall
+    $mochiExperimentalReady = [bool]$mochiExperimental
+    $mochiInt4Ready = [bool]$mochiInt4
+    $mochiSourceProvidesOriginal = [bool]$mochiNv
+    $mochiSourceProvidesSmall = [bool]$mochiNv
+    $mochiDelta = $pkgRoot -and (Test-Path -LiteralPath (Join-Path $pkgRoot 'experimental/dlssnr-small-experimental.delta') -PathType Leaf)
+    $mochiInt4Data = $pkgRoot -and (Test-Path -LiteralPath (Join-Path $pkgRoot 'dlssnr-amd/int4') -PathType Container)
+    $mochiInt4Tool = $pkgRoot -and (Test-Path -LiteralPath (Join-Path $pkgRoot 'model-tools/dlssnr-int4-weights.exe') -PathType Leaf)
+    $mochiExperimentalPreparable = (-not $mochiExperimentalReady) -and
+        ($mochiSmallReady -or $mochiSourceProvidesSmall) -and $mochiDelta
+    $mochiInt4Preparable = (-not $mochiInt4Ready) -and
+        ($mochiOriginalReady -or $mochiSourceProvidesOriginal) -and $mochiInt4Data -and $mochiInt4Tool
+    $mochiPreparation = if (-not $canMochiRuntime) { 'missing-runtime' } elseif ($hasMochiModel) { 'ready' } elseif ($mochiNv) { 'preparable' } else { 'missing-helper' }
     $mochiEnabled = $canMochiRuntime -and $hasMochiModel
     $mochiReason = if (-not $canMochiRuntime) { 'Runtime missing' } elseif ($hasMochiModel) { 'Ready' } elseif ($mochiPreparable) { 'Model preparation required' } else { 'Model missing' }
     $backends += @{
         id = 'mochizuki'
         originalState = if ($mochiOriginalReady) { 'ready' } elseif ($mochiSourceProvidesOriginal) { 'preparable' } else { 'missing' }
         smallState = if ($mochiSmallReady) { 'ready' } elseif ($mochiSourceProvidesSmall) { 'preparable' } else { 'missing' }
+        experimentalState = if ($mochiExperimentalReady) { 'ready' } elseif ($mochiExperimentalPreparable) { 'preparable' } else { 'missing' }
+        int4State = if ($mochiInt4Ready) { 'ready' } elseif ($mochiInt4Preparable) { 'preparable' } else { 'missing' }
         preparationState = $mochiPreparation
         runtimeState = if ($canMochiRuntime) { 'ready' } else { 'missing' }
         modelState = if ($hasMochiModel) { 'ready' } elseif ($mochiPreparable) { 'preparable' } else { 'missing' }
@@ -311,7 +282,6 @@ function Get-OptScalerBackendCapabilities([string]$pkgRoot, [string]$gameDir, [s
         hints = @(
             if (-not $hasMochiModel) {
                 if ($mochiPreparable) { 'mochi-preparable' }
-                elseif ($unsupportedMochiSource) { 'mochi-unsupported-source' }
                 else { 'mochi-source' }
                 if (-not $mochiPreparable) { 'mochi-versions' }
             }

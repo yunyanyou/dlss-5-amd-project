@@ -750,12 +750,12 @@ namespace OptScalerNR.Launcher
                 SetLabel("LocalGamesHeading", "游戏库", "Library");
                 SetLabel("ProxyHeading", "注入代理", "Injection proxy");
                 SetLabel("BackendsHeading", "神经渲染后端", "Neural rendering backends");
-                SetLabel("LmxxfCheck", "lmxxf", "lmxxf");
-                SetLabel("DanielCheck", "Daniel", "Daniel");
-                SetLabel("MochiCheck", "mochizuki", "mochizuki");
+                SetLabel("LmxxfCheck", "lmxxf 0.4.4", "lmxxf 0.4.4");
+                SetLabel("DanielCheck", "daniel 0.6.0", "daniel 0.6.0");
+                SetLabel("MochiCheck", "mochizuki 0.0.8.2", "mochizuki 0.0.8.2");
                 SetLabel("LmxxfDescription", "适合 RX 9000 系列", "For RX 9000 series");
                 SetLabel("DanielDescription", "适合 RX 6000/7000/9000 系列", "For RX 6000/7000/9000 series");
-                SetLabel("MochiDescription", "适合 RX 9000 系列", "For RX 9000 series");
+                SetLabel("MochiDescription", "适合 RX 7000/9000 系列", "For RX 7000/9000 series");
                 SetLabel("DiagnosticsHeading", "配置与运行库兼容诊断", "Configuration & Runtime Compatibility");
                 SetLabel("LogHeading", "运行诊断日志", "Diagnostic Log");
                 SetLabel("SettingsHeading", "设置", "Settings");
@@ -2140,16 +2140,31 @@ namespace OptScalerNR.Launcher
             if (_lastInspectResult != null && _lastInspectResult.Backends != null)
                 foreach (var backend in _lastInspectResult.Backends)
                     if (backend != null && backend.Id == "mochizuki") { capability = backend; break; }
-            var canExtract = capability != null && capability.PreparationState == "ready";
-            var original = capability != null && capability.OriginalState == "ready";
-            var small = capability != null && capability.SmallState == "ready";
-            // Preparable mirrors the installer's source check: 310.8.0 can only prepare original, so the
-            // Small choice must not ride on extraction tools alone (the installer would fail late).
-            var originalPreparable = capability != null && capability.OriginalState == "preparable";
-            var smallPreparable = capability != null && capability.SmallState == "preparable";
+            Func<string, bool> available = state =>
+                string.Equals(state, "ready", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(state, "preparable", StringComparison.OrdinalIgnoreCase);
+            var states = new[] {
+                new { Value = "small", Label = L("Small — CC_SMALL_FP8（通用）", "Small — CC_SMALL_FP8 (General)"),
+                    State = capability == null ? null : capability.SmallState },
+                new { Value = "experimental", Label = L("Experimental — CC_SMALL_FP8_EXPERIMENTAL（暂仅限 RX 9000）", "Experimental — CC_SMALL_FP8_EXPERIMENTAL (Currently RX 9000 only)"),
+                    State = capability == null ? null : capability.ExperimentalState },
+                new { Value = "original", Label = L("Original — CC_SILVER_AARDWOLD（通用）", "Original — CC_SILVER_AARDWOLD (General)"),
+                    State = capability == null ? null : capability.OriginalState },
+                new { Value = "int4", Label = L("INT4 Mixed — CC_SILVER_AARDWOLD_INT4_MIXED（暂仅限 RX 9000）", "INT4 Mixed — CC_SILVER_AARDWOLD_INT4_MIXED (Currently RX 9000 only)"),
+                    State = capability == null ? null : capability.Int4State }
+            };
+            var ready = new bool[4];
+            var canInstall = new bool[4];
+            for (var i = 0; i < states.Length; i++)
+            {
+                ready[i] = string.Equals(states[i].State, "ready", StringComparison.OrdinalIgnoreCase);
+                canInstall[i] = available(states[i].State);
+            }
+            var originalAvailable = canInstall[2];
+            var smallAvailable = canInstall[0];
             var dialog = new Window
             {
-                Owner = _window.IsVisible ? _window : null, Title = L("选择 Mochizuki 模型", "Select Mochizuki models"), Width = 500,
+                Owner = _window.IsVisible ? _window : null, Title = L("选择 Mochizuki 网络", "Select Mochizuki networks"), Width = 560,
                 SizeToContent = SizeToContent.Height, WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 ResizeMode = ResizeMode.NoResize, ShowInTaskbar = false,
                 Background = LauncherTheme.Brush("ThemeSurface"), Foreground = LauncherTheme.Brush("ThemeInk")
@@ -2158,42 +2173,117 @@ namespace OptScalerNR.Launcher
             var panel = new StackPanel { Margin = new Thickness(24) };
             panel.Children.Add(new TextBlock
             {
-                Text = L("选择安装范围；已有模型可复用，缺少的模型将自动提取。", "Choose what to install. Existing models are reused; missing models are extracted automatically."),
+                Text = L("选择要安装的网络，再选择游戏启动时使用的网络。Experimental 依赖 Small，INT4 Mixed 依赖 Original；父模型会自动安装或提取。",
+                    "Choose the networks to install, then the one the game starts with. Experimental needs Small and INT4 Mixed needs Original; parent models are installed or extracted automatically."),
                 TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12)
             });
-            panel.Children.Add(new TextBlock
-            {
-                Text = L("Small 需要 nvngx_dlssnr.dll 310.9.16；Original 也支持 310.8.0。", "Small needs nvngx_dlssnr.dll 310.9.16; Original also supports 310.8.0."),
-                TextWrapping = TextWrapping.Wrap, Foreground = LauncherTheme.Brush("ThemeWarning"),
-                Margin = new Thickness(0, 0, 0, 16)
-            });
+            var checks = new CheckBox[4];
+            var startCombo = new ComboBox { MinWidth = 300, Margin = new Thickness(0, 12, 0, 0) };
             var proceed = new Button { Content = L("继续", "Continue"), IsEnabled = false, MinWidth = 100, Margin = new Thickness(4) };
-            DialogTheme.Primary(dialog, proceed);
-            var originalAvailable = original || (canExtract && originalPreparable);
-            var smallAvailable = small || (canExtract && smallPreparable);
-            var enabled = new[] {
-                originalAvailable && smallAvailable,
-                smallAvailable,
-                originalAvailable
+            var syncing = false;
+            Action updateProceed = null;
+            Action refreshStart = null;
+            Action updateLocks = null;
+
+            updateProceed = delegate {
+                var any = false;
+                for (var i = 0; i < checks.Length; i++) any |= checks[i].IsChecked == true;
+                proceed.IsEnabled = any && startCombo.SelectedItem != null;
             };
-            if (!enabled[0] && !enabled[1] && !enabled[2])
+            refreshStart = delegate {
+                var previous = startCombo.SelectedItem as ComboBoxItem;
+                var previousTag = previous != null ? previous.Tag as string : null;
+                startCombo.Items.Clear();
+                for (var i = 0; i < checks.Length; i++)
+                {
+                    if (checks[i].IsChecked != true) continue;
+                    startCombo.Items.Add(new ComboBoxItem { Tag = states[i].Value, Content = states[i].Label });
+                }
+                ComboBoxItem restore = null;
+                foreach (var entry in startCombo.Items)
+                {
+                    var item = entry as ComboBoxItem;
+                    if (item != null && previousTag != null && (item.Tag as string) == previousTag) restore = item;
+                }
+                if (restore != null) startCombo.SelectedItem = restore;
+                else if (startCombo.Items.Count > 0) startCombo.SelectedIndex = 0;
+                else startCombo.SelectedIndex = -1;
+                startCombo.IsEnabled = startCombo.Items.Count > 0;
+                updateProceed();
+            };
+            updateLocks = delegate {
+                var experimentalLocksSmall = checks[1] != null && checks[1].IsChecked == true;
+                var int4LocksOriginal = checks[3] != null && checks[3].IsChecked == true;
+                checks[0].IsEnabled = canInstall[0];
+                checks[0].Tag = !canInstall[0] ? "unavailable" : experimentalLocksSmall ? ModelDependencyLock.TagValue : null;
+                checks[0].ToolTip = experimentalLocksSmall && canInstall[0]
+                    ? L("Experimental 已选择，Small 是必需依赖，不能取消。", "Experimental is selected, so Small is a required dependency and cannot be cleared.")
+                    : null;
+                checks[2].IsEnabled = canInstall[2];
+                checks[2].Tag = !canInstall[2] ? "unavailable" : int4LocksOriginal ? ModelDependencyLock.TagValue : null;
+                checks[2].ToolTip = int4LocksOriginal && canInstall[2]
+                    ? L("INT4 Mixed 已选择，Original 是必需依赖，不能取消。", "INT4 Mixed is selected, so Original is a required dependency and cannot be cleared.")
+                    : null;
+            };
+            Action syncParents = delegate {
+                if (syncing) return;
+                syncing = true;
+                try {
+                    if (checks[1].IsChecked == true && canInstall[0]) checks[0].IsChecked = true;
+                    if (checks[3].IsChecked == true && canInstall[2]) checks[2].IsChecked = true;
+                } finally { syncing = false; }
+                updateLocks();
+                refreshStart();
+            };
+
+            for (var i = 0; i < states.Length; i++)
+            {
+                var check = new CheckBox {
+                    Content = new TextBlock { Text = states[i].Label, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center },
+                    IsChecked = canInstall[i], IsEnabled = canInstall[i],
+                    Style = dialog.FindResource("ModelCard") as Style,
+                    Tag = canInstall[i] ? null : "unavailable",
+                    Foreground = LauncherTheme.Brush("ThemeInk")
+                };
+                checks[i] = check;
+                panel.Children.Add(check);
+            }
+            for (var i = 0; i < checks.Length; i++)
+            {
+                var check = checks[i];
+                check.Checked += delegate { if (!syncing) syncParents(); };
+                ModelDependencyLock.Attach(check, () => syncing,
+                    delegate { updateLocks(); refreshStart(); },
+                    value => syncing = value);
+            }
+            panel.Children.Add(new TextBlock {
+                Text = L("启动网络", "Startup network"), Foreground = LauncherTheme.Brush("ThemeMuted"), Margin = new Thickness(0, 8, 0, 0)
+            });
+            panel.Children.Add(startCombo);
+            if (!canInstall[0] && !canInstall[1] && !canInstall[2] && !canInstall[3])
                 panel.Children.Add(new TextBlock {
                     Text = L("部分模型暂不可用，请补齐来源或完整安装包后重试。", "Some models are unavailable. Add the source or restore the complete package and retry."),
-                    TextWrapping = TextWrapping.Wrap, Foreground = LauncherTheme.Brush("ThemeWarning"), Margin = new Thickness(0,0,0,12)
+                    TextWrapping = TextWrapping.Wrap, Foreground = LauncherTheme.Brush("ThemeWarning"), Margin = new Thickness(0, 12, 0, 0)
                 });
-            var values = new[] { "both", "small", "original" };
-            var labels = new[] { L("Original + Small", "Original + Small"), "Small", "Original" };
-            for (var i = 0; i < values.Length; i++)
-            {
-                var value = values[i];
-                var radio = new RadioButton { Content = labels[i], IsEnabled = enabled[i], Foreground = enabled[i] ? LauncherTheme.Brush("ThemeInk") : LauncherTheme.Brush("ThemeMuted"), GroupName = "MochizukiModels", Margin = new Thickness(0, 6, 0, 6) };
-                radio.Checked += delegate { dialog.Tag = value; proceed.IsEnabled = true; };
-                panel.Children.Add(radio);
-            }
             AddModelSourceChoice(panel, dialog, originalAvailable, smallAvailable);
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
             var cancel = new Button { Content = L("取消", "Cancel"), IsCancel = true, MinWidth = 100, Margin = new Thickness(4) };
-            proceed.Click += delegate { dialog.DialogResult = true; };
+            proceed.Click += delegate {
+                var networks = new List<string>();
+                for (var i = 0; i < checks.Length; i++) if (checks[i].IsChecked == true) networks.Add(states[i].Value);
+                if (networks.Count == 0) return;
+                var active = startCombo.SelectedItem as ComboBoxItem;
+                var activeValue = active == null ? null : active.Tag as string;
+                if (string.IsNullOrEmpty(activeValue) || !networks.Contains(activeValue)) activeValue = networks[0];
+                _decisions.MochizukiNetworks = networks.ToArray();
+                _decisions.MochizukiActiveModel = activeValue;
+                dialog.Tag = activeValue;
+                dialog.DialogResult = true;
+            };
+            DialogTheme.Primary(dialog, proceed);
+            syncParents();
+            updateLocks();
+            refreshStart();
             buttons.Children.Add(cancel);
             buttons.Children.Add(proceed);
             panel.Children.Add(buttons);
@@ -2483,50 +2573,6 @@ namespace OptScalerNR.Launcher
                         if (_selectedGame != null) InspectGame(_selectedGame);
                     }
 
-                        // Chinese launcher UI → set the in-game menu to Chinese after install/update.
-                        // The host reads [Menu] Language (en / zh-CN); an existing non-default value
-                        // (the user's saved choice) is respected, matching the ini-ownership rule.
-                        // Pre-1.13.3.5 builds wrote a MenuLanguage key the host never read; strip it.
-                        if (_language == "zh" && _selectedGame != null && _selectedGame.HasExecutable)
-                        {
-                            try
-                            {
-                                var iniPath = Path.Combine(Path.GetDirectoryName(_selectedGame.Exe), "OptiScaler.ini");
-                                if (File.Exists(iniPath))
-                                {
-                                    var lines = new List<string>(File.ReadAllLines(iniPath));
-                                    lines.RemoveAll(l => Regex.IsMatch(l, @"(?i)^\s*MenuLanguage\s*="));
-                                    int menuIdx = lines.FindIndex(l => Regex.IsMatch(l, @"(?i)^\s*\[Menu\]\s*$"));
-                                    int sectionEnd = menuIdx < 0 ? -1
-                                        : lines.FindIndex(menuIdx + 1, l => Regex.IsMatch(l, @"^\s*\["));
-                                    int searchEnd = sectionEnd < 0 ? lines.Count : sectionEnd;
-                                    int langIdx = -1;
-                                    if (menuIdx >= 0)
-                                        for (int i = menuIdx + 1; i < searchEnd; ++i)
-                                            if (Regex.IsMatch(lines[i], @"(?i)^\s*Language\s*=")) { langIdx = i; break; }
-                                    var current = langIdx >= 0
-                                        ? Regex.Match(lines[langIdx], @"(?i)^\s*Language\s*=\s*(.*?)\s*$").Groups[1].Value
-                                        : "";
-                                    // Fresh install: only a non-default value counts as the user's choice
-                                    // (the package template ships Language=en). Update: the existing file is
-                                    // the user's, so an explicit en is preserved too.
-                                    // Any operation on an existing ini (install, update, repair, restore)
-                                    // treats the file as the user's; only a fresh template default can be
-                                    // overridden. Matching the ini-ownership rule in AGENTS.md.
-                                    bool updateInstall = !string.Equals(action, "install", StringComparison.OrdinalIgnoreCase);
-                                    bool userChosen = current.Length > 0 &&
-                                        (!current.Equals("en", StringComparison.OrdinalIgnoreCase) || updateInstall);
-                                    if (!userChosen)
-                                    {
-                                        if (langIdx >= 0) lines[langIdx] = "Language=zh-CN";
-                                        else if (menuIdx >= 0) lines.Insert(menuIdx + 1, "Language=zh-CN");
-                                        else { lines.Add(""); lines.Add("[Menu]"); lines.Add("Language=zh-CN"); }
-                                        File.WriteAllLines(iniPath, lines, new System.Text.UTF8Encoding(true));
-                                    }
-                                }
-                            }
-                            catch { }
-                        }
                 }
 
                 AppendLog(_statusText != null ? _statusText.Text : "");
@@ -2637,7 +2683,7 @@ namespace OptScalerNR.Launcher
                     _decisions.LmxxfModels = SelectLmxxfModels(action);
                     if (string.IsNullOrEmpty(_decisions.LmxxfModels)) return false;
                 }
-                else if (d.Id == "mochizukiModels")
+                else if (d.Id == "mochizukiModels" || d.Id == "mochizukiNetworks")
                 {
                     _decisions.MochizukiModels = SelectMochizukiModels(action);
                     if (string.IsNullOrEmpty(_decisions.MochizukiModels)) return false;

@@ -101,7 +101,7 @@ $projectLeafNames = @(
     'dlssnr_amd_pass1.dll','dlssnr_amd_pass2.dll','dlssnr_amd_pass3.dll',
     'dlssnr_core.dll', # Legacy standalone NR core; integrated runtimes do not use it.
     'OptiScaler.ini','amd-presr-install.txt',
-    'dlssnr_on_amd.ini', 'dlssnr-amd.ini', 'dlssnr-amd-crash.dmp', 'dlssnr-amd-install.txt',
+    'dlssnr_on_amd.ini', 'dlssnr-amd-crash.dmp', 'dlssnr-amd-install.txt',
     'LmxxfNrRuntime.dll', 'MochizukiNrRuntime.dll', 'lmxxf-module-package.ps1',
     'Uninstall_OptiScaler_NR.bat','Uninstall_OptiScaler_NR.ps1',
     'OptiScalerPanel.exe','OptiScaler代理切换.bat','compat-repair.ps1','xess-compat.ps1',
@@ -203,6 +203,7 @@ $dependencyPaths = @(
     'amd_fidelityfx_loader_dx12.dll',
     'amd_fidelityfx_upscaler_dx12.dll',
     'amd_fidelityfx_framegeneration_dx12.dll',
+    'amd_fidelityfx_denoiser_dx12.dll',
     'amd_fidelityfx_vk.dll',
     'libxess.dll', 'libxess_dx11.dll', 'libxess_fg.dll', 'libxell.dll',
     'D3D12_OptiScaler\D3D12Core.dll',
@@ -320,6 +321,38 @@ function Update-MochizukiOwned([string]$root, [string]$mode) {
     }
 }
 
+# Files installed for the vendor NR ASI are recorded in the game folder at install
+# time. Only those exact paths are removed; models and the ASI's own ini stay.
+function Get-AsiOwnedFiles([string]$root) {
+    $manifest = Join-Path $root 'dlssnr-amd-install.txt'
+    if (!(Test-UninstallPath $manifest)) { return }
+    if (!(Test-Path -LiteralPath $manifest -PathType Leaf)) { return }
+    # Resolve the same plugin directory the installer used, including an explicit
+    # [Plugins] Path / [Libraries] OptiDllPath. Only this ASI file is claimable
+    # there; arbitrary manifest paths are still ignored.
+    $pluginRel = $null
+    try {
+        $iniPath = Join-Path $root 'OptiScaler.ini'
+        $pluginPath = Join-Path (Get-PluginsTargetDirectory $root $iniPath) 'dlssnr-amd.asi'
+        $prefix = [IO.Path]::GetFullPath($root).TrimEnd('\', '/') + '\'
+        $fullPluginPath = [IO.Path]::GetFullPath($pluginPath)
+        if ($fullPluginPath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+            $pluginRel = $fullPluginPath.Substring($prefix.Length)
+        }
+    } catch { $pluginRel = $null }
+    foreach ($line in Get-Content -LiteralPath $manifest -ErrorAction SilentlyContinue) {
+        $line = $line.TrimStart([char]0xFEFF).Trim()
+        if ($line -notmatch '^(?i)F (.+)$') { continue }
+        $rel = $Matches[1].Trim()
+        if ($rel -match '(^|[\\/])\.\.([\\/]|$)' -or [IO.Path]::IsPathRooted($rel)) { continue }
+        $normalized = $rel.Replace('\', '/')
+        $isPlugin = $pluginRel -and ($rel -ieq $pluginRel)
+        if ($normalized -notmatch '^(?i)dlssnr-amd/' -and -not $isPlugin) { continue }
+        $full = Join-Path $root $rel
+        if (Test-UninstallPath $full) { $full }
+    }
+}
+
 function Add-PlannedFile([string]$path, [string]$why) {
     if (!(Test-UninstallPath $path)) { return }
     $leaf = Split-Path -Leaf $path
@@ -426,6 +459,8 @@ foreach ($path in $legacyLogPaths) { Add-PlannedFile $path 'legacy-backend-log' 
 
 foreach ($root in $roots) {
     if (!(Test-UninstallPath $root)) { continue }
+    # Read the ASI inventory before the manifest itself is deleted below.
+    $asiOwnedForRoot = @(Get-AsiOwnedFiles $root)
     foreach ($name in $proxyNames) {
         $p = Join-Path $root $name
         if (!(Test-UninstallPath $p)) { continue }
@@ -440,6 +475,7 @@ foreach ($root in $roots) {
         Add-PlannedFile (Join-Path $root $name) 'project-file'
     }
     Update-MochizukiOwned $root 'plan'
+    foreach ($path in @(Get-AsiOwnedFiles $root)) { Add-PlannedFile $path 'asi-file' }
     Get-ChildItem -LiteralPath $root -File -Force -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -match $projectLogNamePattern } |
         ForEach-Object { Add-PlannedFile $_.FullName 'project-log' }
@@ -606,6 +642,8 @@ function Remove-EmptyDirectory([string]$path) {
 
 foreach ($root in $roots) {
     if (!(Test-UninstallPath $root)) { continue }
+    # Read the ASI inventory before the manifest itself is deleted below.
+    $asiOwnedForRoot = @(Get-AsiOwnedFiles $root)
     foreach ($name in $proxyNames) {
         $p = Join-Path $root $name
         if (!(Test-UninstallPath $p)) { continue }
@@ -617,6 +655,7 @@ foreach ($root in $roots) {
         Remove-SafeFile (Join-Path $root $name) 'project-file'
     }
     Update-MochizukiOwned $root 'delete'
+    foreach ($path in $asiOwnedForRoot) { Remove-SafeFile $path 'asi-file' }
     Get-ChildItem -LiteralPath $root -File -Force -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -match $projectLogNamePattern } |
         ForEach-Object { Remove-SafeFile $_.FullName 'project-log' }

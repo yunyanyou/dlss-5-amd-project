@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -7,171 +7,183 @@ using System.Text.RegularExpressions;
 
 namespace OptScalerNR.Launcher
 {
-    // Pure codec: no launcher state or WPF dependencies.
+    // MZ4: section+key style code for the standalone dlssnr-amd.asi.
+    // MZ1/2/3 targeted the retired built-in runtime and are rejected, not migrated.
     public static class MochizukiShareCode
     {
-        public enum Kind { Float, Int, Bool }
-        public sealed class Key
-        {
-            public readonly int Index;
-            public readonly string IniKey;
-            public readonly Kind Kind;
-            public readonly decimal Default, Min, Max;
-            public Key(int index, string key, Kind kind, decimal value, decimal min, decimal max)
-            { Index = index; IniKey = key; Kind = kind; Default = value; Min = min; Max = max; }
-        }
-        // FROZEN compatibility contract: never reorder or renumber. Append new keys only.
-        // MochizukiOptions.inc order, excluding installation/performance switches, then shared visual keys.
-        public static readonly System.Collections.ObjectModel.ReadOnlyCollection<Key> Keys = Array.AsReadOnly(new Key[] {
-            new Key(0, "MochizukiIntensity", Kind.Float, 1m, 0m, 2m),
-            new Key(1, "MochizukiStyle", Kind.Int, 0m, 0m, 2m),
-            new Key(2, "MochizukiLocalTone", Kind.Float, 1m, 0m, 2m),
-            new Key(3, "MochizukiLocalStructure", Kind.Float, 1m, 0m, 2m),
-            new Key(4, "MochizukiSkinStructure", Kind.Float, -1m, -1m, 2m),
-            new Key(5, "MochizukiAutomaticMask", Kind.Bool, 1m, 0m, 1m),
-            new Key(6, "MochizukiDetailStrength", Kind.Float, 1m, 0m, 2m),
-            new Key(7, "MochizukiColourStrength", Kind.Float, 1m, 0m, 4m),
-            new Key(8, "MochizukiMaxRatio", Kind.Float, 2m, 1m, 8m),
-            new Key(9, "MochizukiEnlargeMode", Kind.Int, 0m, 0m, 2m),
-            new Key(10, "MochizukiClassicScaler", Kind.Int, 1m, 0m, 3m),
-            new Key(11, "MochizukiWhitePoint", Kind.Float, 1m, .01m, 100m),
-            new Key(12, "MochizukiPasses", Kind.Int, 1m, 1m, 3m),
-            new Key(13, "MochizukiTemporal", Kind.Bool, 1m, 0m, 1m),
-            new Key(14, "MochizukiHistoryStrength", Kind.Float, 1m, 0m, 1m),
-            new Key(15, "MochizukiPreprocess", Kind.Bool, 0m, 0m, 1m),
-            new Key(16, "MochizukiPreprocessExposure", Kind.Int, 1m, 0m, 2m),
-            new Key(17, "MochizukiPreprocessBiasEv", Kind.Float, 0m, -8m, 8m),
-            new Key(18, "MochizukiPreprocessCurve", Kind.Int, 3m, 0m, 6m),
-            new Key(19, "MochizukiPreprocessContrast", Kind.Float, 1m, .5m, 2m),
-            new Key(20, "MochizukiPreprocessSaturation", Kind.Float, 1m, .05m, 2m),
-            new Key(21, "MochizukiApplyModel", Kind.Bool, 1m, 0m, 1m),
-            new Key(22, "MochizukiLinearInput", Kind.Int, 0m, 0m, 2m),
-            new Key(23, "MochizukiPass2Override", Kind.Bool, 0m, 0m, 1m),
-            new Key(24, "MochizukiPass2Style", Kind.Int, 0m, 0m, 2m),
-            new Key(25, "MochizukiPass2Intensity", Kind.Float, 1m, 0m, 2m),
-            new Key(26, "MochizukiPass2LocalTone", Kind.Float, 0m, 0m, 2m),
-            new Key(27, "MochizukiPass2LocalStructure", Kind.Float, 1m, 0m, 2m),
-            new Key(28, "MochizukiPass2SkinStructure", Kind.Float, -1m, -1m, 2m),
-            new Key(29, "MochizukiPass2AutomaticMask", Kind.Bool, 1m, 0m, 1m),
-            new Key(30, "MochizukiPass3Override", Kind.Bool, 0m, 0m, 1m),
-            new Key(31, "MochizukiPass3Style", Kind.Int, 0m, 0m, 2m),
-            new Key(32, "MochizukiPass3Intensity", Kind.Float, 1m, 0m, 2m),
-            new Key(33, "MochizukiPass3LocalTone", Kind.Float, 0m, 0m, 2m),
-            new Key(34, "MochizukiPass3LocalStructure", Kind.Float, 1m, 0m, 2m),
-            new Key(35, "MochizukiPass3SkinStructure", Kind.Float, -1m, -1m, 2m),
-            new Key(36, "MochizukiPass3AutomaticMask", Kind.Bool, 1m, 0m, 1m),
-            new Key(37, "MochizukiRenoDX", Kind.Bool, 0m, 0m, 1m),
-            new Key(38, "MochizukiNoiseEveryFrame", Kind.Bool, 0m, 0m, 1m),
-            new Key(39, "MochizukiRenoNeuralUplift", Kind.Bool, 1m, 0m, 1m),
-            new Key(40, "MochizukiRenoIntensity", Kind.Float, 1.0m, 0.0m, 2.0m),
-            new Key(41, "MochizukiRenoStyle", Kind.Int, 0m, 0m, 2m),
-            new Key(42, "MochizukiRenoLocalTone", Kind.Float, 1.0m, 0.0m, 2.0m),
-            new Key(43, "MochizukiRenoLocalStructure", Kind.Float, 1.0m, 0.0m, 2.0m),
-            new Key(44, "MochizukiRenoSkinStructure", Kind.Float, -1.0m, -1.0m, 1.0m),
-            new Key(45, "MochizukiRenoAutoMask", Kind.Bool, 0m, 0m, 1m),
-            new Key(46, "MochizukiRenoSkinIndependent", Kind.Bool, 1m, 0m, 1m),
-            new Key(47, "MochizukiRenoPasses", Kind.Int, 1m, 1m, 30m),
-            new Key(48, "MochizukiRenoUnlockPasses", Kind.Bool, 0m, 0m, 1m),
-            new Key(49, "MochizukiRenoChainedHistory", Kind.Bool, 1m, 0m, 1m),
-            new Key(50, "MochizukiRenoPass2Transfer", Kind.Float, 1.0m, 0.0m, 1.0m),
-            new Key(51, "MochizukiRenoPass2Color", Kind.Float, 1.0m, 0.0m, 1.0m),
-            new Key(52, "MochizukiRenoPass2Intensity", Kind.Float, 1.0m, 0.0m, 2.0m),
-            new Key(53, "MochizukiRenoPass2FollowPass1", Kind.Bool, 1m, 0m, 1m),
-            new Key(54, "MochizukiRenoPass2Style", Kind.Int, 0m, 0m, 2m),
-            new Key(55, "MochizukiRenoPass2LocalTone", Kind.Float, 1.0m, 0.0m, 2.0m),
-            new Key(56, "MochizukiRenoPass2Structure", Kind.Float, 1.0m, 0.0m, 2.0m),
-            new Key(57, "MochizukiRenoPass2Skin", Kind.Float, -1.0m, -1.0m, 1.0m),
-            new Key(58, "MochizukiRenoPass2AutoMask", Kind.Bool, 0m, 0m, 1m),
-            new Key(59, "MochizukiRenoPass3Transfer", Kind.Float, 1.0m, 0.0m, 1.0m),
-            new Key(60, "MochizukiRenoPass3Color", Kind.Float, 1.0m, 0.0m, 1.0m),
-            new Key(61, "MochizukiRenoPass3Intensity", Kind.Float, 1.0m, 0.0m, 2.0m),
-            new Key(62, "MochizukiRenoPass3FollowPass1", Kind.Bool, 1m, 0m, 1m),
-            new Key(63, "MochizukiRenoPass3Style", Kind.Int, 0m, 0m, 2m),
-            new Key(64, "MochizukiRenoPass3LocalTone", Kind.Float, 1.0m, 0.0m, 2.0m),
-            new Key(65, "MochizukiRenoPass3Structure", Kind.Float, 1.0m, 0.0m, 2.0m),
-            new Key(66, "MochizukiRenoPass3Skin", Kind.Float, -1.0m, -1.0m, 1.0m),
-            new Key(67, "MochizukiRenoPass3AutoMask", Kind.Bool, 0m, 0m, 1m),
-            new Key(68, "MochizukiRenoPass4Transfer", Kind.Float, 1.0m, 0.0m, 1.0m),
-            new Key(69, "MochizukiRenoPass4Color", Kind.Float, 1.0m, 0.0m, 1.0m),
-            new Key(70, "MochizukiRenoPass4Intensity", Kind.Float, 1.0m, 0.0m, 2.0m),
-            new Key(71, "MochizukiRenoPass4FollowPass1", Kind.Bool, 1m, 0m, 1m),
-            new Key(72, "MochizukiRenoPass4Style", Kind.Int, 0m, 0m, 2m),
-            new Key(73, "MochizukiRenoPass4LocalTone", Kind.Float, 1.0m, 0.0m, 2.0m),
-            new Key(74, "MochizukiRenoPass4Structure", Kind.Float, 1.0m, 0.0m, 2.0m),
-            new Key(75, "MochizukiRenoPass4Skin", Kind.Float, -1.0m, -1.0m, 1.0m),
-            new Key(76, "MochizukiRenoPass4AutoMask", Kind.Bool, 0m, 0m, 1m),
-            new Key(77, "MochizukiRenoColorStrength", Kind.Float, 1.0m, 0.0m, 1.0m),
-            new Key(78, "MochizukiRenoTransferStrength", Kind.Float, 1.0m, 0.0m, 1.0m),
-            new Key(79, "MochizukiRenoChromaClamp", Kind.Float, 1.0m, 0.25m, 2.0m),
-            new Key(80, "MochizukiRenoTransferMode", Kind.Int, 0m, 0m, 1m),
-            new Key(81, "MochizukiRenoStyleHighlightGuard", Kind.Float, 0.0m, 0.0m, 2.0m),
-            new Key(82, "MochizukiRenoDetailStability", Kind.Int, 0m, 0m, 2m),
-            new Key(83, "MochizukiRenoResolutionScale", Kind.Float, 1.0m, 0.33m, 1.0m),
-            new Key(84, "MochizukiRenoFollowInputRes", Kind.Bool, 0m, 0m, 1m),
-            new Key(85, "MochizukiRenoLookUpsample", Kind.Int, 0m, 0m, 3m),
-            new Key(86, "MochizukiRenoLookMode", Kind.Bool, 0m, 0m, 1m),
-            new Key(87, "MochizukiRenoLookStrength", Kind.Float, 1.0m, 0.0m, 2.0m),
-            new Key(88, "MochizukiRenoLookBrighten", Kind.Float, 1.0m, 0.0m, 2.0m),
-            new Key(89, "MochizukiRenoLookDarken", Kind.Float, 1.0m, 0.0m, 2.0m),
-            new Key(90, "MochizukiRenoLookColour", Kind.Float, 1.0m, 0.0m, 2.0m),
-            new Key(91, "MochizukiRenoLookHue", Kind.Float, 1.0m, 0.0m, 2.0m),
-            new Key(92, "MochizukiRenoLookShadows", Kind.Float, 1.0m, 0.0m, 2.0m),
-            new Key(93, "MochizukiRenoLookMidtones", Kind.Float, 1.0m, 0.0m, 2.0m),
-            new Key(94, "MochizukiRenoLookHighlights", Kind.Float, 1.0m, 0.0m, 2.0m),
-            new Key(95, "MochizukiRenoLookMaxBrighten", Kind.Float, 0.0m, 0.0m, 4.0m),
-            new Key(96, "MochizukiRenoLookMaxDarken", Kind.Float, 0.0m, 0.0m, 4.0m),
-            new Key(97, "MochizukiRenoLookMaxColour", Kind.Float, 0.0m, 0.0m, 2.0m),
-            new Key(98, "MochizukiRenoLookTone", Kind.Float, 1.0m, 0.0m, 2.0m),
-            new Key(99, "MochizukiRenoLookDetail", Kind.Float, 1.0m, 0.0m, 2.0m),
-            new Key(100, "MochizukiRenoLookDetailRadius", Kind.Float, 1.0m, 0.25m, 4.0m),
-            new Key(101, "MochizukiRenoLookHalo", Kind.Float, 0.0m, 0.0m, 1.0m),
-            new Key(102, "MochizukiRenoLookHaloBrightSide", Kind.Float, 0.0m, 0.0m, 1.0m),
-            new Key(103, "MochizukiRenoLookStabilize", Kind.Int, 0m, 0m, 2m),
-            new Key(104, "MochizukiRenoLookStabilizeMs", Kind.Float, 60.0m, 10.0m, 250.0m),
-            new Key(105, "MochizukiRenoLookStabilizeDetail", Kind.Bool, 0m, 0m, 1m),
-            new Key(106, "MochizukiRenoSdrBlackRestore", Kind.Int, 0m, 0m, 2m),
-            new Key(107, "MochizukiRenoDisplayPedestal", Kind.Int, 0m, 0m, 2m),
-            new Key(108, "MochizukiRenoCodecMode", Kind.Int, 2m, 0m, 3m),
-            new Key(109, "MochizukiRenoNeuralFloorGuard", Kind.Bool, 1m, 0m, 1m),
-            new Key(110, "MochizukiRenoSourceEncoding", Kind.Int, 0m, 0m, 3m),
-            new Key(111, "MochizukiRenoLinearUnitNits", Kind.Float, 0.0m, 0.0m, 10000.0m),
-            new Key(112, "MochizukiRenoProxyAnchor", Kind.Float, 4.0m, 0.5m, 32.0m),
-            new Key(113, "MochizukiRenoPaperWhiteScale", Kind.Float, 2.5375m, 0.005m, 16.0m),
-            new Key(114, "MochizukiRenoDiffuseWhiteNits", Kind.Float, 203.0m, 80.0m, 1000.0m),
-            new Key(115, "MochizukiRenoPQCalibration", Kind.Float, 1.0m, 0.005m, 16.0m),
-            new Key(116, "MochizukiRenoFeedMode", Kind.Int, 0m, 0m, 2m),
-            new Key(117, "MochizukiRenoNormGovernor", Kind.Int, 2m, 0m, 2m),
-            new Key(118, "MochizukiRenoNormCutAware", Kind.Bool, 1m, 0m, 1m),
-            new Key(119, "MochizukiRenoNormAttackStops", Kind.Float, 4.0m, 0.1m, 64.0m),
-            new Key(120, "MochizukiRenoNormReleaseStops", Kind.Float, 0.5m, 0.05m, 16.0m),
-            new Key(121, "MochizukiRenoNormSlewStops", Kind.Float, 0.02m, 0.0m, 0.5m),
-            new Key(122, "MochizukiRenoMVecScaleX", Kind.Float, 1.0m, -2.0m, 2.0m),
-            new Key(123, "MochizukiRenoMVecScaleY", Kind.Float, 1.0m, -2.0m, 2.0m),
-            new Key(124, "NrOverallIntensity", Kind.Float, 1m, 0m, 2m),
-            new Key(125, "NrResidualLowGain", Kind.Float, 1m, 0m, 2m),
-            new Key(126, "NrResidualDetailGain", Kind.Float, 1m, 0m, 2m),
-            new Key(127, "NrResidualSkinProtection", Kind.Float, 0m, 0m, 1m),
-            new Key(128, "NrResidualEdgeProtection", Kind.Float, 0m, 0m, 1m),
-            new Key(129, "NrStabilizerEnabled", Kind.Bool, 0m, 0m, 1m),
-            new Key(130, "NrStabilizerAlpha", Kind.Float, .8m, 0m, .95m),
-            new Key(131, "NrStabilizerThreshold", Kind.Float, 4m, 0m, 16m),
-            new Key(132, "NrPersonPartition", Kind.Bool, 0m, 0m, 1m),
-            new Key(133, "NrPersonDetailGain", Kind.Float, 1m, 0m, 1m),
-            new Key(134, "NrPersonStrength", Kind.Float, 1m, 0m, 1m),
-            new Key(135, "MochizukiWhitePointSource", Kind.Int, 0m, 0m, 3m),
-        });
         public sealed class CodeException : Exception
         {
             public readonly string Reason;
             public CodeException(string reason) : base(reason) { Reason = reason; }
         }
+        sealed class Field
+        {
+            public readonly string Section, Key, Kind;
+            public Field(string section, string key, string kind) { Section = section; Key = key; Kind = kind; }
+        }
+        // kind: str, num, bool. "auto" is always accepted for num/bool.
+        static readonly Field[] GlobalFields = BuildGlobal();
+        static readonly Field[] LayerFields = BuildLayers();
+        static Field F(string section, string key, string kind) { return new Field(section, key, kind); }
+        static Field[] BuildGlobal()
+        {
+            var list = new List<Field>();
+            list.Add(F("Network", "Model", "str"));
+            list.Add(F("Network", "Motion Without Depth", "bool"));
+            list.Add(F("Network", "Resize History", "bool"));
+            list.Add(F("Network", "History Precision", "history"));
+            list.Add(F("Network", "Style Grade", "bool"));
+            list.Add(F("RenoDX", "Enabled", "bool"));
+            foreach (var key in new[] { "Enabled", "Exposure", "ExposureBias", "Curve", "Contrast", "Saturation", "Inverse" })
+                list.Add(F("Preprocess", key, key == "Enabled" || key == "Inverse" ? "bool" : (key == "Exposure" || key == "Curve") ? "str" : "num"));
+            foreach (var key in RenoDXKeys()) list.Add(F("RenoDX", key, KindOfRenoDX(key)));
+            foreach (var key in WilsjoKeys()) list.Add(F("wilsjo2", key, KindOfWilsjo(key)));
+            foreach (var key in DynamicPassKeys()) list.Add(F("wilsjo2", key, KindOfWilsjo(key)));
+            list.Add(F("HudFix", "Mode", "hudfix"));
+            list.Add(F("NRControl", "Layers", "bool"));
+            return list.ToArray();
+        }
+        static Field[] BuildLayers()
+        {
+            var list = new List<Field>();
+            foreach (var key in new[] { "Enabled", "Processing", "Placement", "Network" })
+                list.Add(F("Layer", key, key == "Enabled" ? "bool" : key == "Placement" ? "placement" : "str"));
+            foreach (var key in RenoDXKeys()) list.Add(F("Layer", key, KindOfRenoDX(key)));
+            foreach (var key in WilsjoKeys()) list.Add(F("Layer", key, KindOfWilsjo(key)));
+            foreach (var key in DynamicPassKeys()) list.Add(F("Layer", key, KindOfWilsjo(key)));
+            return list.ToArray();
+        }
+        static string KindOfRenoDX(string key)
+        {
+            switch (key) {
+                case "NRPassesMode": return "str";
+                case "NeuralUplift": case "NRAutoMask": case "NRSkinIndependent":
+                case "NRUnlockPasses": case "NRChainedHistory": case "NRNoiseEveryFrame":
+                case "NRPass2FollowPass1": case "NRPass2AutoMask": case "NRPass3FollowPass1":
+                case "NRPass3AutoMask": case "NRPass4FollowPass1": case "NRPass4AutoMask":
+                case "NRLookMode": case "NRLookStabilizeDetail": case "NRNeuralFloorGuard":
+                case "NRNormCutAware":
+                case "NRFastExtrapolationHaloLimit": case "NRFastFeedbackHaloLimit":
+                case "NRFastHybridHaloLimit":
+                    return "bool";
+                default: return "num";
+            }
+        }
+        static string KindOfWilsjo(string key)
+        {
+            if (key.EndsWith("AutoMask", StringComparison.OrdinalIgnoreCase)) return "bool";
+            switch (key) {
+                case "ExposureTrimAnchors": case "AutoExposureTrimAnchors": return "str";
+                case "RunBeforeSR": case "UnlockPasses": case "AutoMask": case "NoiseEveryFrame":
+                case "SpatialCompression": case "SkinProtection": case "ColourLimit":
+                case "FastExtrapolationHaloLimit": case "FastFeedbackHaloLimit": case "FastHybridHaloLimit":
+                    return "bool";
+                case "ClassicScaler": case "Downscale": case "PassesMode": case "FastMethod":
+                    return "str";
+                default: return "num";
+            }
+        }
+        static string[] DynamicPassKeys()
+        {
+            var keys = new List<string>();
+            string[] fields = { "Preset", "Style", "Intensity", "LocalStructure", "LocalTone", "SkinStructure", "AutoMask" };
+            for (int pass = 2; pass <= 30; ++pass)
+                foreach (var field in fields)
+                {
+                    if (field == "Preset" && pass > 3) continue;
+                    keys.Add("Pass" + pass.ToString(Invariant) + field);
+                }
+            return keys.ToArray();
+        }
+        static string[] RenoDXKeys()
+        {
+            return new[] {
+                "NeuralUplift", "NRHookPoint", "NRIntensity", "NRStyle", "NRLocalTone", "NRLocalStructure",
+                "NRSkinStructure", "NRAutoMask", "NRSkinIndependent", "NRPassesMode", "NRFastMethod",
+                "NRFastExtrapolationPasses", "NRFastExtrapolationHaloLimit", "NRFastExtrapolationFine",
+                "NRFastFeedbackPasses", "NRFastFeedbackHaloLimit", "NRFastFeedbackFine",
+                "NRFastHybridPasses", "NRFastHybridHaloLimit", "NRFastHybridFine", "NRFastEditStrength",
+                "NRPasses", "NRUnlockPasses", "NRChainedHistory", "NRNoiseEveryFrame",
+                "NRPass2Transfer", "NRPass2Color", "NRPass2Intensity", "NRPass2FollowPass1", "NRPass2Style",
+                "NRPass2LocalTone", "NRPass2Structure", "NRPass2Skin", "NRPass2AutoMask",
+                "NRPass3Transfer", "NRPass3Color", "NRPass3Intensity", "NRPass3FollowPass1", "NRPass3Style",
+                "NRPass3LocalTone", "NRPass3Structure", "NRPass3Skin", "NRPass3AutoMask",
+                "NRPass4Transfer", "NRPass4Color", "NRPass4Intensity", "NRPass4FollowPass1", "NRPass4Style",
+                "NRPass4LocalTone", "NRPass4Structure", "NRPass4Skin", "NRPass4AutoMask",
+                "NRColorStrength", "NRTransferStrength", "NRChromaClamp", "NRTransferMode",
+                "NRStyleHighlightGuard", "NRDetailStability", "NRResolutionScale", "NRFollowInputRes",
+                "NRLookUpsample", "NRLookMode", "NRLookStrength", "NRLookBrighten", "NRLookDarken",
+                "NRLookColour", "NRLookHue", "NRLookShadows", "NRLookMidtones", "NRLookHighlights",
+                "NRLookMaxBrighten", "NRLookMaxDarken", "NRLookMaxColour", "NRLookTone", "NRLookDetail",
+                "NRLookDetailRadius", "NRLookHalo", "NRLookHaloBrightSide", "NRLookStabilize",
+                "NRLookStabilizeMs", "NRLookStabilizeDetail", "NRSdrBlackRestore", "NRDisplayPedestal",
+                "NRCodecMode", "NRNeuralFloorGuard", "NRSourceEncoding", "NRLinearUnitNits",
+                "NRProxyAnchor", "NRPaperWhiteScale", "NRDiffuseWhiteNits", "NRPQCalibration",
+                "NRFeedMode", "NRPresentEncoding", "NRPresentWhiteNits", "NRPresentWhiteSource",
+                "NRNormGovernor", "NRNormCutAware", "NRNormAttackStops", "NRNormReleaseStops",
+                "NRNormSlewStops", "NRPresentGuides", "NRDepthMode", "NRMVecScaleX", "NRMVecScaleY",
+                "NROutputRect", "NRPresentFrames", "NRPresentFgSource"
+            };
+        }
+        static string[] WilsjoKeys()
+        {
+            return new[] {
+                "RunBeforeSR", "Passes", "UnlockPasses", "History", "Preset", "Style",
+                "Intensity", "LocalStructure", "LocalTone", "SkinStructure", "AutoMask", "NoiseEveryFrame",
+                "TransferStrength", "ColourStrength", "MaxRatio", "ReversibleMode", "ReplaceDetailStrength",
+                "WorkingScale", "Transfer", "ScalingDownscaler", "SpatialCompression", "SpatialCenterX",
+                "SpatialCenterY", "SpatialWorkX", "SpatialWorkY", "SpatialOffsetX", "SpatialOffsetY",
+                "SpatialShiftX", "SpatialShiftY", "WhitePointSource", "WhitePointScale", "WhitePointTrim",
+                "ExposureTrimAnchors", "AutoExposureTrim", "AutoExposureHighlightProtection", "AutoExposureTrimAnchors",
+                "SkinProtection", "SkinDetail", "SkinColour", "EnvironmentDetail", "EnvironmentColour",
+                "ClassicScaler", "Downscale", "PassesMode", "FastMethod", "FastEditStrength", "ColourLimit",
+                "FastExtrapolationPasses", "FastExtrapolationHaloLimit", "FastExtrapolationFine",
+                "FastFeedbackPasses", "FastFeedbackHaloLimit", "FastFeedbackFine",
+                "FastHybridPasses", "FastHybridHaloLimit", "FastHybridFine"
+            };
+        }
+        static Field FindField(IEnumerable<Field> fields, string section, string key)
+        {
+            foreach (var f in fields)
+                if (string.Equals(f.Section, section, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(f.Key, key, StringComparison.OrdinalIgnoreCase)) return f;
+            return null;
+        }
+        public sealed class Entry
+        {
+            public int Layer; // 0 = global
+            public string Section, Key, Value, OldValue;
+            public bool Reset; // current value that the import will restore to its default
+        }
         public sealed class DecodedCode
         {
-            public readonly SortedDictionary<int, decimal> Values;
-            public readonly string GameTag;
-            public readonly string Note;
-            internal DecodedCode(SortedDictionary<int, decimal> values, string gameTag, string note = "")
-            { Values = values; GameTag = gameTag; Note = note ?? ""; }
+            public readonly List<Entry> Entries = new List<Entry>();
+            public readonly SortedSet<int> LayerNumbers = new SortedSet<int>();
+            public string GameTag = "", Note = "";
+            public int LayerCount { get { return LayerNumbers.Count; } }
+            public bool LayersEnabled {
+                get {
+                    foreach (var e in Entries)
+                        if (e.Layer == 0 && string.Equals(e.Section, "NRControl", StringComparison.OrdinalIgnoreCase) &&
+                            string.Equals(e.Key, "Layers", StringComparison.OrdinalIgnoreCase))
+                            return IsTrue(e.Value);
+                    return false;
+                }
+            }
+            public int FirstLayer { get { return LayerNumbers.Count == 0 ? 0 : LayerNumbers.Min; } }
+            public string Network { get { foreach (var e in Entries) if (e.Layer == 0 && string.Equals(e.Key, "Model", StringComparison.OrdinalIgnoreCase)) return e.Value; return ""; } }
+        }
+        static readonly CultureInfo Invariant = CultureInfo.InvariantCulture;
+        static readonly Regex Header = new Regex(@"^\s*\[([^\]]+)\]\s*(?:[;#].*)?$");
+        static readonly Regex Assignment = new Regex(@"^(\s*)([^=;#]+?)(\s*=\s*)([^;#]*)(.*)$");
+        public static ushort Crc16(string payload)
+        {
+            ushort crc = 0xffff;
+            foreach (byte b in Encoding.UTF8.GetBytes(payload)) {
+                crc ^= (ushort)(b << 8);
+                for (int i = 0; i < 8; i++) crc = (ushort)((crc & 0x8000) != 0 ? (crc << 1) ^ 0x1021 : crc << 1);
+            }
+            return crc;
         }
         public static string NormalizeGameTag(string game)
         {
@@ -185,205 +197,497 @@ namespace OptScalerNR.Launcher
             var clean = new StringBuilder(note.Length);
             foreach (var ch in note.Trim())
             {
-                if (ch == ';' || ch == '|' || ch == '\r' || ch == '\n' || char.IsControl(ch)) continue;
+                if (ch == '\r' || ch == '\n' || char.IsControl(ch)) continue;
                 clean.Append(ch);
                 if (clean.Length >= 60) break;
             }
             return clean.ToString().Trim();
         }
+        // Fields are joined by '|' and the whole payload ends at ';CRC'. Encode
+        // delimiters inside game tags/notes so a note such as "warm|night" or
+        // "warm;night" cannot split the protocol or stop GUI extraction.
+        static string EscapeField(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return "";
+            return value.Replace("~", "~7E").Replace("|", "~7C").Replace(";", "~3B");
+        }
+        static string UnescapeField(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return "";
+            return value.Replace("~3B", ";").Replace("~7C", "|").Replace("~7E", "~");
+        }
         public static bool GameTagMatches(string tag, string executable)
         { return string.Equals(NormalizeGameTag(tag), NormalizeGameTag(executable), StringComparison.OrdinalIgnoreCase); }
-        static readonly CultureInfo Invariant = CultureInfo.InvariantCulture;
-        static readonly Regex Header = new Regex(@"^\s*\[([^\]]+)\]\s*(?:[;#].*)?$");
-        static readonly Regex Assignment = new Regex(@"^(\s*)([^=;#]+?)(\s*=\s*)([^;#]*)(.*)$");
-        static Key Find(string name)
-        { foreach (var key in Keys) if (string.Equals(key.IniKey, name, StringComparison.OrdinalIgnoreCase)) return key; return null; }
-        public static ushort Crc16(string payload)
+        static void ValidateValue(Field field, string value)
         {
-            ushort crc = 0xffff;
-            foreach (byte b in Encoding.UTF8.GetBytes(payload)) {
-                crc ^= (ushort)(b << 8);
-                for (int i = 0; i < 8; i++) crc = (ushort)((crc & 0x8000) != 0 ? (crc << 1) ^ 0x1021 : crc << 1);
-            }
-            return crc;
-        }
-        static decimal ParseIni(Key key, string text)
-        {
-            text = text.Trim();
-            if (string.Equals(text, "auto", StringComparison.OrdinalIgnoreCase)) return key.Default;
-            if (key.Kind == Kind.Bool) {
-                if (string.Equals(text, "true", StringComparison.OrdinalIgnoreCase) || text == "1") return 1;
-                if (string.Equals(text, "false", StringComparison.OrdinalIgnoreCase) || text == "0") return 0;
+            if (value == null) throw new CodeException("value");
+            value = value.Trim();
+            if (value.Length == 0) throw new CodeException("value");
+            if (string.Equals(value, "auto", StringComparison.OrdinalIgnoreCase)) return;
+            if (field.Kind == "str") return;
+            if (field.Kind == "bool") {
+                if (value == "0" || value == "1" ||
+                    string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(value, "false", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(value, "no", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(value, "on", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(value, "off", StringComparison.OrdinalIgnoreCase)) return;
                 throw new CodeException("value");
             }
-            decimal value;
-            if (!decimal.TryParse(text, NumberStyles.Float, Invariant, out value) ||
-                (key.Kind == Kind.Int && decimal.Truncate(value) != value)) throw new CodeException("value");
-            if (value < key.Min || value > key.Max) throw new CodeException("range");
-            return value;
+            if (field.Kind == "history") {
+                var h = value.ToLowerInvariant();
+                if (h == "16" || h == "fp16" || h == "half" || h == "rgba16f" ||
+                    h == "32" || h == "fp32" || h == "full" || h == "rgba32f") return;
+                throw new CodeException("value");
+            }
+            if (field.Kind == "processing") {
+                var p = value.ToLowerInvariant();
+                if (p == "renodx" || p == "wilsjo2") return;
+                throw new CodeException("value");
+            }
+            if (field.Kind == "hudfix") {
+                var h = value.ToLowerInvariant();
+                if (h == "off" || h == "auto" || h == "game" || h == "captured" || h == "estimated" ||
+                    h == "0" || h == "1" || h == "2" || h == "3" || h == "4") return;
+                throw new CodeException("value");
+            }
+            if (field.Kind == "placement") {
+                var p = value.ToLowerInvariant();
+                if (p == "before" || p == "after" || p == "present" ||
+                    p == "true" || p == "false" || p == "0" || p == "1") return;
+                throw new CodeException("value");
+            }
+            decimal parsed;
+            if (!decimal.TryParse(value, NumberStyles.Float, Invariant, out parsed)) throw new CodeException("value");
         }
-        static SortedDictionary<int, decimal> ReadValues(byte[] ini)
+        static bool IsLayerSection(string name, out int layer)
         {
-            var document = Document.Read(ini);
-            var values = new SortedDictionary<int, decimal>();
-            bool active = false;
-            foreach (Match line in Regex.Matches(document.Text, @"[^\r\n]*(?:\r\n|\r|\n|$)")) {
-                string text = line.Value.TrimEnd('\r', '\n');
+            layer = 0;
+            if (name.Length < 6 || !name.StartsWith("Layer", StringComparison.OrdinalIgnoreCase)) return false;
+            if (!int.TryParse(name.Substring(5), NumberStyles.None, Invariant, out layer) || layer <= 0) return false;
+            return true;
+        }
+        static string NormalizeValue(string value) { return (value ?? "").Trim(); }
+        static SortedDictionary<string, string> ReadStyle(byte[] ini)
+        {
+            var doc = ReadDocument(ini);
+            var values = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            string section = null;
+            foreach (var raw in SplitLines(doc.Text))
+            {
+                string text = raw.TrimEnd('\r', '\n');
                 var header = Header.Match(text);
-                if (header.Success) { active = string.Equals(header.Groups[1].Value.Trim(), "DlssNr", StringComparison.OrdinalIgnoreCase); continue; }
-                if (!active) continue;
+                if (header.Success) {
+                    section = header.Groups[1].Value.Trim();
+                    int resetLayer;
+                    if (IsLayerSection(section, out resetLayer)) {
+                        string prefix = "L" + resetLayer.ToString(Invariant) + ":";
+                        var stale = new List<string>();
+                        foreach (var existing in values.Keys) if (existing.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) stale.Add(existing);
+                        foreach (var existing in stale) values.Remove(existing);
+                    }
+                    continue;
+                }
+                if (section == null) continue;
                 var assignment = Assignment.Match(text);
                 if (!assignment.Success) continue;
-                var key = Find(assignment.Groups[2].Value.Trim());
-                if (key != null) values[key.Index] = ParseIni(key, assignment.Groups[4].Value);
+                string key = assignment.Groups[2].Value.Trim(), value = assignment.Groups[4].Value.Trim();
+                int layer;
+                if (IsLayerSection(section, out layer)) {
+                    if (FindField(LayerFields, "Layer", key) == null) continue;
+                    values["L" + layer + ":" + key] = value;
+                } else {
+                    if (FindField(GlobalFields, section, key) == null) continue;
+                    values["G:" + section.ToUpperInvariant() + ":" + key] = value;
+                }
             }
             return values;
         }
         public static string Encode(byte[] ini, string game = null, string note = null)
-        { return EncodeValues(ReadValues(ini), NormalizeGameTag(game), SanitizeNote(note)); }
-        static string EncodeValues(IDictionary<int, decimal> values, string game, string note = null)
         {
-            var pairs = new List<string>();
-            foreach (var key in Keys) {
-                decimal value;
-                if (!values.TryGetValue(key.Index, out value) || value == key.Default) continue;
-                decimal raw = key.Kind == Kind.Float ? decimal.Round(value * 100, 0, MidpointRounding.AwayFromZero) : value;
-                // Quantized defaults must stay sparse and round-trip stable.
-                if (key.Kind == Kind.Float && raw / 100 == key.Default) continue;
-                pairs.Add(key.Index.ToString(Invariant) + "=" + raw.ToString("0", Invariant));
-            }
-            string payload = string.Join(",", pairs.ToArray());
-            if (!string.IsNullOrEmpty(note))
+            var doc = ReadDocument(ini);
+            // Consumer INI semantics: the last assignment wins. Keep one effective
+            // value per section/key (and per layer/key), preserving first-seen order
+            // for a stable export; duplicate sections merge the same way.
+            var globals = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+            var globalOrder = new List<string>();
+            var layerValues = new SortedDictionary<int, Dictionary<string, string[]>>();
+            var layerOrder = new SortedDictionary<int, List<string>>();
+            string section = null;
+            foreach (var raw in SplitLines(doc.Text))
             {
-                // MZ3 carries an author note after the game tag; the CRC covers the whole tagged payload
-                string noted = payload + "|" + game + "|" + note;
-                return "MZ3:" + noted + ";" + Crc16(noted).ToString("X4", Invariant);
-            }
-            if (game.Length == 0) return "MZ1:" + payload + ";" + Crc16(payload).ToString("X4", Invariant);
-            string tagged = payload + "|" + game;
-            return "MZ2:" + tagged + ";" + Crc16(tagged).ToString("X4", Invariant);
-        }
-        public static DecodedCode Decode(string code)
-        {
-            if (code == null || (!code.StartsWith("MZ1:", StringComparison.Ordinal) && !code.StartsWith("MZ2:", StringComparison.Ordinal) &&
-                                 !code.StartsWith("MZ3:", StringComparison.Ordinal))) throw new CodeException("prefix");
-            bool tagged = code.StartsWith("MZ2:", StringComparison.Ordinal);
-            bool noted = code.StartsWith("MZ3:", StringComparison.Ordinal);
-            int end = code.LastIndexOf(';');
-            ushort crc;
-            if (end < 4 || code.Length != end + 5 || !ushort.TryParse(code.Substring(end + 1), NumberStyles.AllowHexSpecifier, Invariant, out crc)) throw new CodeException("format");
-            string payload = code.Substring(4, end - 4);
-            if (Crc16(payload) != crc) throw new CodeException("crc");
-            string game = "";
-            string note = "";
-            if (noted) {
-                // pairs|game|note — the game segment may be empty, the note may not
-                int first = payload.IndexOf('|');
-                int second = first < 0 ? -1 : payload.IndexOf('|', first + 1);
-                if (first < 0 || second < 0 || payload.IndexOf('|', second + 1) >= 0) throw new CodeException("format");
-                note = payload.Substring(second + 1);
-                game = payload.Substring(first + 1, second - first - 1);
-                payload = payload.Substring(0, first);
-                if (note.Length == 0) throw new CodeException("format");
-            }
-            else if (tagged) {
-                int separator = payload.IndexOf('|');
-                if (separator < 0 || separator == payload.Length - 1 || payload.IndexOf('|', separator + 1) >= 0) throw new CodeException("format");
-                game = payload.Substring(separator + 1);
-                payload = payload.Substring(0, separator);
-            }
-            var result = new SortedDictionary<int, decimal>();
-            if (payload.Length == 0) return new DecodedCode(result, game, note);
-            foreach (string pair in payload.Split(',')) {
-                var match = Regex.Match(pair, @"^(\d+)=(-?\d+)$");
-                int index; decimal raw;
-                if (!match.Success || !int.TryParse(match.Groups[1].Value, NumberStyles.None, Invariant, out index) ||
-                    !decimal.TryParse(match.Groups[2].Value, NumberStyles.AllowLeadingSign, Invariant, out raw)) throw new CodeException("format");
-                if (index < 0 || index >= Keys.Count) throw new CodeException("index");
-                if (result.ContainsKey(index)) throw new CodeException("duplicate");
-                var key = Keys[index];
-                decimal value = key.Kind == Kind.Float ? raw / 100 : raw;
-                decimal tolerance = key.Kind == Kind.Float ? .01m : 0;
-                if (value < key.Min - tolerance || value > key.Max + tolerance) throw new CodeException("range");
-                value = Math.Max(key.Min, Math.Min(key.Max, value));
-                result.Add(index, value);
-            }
-            return new DecodedCode(result, game, note);
-        }
-        public static string Summary(DecodedCode code, bool chinese)
-        {
-            var values = code.Values;
-            decimal style = 0, reno = 0; int count = 0;
-            foreach (var key in Keys) {
-                decimal value; if (!values.TryGetValue(key.Index, out value)) value = key.Default;
-                if (value != key.Default) count++;
-                if (key.IniKey == "MochizukiStyle") style = value;
-                if (key.IniKey == "MochizukiRenoDX") reno = value;
-            }
-            string[] styles = chinese ? new[] { "标准", "自然", "电影感" } : new[] { "Standard", "Natural", "Cinematic" };
-            return "Mochizuki · " + (chinese ? "风格 " : "Style ") + styles[(int)style] + " · RenoDX " +
-                (chinese ? (reno == 1 ? "开" : "关") : (reno == 1 ? "On" : "Off")) + " · " +
-                (chinese ? "修改 " + count + " 项" : count + " non-default settings") +
-                (code.GameTag.Length == 0 ? "" : (chinese ? " · 来自 " : " · from ") + code.GameTag);
-        }
-        public static int NonDefaultCount(DecodedCode code)
-        {
-            int count = 0;
-            foreach (var key in Keys) {
-                decimal value;
-                if (code.Values.TryGetValue(key.Index, out value) && value != key.Default) count++;
-            }
-            return count;
-        }
-        public static int DifferenceCount(byte[] ini, string code)
-        {
-            var before = ReadValues(ini); var after = Decode(code).Values; int count = 0;
-            foreach (var key in Keys) {
-                decimal a, b;
-                if (!before.TryGetValue(key.Index, out a)) a = key.Default;
-                if (!after.TryGetValue(key.Index, out b)) b = key.Default;
-                if (a != b) count++;
-            }
-            return count;
-        }
-        static string Native(Key key, decimal value)
-        { return key.Kind == Kind.Bool ? (value == 1 ? "true" : "false") : value.ToString(key.Kind == Kind.Float ? "0.######" : "0", Invariant); }
-        public static byte[] Apply(byte[] ini, string code)
-        {
-            var values = Decode(code).Values;
-            var document = Document.Read(ini);
-            string newline = document.Text.Contains("\r\n") ? "\r\n" : document.Text.Contains("\n") ? "\n" : document.Text.Contains("\r") ? "\r" : Environment.NewLine;
-            var output = new StringBuilder(); bool active = false, inserted = false;
-            foreach (Match line in Regex.Matches(document.Text, @"[^\r\n]*(?:\r\n|\r|\n|$)")) {
-                string full = line.Value;
-                if (full.Length == 0) continue;
-                string text = full.TrimEnd('\r', '\n');
-                string ending = full.Substring(text.Length);
+                string text = raw.TrimEnd('\r', '\n');
                 var header = Header.Match(text);
                 if (header.Success) {
-                    active = string.Equals(header.Groups[1].Value.Trim(), "DlssNr", StringComparison.OrdinalIgnoreCase);
-                    output.Append(full);
-                    if (active && !inserted) {
-                        if (ending.Length == 0) output.Append(newline);
-                        foreach (var key in Keys) { decimal value; if (values.TryGetValue(key.Index, out value) && value != key.Default) output.Append(key.IniKey).Append('=').Append(Native(key, value)).Append(ending.Length == 0 ? newline : ending); }
-                        inserted = true;
+                    section = header.Groups[1].Value.Trim();
+                    int resetLayer;
+                    if (IsLayerSection(section, out resetLayer)) {
+                        // read_chain keeps the last whole [LayerN] section: a later
+                        // header replaces the earlier one, including omitted keys.
+                        layerValues.Remove(resetLayer);
+                        layerOrder.Remove(resetLayer);
                     }
                     continue;
                 }
-                var assignment = active ? Assignment.Match(text) : Match.Empty;
-                if (assignment.Success && Find(assignment.Groups[2].Value.Trim()) != null) {
-                    // Neutralize, rather than delete: preserve the entire original line, including comments.
-                    output.Append(';').Append(full);
-                } else output.Append(full);
+                if (section == null) continue;
+                var assignment = Assignment.Match(text);
+                if (!assignment.Success) continue;
+                string key = assignment.Groups[2].Value.Trim(), value = assignment.Groups[4].Value.Trim();
+                int layer;
+                if (IsLayerSection(section, out layer)) {
+                    if (FindField(LayerFields, "Layer", key) == null) continue;
+                    Dictionary<string, string[]> values;
+                    if (!layerValues.TryGetValue(layer, out values)) {
+                        layerValues[layer] = values = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+                        layerOrder[layer] = new List<string>();
+                    }
+                    string id = key.ToUpperInvariant();
+                    if (!values.ContainsKey(id)) layerOrder[layer].Add(id);
+                    values[id] = new[] { key, value };
+                } else {
+                    if (FindField(GlobalFields, section, key) == null) continue;
+                    string id = section.ToUpperInvariant() + "\t" + key.ToUpperInvariant();
+                    if (!globals.ContainsKey(id)) globalOrder.Add(id);
+                    globals[id] = new[] { section, key, value };
+                }
             }
-            if (!inserted && values.Count > 0) {
-                if (output.Length > 0 && output[output.Length - 1] != '\n' && output[output.Length - 1] != '\r') output.Append(newline);
-                output.Append("[DlssNr]").Append(newline);
-                foreach (var key in Keys) { decimal value; if (values.TryGetValue(key.Index, out value) && value != key.Default) output.Append(key.IniKey).Append('=').Append(Native(key, value)).Append(newline); }
+            var lines = new List<string>();
+            foreach (var id in globalOrder) {
+                var e = globals[id];
+                lines.Add("G\t" + e[0] + "\t" + e[1] + "\t" + e[2]);
             }
-            return document.Bytes(output.ToString());
+            foreach (var layer in layerValues) {
+                foreach (var id in layerOrder[layer.Key]) {
+                    var e = layer.Value[id];
+                    lines.Add("L\t" + layer.Key.ToString(Invariant) + "\t" + e[0] + "\t" + e[1]);
+                }
+            }
+            string payload = "1|" + EscapeField(NormalizeGameTag(game)) + "|" + EscapeField(SanitizeNote(note)) + "|" +
+                             Convert.ToBase64String(Encoding.UTF8.GetBytes(string.Join("\n", lines.ToArray())));
+            return "MZ4:" + payload + ";" + Crc16(payload).ToString("X4", Invariant);
         }
-        // Mirror IniProfiles.Document: strict UTF-8 or BOM-marked UTF-16, preserving the preamble.
+        public static DecodedCode Decode(string code)
+        {
+            if (code == null) throw new CodeException("prefix");
+            if (code.StartsWith("MZ1:", StringComparison.Ordinal) || code.StartsWith("MZ2:", StringComparison.Ordinal) ||
+                code.StartsWith("MZ3:", StringComparison.Ordinal)) throw new CodeException("old");
+            if (!code.StartsWith("MZ4:", StringComparison.Ordinal)) throw new CodeException("prefix");
+            return DecodeBase64(code);
+        }
+        static DecodedCode DecodeBase64(string code)
+        {
+            if (code == null) throw new CodeException("prefix");
+            if (code.StartsWith("MZ1:", StringComparison.Ordinal) || code.StartsWith("MZ2:", StringComparison.Ordinal) ||
+                code.StartsWith("MZ3:", StringComparison.Ordinal)) throw new CodeException("old");
+            if (!code.StartsWith("MZ4:", StringComparison.Ordinal)) throw new CodeException("prefix");
+            int end = code.LastIndexOf(';');
+            ushort crc;
+            if (end < 4 || code.Length != end + 5 || !ushort.TryParse(code.Substring(end + 1), NumberStyles.AllowHexSpecifier, Invariant, out crc))
+                throw new CodeException("format");
+            string payload = code.Substring(4, end - 4);
+            if (Crc16(payload) != crc) throw new CodeException("crc");
+            string[] parts = payload.Split(new[] { '|' }, 4);
+            if (parts.Length != 4 || parts[0] != "1") throw new CodeException("version");
+            var decoded = new DecodedCode { GameTag = UnescapeField(parts[1]), Note = UnescapeField(parts[2]) };
+            byte[] bytes;
+            try { bytes = Convert.FromBase64String(parts[3]); }
+            catch { throw new CodeException("format"); }
+            string text;
+            try { text = new UTF8Encoding(false, true).GetString(bytes); }
+            catch { throw new CodeException("format"); }
+            if (text.Length == 0) return decoded;
+            foreach (var line in text.Split('\n'))
+            {
+                if (line.Length == 0) continue;
+                var cols = line.Split('\t');
+                if (cols.Length != 4) throw new CodeException("format");
+                var entry = new Entry { Value = cols[3] };
+                if (cols[0] == "G") {
+                    entry.Layer = 0; entry.Section = cols[1]; entry.Key = cols[2];
+                    var field = FindField(GlobalFields, entry.Section, entry.Key);
+                    if (field == null) throw new CodeException("unknown");
+                    ValidateValue(field, entry.Value);
+                } else if (cols[0] == "L") {
+                    int layer;
+                    if (!int.TryParse(cols[1], NumberStyles.None, Invariant, out layer) || layer <= 0) throw new CodeException("layer");
+                    entry.Layer = layer; entry.Section = "Layer" + layer.ToString(Invariant); entry.Key = cols[2];
+                    var field = FindField(LayerFields, "Layer", entry.Key);
+                    if (field == null) throw new CodeException("unknown");
+                    ValidateValue(field, entry.Value);
+                    decoded.LayerNumbers.Add(layer);
+                } else throw new CodeException("format");
+                decoded.Entries.Add(entry);
+            }
+            return decoded;
+        }
+        static string EntryValue(DecodedCode code, int layer, string key)
+        {
+            foreach (var entry in code.Entries)
+                if (entry.Layer == layer && string.Equals(entry.Key, key, StringComparison.OrdinalIgnoreCase))
+                    return entry.Value;
+            return "";
+        }
+        static readonly Regex CodeInText = new Regex(@"MZ[1-4]:[^\r\n]*?;[0-9A-Fa-f]{4}(?![0-9A-Fa-f])", RegexOptions.Compiled);
+        public static string ExtractCode(string text)
+        {
+            if (text == null) return null;
+            var match = CodeInText.Match(text);
+            return match.Success ? match.Value : null;
+        }
+        static bool IsTrue(string value)
+        {
+            string v = (value ?? "").Trim();
+            return v == "1" || string.Equals(v, "true", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(v, "yes", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(v, "on", StringComparison.OrdinalIgnoreCase);
+        }
+        static bool LayerIsEnabled(DecodedCode code, int layer)
+        {
+            string value = EntryValue(code, layer, "Enabled");
+            if (value.Length == 0) return true;
+            value = value.Trim();
+            return !(value == "0" || string.Equals(value, "false", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(value, "no", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(value, "off", StringComparison.OrdinalIgnoreCase));
+        }
+        public static string Summary(DecodedCode code, bool chinese)
+        {
+            bool hasLayers = code.LayerCount > 0;
+            var active = new List<int>();
+            if (hasLayers) {
+                if (code.LayersEnabled) {
+                    foreach (var layer in code.LayerNumbers) if (LayerIsEnabled(code, layer)) active.Add(layer);
+                } else if (LayerIsEnabled(code, code.FirstLayer)) {
+                    active.Add(code.FirstLayer);
+                }
+            }
+            int activeLayers = active.Count;
+            var text = new StringBuilder();
+            if (hasLayers && activeLayers == 0) {
+                text.Append(chinese ? "ASI 画面 · 0 个图层 · 不运行" : "ASI look · 0 layers · not running");
+                if (code.GameTag.Length > 0) text.Append(chinese ? " · 来自 " : " · from ").Append(code.GameTag);
+                return text.ToString();
+            }
+            int effectiveLayer = activeLayers > 0 ? active[0] : 0;
+            string model = hasLayers
+                ? EntryValue(code, effectiveLayer, "Network")
+                : code.Network;
+            if (model.Length == 0) model = code.Network;
+            if (model.Length == 0) model = chinese ? "未指定网络" : "no network";
+            text.Append(chinese ? "ASI 画面" : "ASI look").Append(" · ").Append(model)
+                .Append(" · ").Append(chinese ? activeLayers + " 个图层" : activeLayers + " layer(s)");
+            if (code.GameTag.Length > 0) text.Append(chinese ? " · 来自 " : " · from ").Append(code.GameTag);
+            if (hasLayers) {
+                string processing = EntryValue(code, effectiveLayer, "Processing");
+                string placement = EntryValue(code, effectiveLayer, "Placement");
+                if (processing.Length > 0 || placement.Length > 0) {
+                    text.Append(" · ").Append(chinese ? "运行位置 " : "placement ")
+                        .Append(chinese ? PlacementText(placement) : placement)
+                        .Append(chinese ? " · 处理 " : " · process ").Append(processing);
+                }
+                if (code.LayerCount > activeLayers)
+                    text.Append(chinese ? " · 文件另有 " + (code.LayerCount - activeLayers) + " 层未启用"
+                                        : " · " + (code.LayerCount - activeLayers) + " more layer(s) disabled");
+                else if (activeLayers > 1)
+                    text.Append(chinese ? " · 等 " + activeLayers + " 层" : " · " + activeLayers + " layers total");
+            } else {
+                string hook = EntryValue(code, 0, "NRHookPoint");
+                string runBefore = EntryValue(code, 0, "RunBeforeSR");
+                if (hook.Length > 0) text.Append(chinese ? " · RenoDX 挂钩点 " : " · RenoDX hook ").Append(hook);
+                if (runBefore.Length > 0) text.Append(" · ").Append(chinese ? "wilsjo2 超分前 " : "wilsjo2 before SR ").Append(runBefore);
+            }
+            return text.ToString();
+        }
+        static string PlacementText(string placement)
+        {
+            string v = (placement ?? "").Trim().ToLowerInvariant();
+            if (v == "before") return "超分前";
+            if (v == "after") return "超分后";
+            if (v == "present") return "最佳效果";
+            return placement;
+        }
+        public static List<Entry> ChangedEntries(byte[] ini, DecodedCode code)
+        {
+            var current = ReadStyle(ini);
+            var target = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var changed = new List<Entry>();
+            foreach (var entry in code.Entries) {
+                string id = entry.Layer == 0
+                    ? "G:" + entry.Section.ToUpperInvariant() + ":" + entry.Key
+                    : "L" + entry.Layer.ToString(Invariant) + ":" + entry.Key;
+                target.Add(id);
+                string value;
+                if (!current.TryGetValue(id, out value)) {
+                    changed.Add(entry);
+                } else if (NormalizeValue(value) != NormalizeValue(entry.Value)) {
+                    entry.OldValue = value;
+                    changed.Add(entry);
+                }
+            }
+            foreach (var pair in current) {
+                if (target.Contains(pair.Key)) continue;
+                if (pair.Key.StartsWith("G:", StringComparison.Ordinal)) {
+                    var parts = pair.Key.Split(new[] { ':' }, 3);
+                    if (parts.Length != 3) continue;
+                    changed.Add(new Entry { Section = parts[1], Key = parts[2], Value = pair.Value, Reset = true });
+                } else if (pair.Key.StartsWith("L", StringComparison.Ordinal)) {
+                    int colon = pair.Key.IndexOf(':');
+                    int layer;
+                    if (colon <= 1 || !int.TryParse(pair.Key.Substring(1, colon - 1), NumberStyles.None, Invariant, out layer)) continue;
+                    changed.Add(new Entry { Layer = layer, Section = "Layer", Key = pair.Key.Substring(colon + 1), Value = pair.Value, Reset = true });
+                }
+            }
+            return changed;
+        }
+        public static List<Entry> LimitEntries(IList<Entry> entries, int limit)
+        {
+            var result = new List<Entry>();
+            if (entries == null || limit <= 0) return result;
+            int count = Math.Min(limit, entries.Count);
+            for (int i = 0; i < count; ++i) result.Add(entries[i]);
+            return result;
+        }
+        public static int NonDefaultCount(DecodedCode code) { return code.Entries.Count; }
+        public static int DifferenceCount(byte[] ini, string code)
+        {
+            var before = ReadStyle(ini);
+            var after = Decode(code);
+            var target = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var entry in after.Entries)
+            {
+                string key = entry.Layer == 0
+                    ? "G:" + entry.Section.ToUpperInvariant() + ":" + entry.Key
+                    : "L" + entry.Layer.ToString(Invariant) + ":" + entry.Key;
+                target[key] = entry.Value;
+            }
+            var all = new HashSet<string>(before.Keys, StringComparer.OrdinalIgnoreCase);
+            all.UnionWith(target.Keys);
+            int count = 0;
+            foreach (var key in all)
+            {
+                string a, b;
+                if (!before.TryGetValue(key, out a)) a = "";
+                if (!target.TryGetValue(key, out b)) b = "";
+                if (NormalizeValue(a) != NormalizeValue(b)) count++;
+            }
+            return count;
+        }
+        static void ValidateCodeEntries(DecodedCode code) { /* Decode already validates. */ }
+        public static byte[] Apply(byte[] ini, string code)
+        {
+            var decoded = Decode(code);
+            var bySection = new Dictionary<string, List<Entry>>(StringComparer.OrdinalIgnoreCase);
+            var layers = new SortedDictionary<int, List<Entry>>();
+            foreach (var entry in decoded.Entries)
+            {
+                if (entry.Layer == 0) {
+                    List<Entry> list;
+                    if (!bySection.TryGetValue(entry.Section, out list)) bySection[entry.Section] = list = new List<Entry>();
+                    list.Add(entry);
+                } else {
+                    List<Entry> list;
+                    if (!layers.TryGetValue(entry.Layer, out list)) layers[entry.Layer] = list = new List<Entry>();
+                    list.Add(entry);
+                }
+            }
+            var doc = ReadDocument(ini);
+            string nl = Newline(doc.Text);
+            var output = new StringBuilder();
+            // Local layer keys (not part of the style schema) and comments survive a
+            // replacement. A retired layer keeps them in its own number, disabled.
+            var layerLocals = new SortedDictionary<int, List<string>>();
+            string section = null;
+            bool inLayer = false;
+            int layerNo = 0;
+            foreach (var raw in SplitLines(doc.Text))
+            {
+                string text = raw.TrimEnd('\r', '\n');
+                string ending = raw.Substring(text.Length);
+                var header = Header.Match(text);
+                if (header.Success)
+                {
+                    section = header.Groups[1].Value.Trim();
+                    if (IsLayerSection(section, out layerNo))
+                    {
+                        inLayer = true;
+                        // The last whole section is the effective layer; do not merge
+                        // local keys/comments from an earlier duplicate.
+                        layerLocals[layerNo] = new List<string>();
+                        continue;
+                    }
+                    inLayer = false;
+                    output.Append(text).Append(ending.Length > 0 ? ending : nl);
+                    if (bySection.ContainsKey(section)) {
+                        foreach (var entry in bySection[section])
+                            output.Append(entry.Key).Append('=').Append(entry.Value).Append(nl);
+                        bySection.Remove(section);
+                    }
+                    continue;
+                }
+                if (inLayer)
+                {
+                    var assignment = Assignment.Match(text);
+                    if (assignment.Success) {
+                        string key = assignment.Groups[2].Value.Trim();
+                        // Drop old style values; keep local non-style keys (e.g. ToggleKey) and comments.
+                        if (FindField(LayerFields, "Layer", key) == null) layerLocals[layerNo].Add(raw);
+                    } else layerLocals[layerNo].Add(raw);
+                    continue;
+                }
+                var globalAssignment = section == null ? Match.Empty : Assignment.Match(text);
+                if (globalAssignment.Success) {
+                    string key = globalAssignment.Groups[2].Value.Trim();
+                    if (FindField(GlobalFields, section, key) != null) {
+                        output.Append(';').Append(text).Append(ending.Length > 0 ? ending : nl);
+                        continue;
+                    }
+                }
+                output.Append(raw);
+            }
+            if (output.Length > 0 && output[output.Length - 1] != '\n' && output[output.Length - 1] != '\r') output.Append(nl);
+            foreach (var pair in bySection)
+            {
+                output.Append('[').Append(pair.Key).Append(']').Append(nl);
+                foreach (var entry in pair.Value) output.Append(entry.Key).Append('=').Append(entry.Value).Append(nl);
+            }
+            var allLayers = new SortedSet<int>(layerLocals.Keys);
+            allLayers.UnionWith(layers.Keys);
+            foreach (var number in allLayers)
+            {
+                bool hasNew = layers.ContainsKey(number);
+                List<string> locals;
+                if (!layerLocals.TryGetValue(number, out locals)) locals = new List<string>();
+                if (!hasNew)
+                {
+                    if (locals.Count == 0) continue;
+                    // A retired layer must not stay active: read_chain treats any
+                    // [LayerN] as a layer, which would hide a global import and
+                    // could bind its ToggleKey. Keep the local content readable
+                    // but commented out.
+                    output.Append("; [Layer").Append(number.ToString(Invariant))
+                        .Append("] retired; local settings kept (inactive)").Append(nl);
+                    foreach (var raw in locals)
+                    {
+                        output.Append("; ").Append(raw);
+                        if (raw.Length == 0 || (raw[raw.Length - 1] != '\n' && raw[raw.Length - 1] != '\r')) output.Append(nl);
+                    }
+                    continue;
+                }
+                output.Append("[Layer").Append(number.ToString(Invariant)).Append(']').Append(nl);
+                foreach (var raw in locals)
+                {
+                    output.Append(raw);
+                    if (raw.Length == 0 || (raw[raw.Length - 1] != '\n' && raw[raw.Length - 1] != '\r')) output.Append(nl);
+                }
+                foreach (var entry in layers[number]) output.Append(entry.Key).Append('=').Append(entry.Value).Append(nl);
+            }
+            return doc.Bytes(output.ToString());
+        }
+        static string Newline(string text)
+        { return text.Contains("\r\n") ? "\r\n" : text.Contains("\n") ? "\n" : text.Contains("\r") ? "\r" : Environment.NewLine; }
+        static IEnumerable<string> SplitLines(string text)
+        { foreach (Match m in Regex.Matches(text, @"[^\r\n]*(?:\r\n|\r|\n|$)")) { if (m.Value.Length == 0) continue; yield return m.Value; } }
         sealed class Document
         {
             public string Text; Encoding encoding; byte[] preamble;
@@ -399,9 +703,10 @@ namespace OptScalerNR.Launcher
             }
             public byte[] Bytes(string text)
             {
-                byte[] content = encoding.GetBytes(text), result = new byte[preamble.Length + encoding.GetByteCount(text)];
+                byte[] content = encoding.GetBytes(text), result = new byte[preamble.Length + content.Length];
                 Buffer.BlockCopy(preamble, 0, result, 0, preamble.Length); Buffer.BlockCopy(content, 0, result, preamble.Length, content.Length); return result;
             }
         }
+        static Document ReadDocument(byte[] bytes) { return Document.Read(bytes); }
     }
 }

@@ -328,11 +328,12 @@ if ($req.action -in @('repairXess','restoreXess','keepXess')) {
     Fail-Result 'success' $null 0
 }
 if ($pkg) {
-    $pythonHelper = Join-Path $pkg 'model-tools/mochizuki-python.ps1'
-    if (-not (Test-Path $pythonHelper)) { $pythonHelper = Join-Path $pkg 'mochizuki-python.ps1' }
-    if (-not (Test-Path $pythonHelper)) { $pythonHelper = Join-Path $here 'mochizuki-python.ps1' }
-    $hasModel = Test-Path -LiteralPath (Join-Path $pkg 'dlssnr-amd\dlssnr.bin')
+    $hasAsi = Test-Path -LiteralPath (Join-Path $pkg 'OptiScaler/plugins/dlssnr-amd.asi')
+    $hasExtract = Test-Path -LiteralPath (Join-Path $pkg 'model-tools/dlssnr_extract_model.exe')
+    $hasModel = (Test-Path -LiteralPath (Join-Path $pkg 'dlssnr-amd/dlssnr.bin')) -or
+        (Test-Path -LiteralPath (Join-Path $pkg 'dlssnr-amd/dlssnr-small.bin'))
     $hasNv = Test-Path -LiteralPath (Join-Path $pkg 'nvngx_dlssnr.dll')
+    $script:notes += ('Mochizuki NR ASI present: {0}; extractor present: {1}.' -f $hasAsi, $hasExtract)
     $script:notes += ('Package model file present: {0}. That is not a GPU compatibility test.' -f $hasModel)
     $script:notes += ('NVIDIA DLL for optional extraction present: {0}.' -f $hasNv)
 }
@@ -432,23 +433,22 @@ if ($req.action -ne 'uninstall') {
     }
     if ($mochiSelected) {
         $modelChoice = if ($dec) { [string]$dec.mochizukiModels } else { '' }
-        if (-not $modelChoice) {
-            # Same rule as lmxxf: offer only the model files this package carries.
-            $mochiDir = Join-Path $script:packageRoot 'dlssnr-amd'
-            $hasMochiOriginal = Test-Path -LiteralPath (Join-Path $mochiDir 'dlssnr.bin') -PathType Leaf
-            $hasMochiSmall = Test-Path -LiteralPath (Join-Path $mochiDir 'dlssnr-small.bin') -PathType Leaf
-            $mochiOptions = @()
-            if ($hasMochiOriginal -and $hasMochiSmall) { $mochiOptions = @('both', 'small', 'original') }
-            elseif ($hasMochiSmall) { $mochiOptions = @('small') }
-            elseif ($hasMochiOriginal) { $mochiOptions = @('original') }
-            if ($mochiOptions.Count -eq 0) { Fail-Result 'failed' 'Package has no Mochizuki models under dlssnr-amd.' 1 }
+        $networkChoice = if ($dec -and $dec.mochizukiNetworks) { @($dec.mochizukiNetworks | ForEach-Object { [string]$_ }) } else { @() }
+        $activeChoice = if ($dec) { [string]$dec.mochizukiActiveModel } else { '' }
+        if (@($networkChoice | Where-Object { $_ -notin @('small','experimental','original','int4') }).Count -gt 0) {
+            Fail-Result 'failed' 'Invalid Mochizuki network selection.' 1
+        }
+        if (-not $networkChoice -and -not $modelChoice) {
             $script:needed += @{
-                id = 'mochizukiModels'
-                prompt = 'Select the Mochizuki model set to install (only the sets present in this package are listed).'
-                options = $mochiOptions
+                id = 'mochizukiNetworks'
+                prompt = 'Select the Mochizuki networks to install: small, experimental, original, int4 (or all).'
+                options = @('small','experimental','original','int4')
             }
-        } elseif ($modelChoice -notin @('both','small','original')) {
+        } elseif ($modelChoice -and $modelChoice -notin @('both','all','small','experimental','original','int4')) {
             Fail-Result 'failed' 'Invalid Mochizuki models choice.' 1
+        }
+        if ($activeChoice -and $activeChoice -notin @('small','experimental','original','int4')) {
+            Fail-Result 'failed' 'Invalid Mochizuki active network.' 1
         }
     }
     if ($probe.conflicts.Count -gt 0) {
@@ -490,7 +490,7 @@ if ($req.action -eq 'uninstall') {
         language = if ($req.language -eq 'zh') { 'zh' } else { 'en' }
     }
     if ($dec) {
-        foreach ($name in @('existingInstall','existingIni','mochizukiModels','lmxxfModels','shortFileContinue','optiPatcher','foreignProxy','modelSourceDll')) {
+        foreach ($name in @('existingInstall','existingIni','mochizukiModels','mochizukiNetworks','mochizukiActiveModel','lmxxfModels','shortFileContinue','optiPatcher','foreignProxy','modelSourceDll')) {
             if ($dec.PSObject.Properties[$name] -and $null -ne $dec.$name) {
                 if ($name -eq 'foreignProxy') { $payload[$name] = ConvertTo-ForeignProxyMap $dec.$name }
                 else { $payload[$name] = $dec.$name }

@@ -1406,3 +1406,48 @@ lmxxf 额外多槽吞吐回落；更少的 16/8 段没有进一步收益，因�
   无限重建循环（`26c90d07`，已由 `cfc5d812` 回退）。
 - 调查中顺带修掉：`normals bind` 每帧两条日志（游戏在两个 normals 资源间交替）改为按不同
   绑定去重（`b98045f4`）；正式包文件日志默认开启（`5be93e33`）。
+
+## 2026-11-02: Mochizuki NR 由官方 dlssnr-amd.asi 接管，内置 runtime 退出安装
+
+- 决定: NR 所有权以**实际加载的模块**为准。`dlssnr-amd.asi` 加载后，宿主的 NR 执行、
+  NR 页控件、NR 热键（含用户改绑键与 Ctrl+F11）、曝光扫描与后台构建全部停用；
+  RR/超分/FG/Insert 保留，`DlssNrEnabled` 与 `NrBackend` 偏好不改写。未加载 ASI 时
+  沿旧行为；会话内一旦接管不再回切，禁用插件后重启恢复。
+- 决定: 安装/打包不再构建或要求 `MochizukiNrRuntime.dll`。包内改为携带官方 0.0.8.2
+  `dlssnr-amd.asi`、同版 `dlssnr-amd/` 资源、probe 与官方模型工具；模型由官方
+  `dlssnr_extract_model.exe`/`dlssnr-int4-weights.exe` 生成，只检查文件名/布局/提取成功，
+  不设 hash 或版本白名单。安装保留宿主 `dxgi.dll` 与用户 `OptiScaler.ini`，只启用
+  `Plugins.LoadAsiPlugins`；仅当 FG 键仍为默认 End 时改为 -1，自定义键保留。
+- 所有权: ASI 与资源逐文件记录于 `dlssnr-amd-install.txt`，升级/卸载只处理该清单；
+  旧内置 runtime 的文件仅按 `mochizuki-owned.txt` 清理，模型与 `dlssnr-amd.ini` 保留。
+- 位置: `dlssnr/AsiTakeover.{h,cpp}`、`dlssnr/DlssNr_Menu.cpp`、`menu/menu_common.cpp`、
+  `tools/install-amd-presr.ps1`、`tools/uninstall-amd-presr.ps1`、
+  `tools/release/PACKAGE_RELEASE.ps1`、`third_party/mochizuki-asi/`。
+
+## 2026-11-03: Mochizuki 模型准备只保留官方工具，Python 提取退出
+
+- Mochi ASI 安装与独立模型准备只调用 `dlssnr_extract_model.exe` /
+  `dlssnr-int4-weights.exe`；GUI、日志和文档不再提示安装 Python。
+- `lmxxf-model.py --dll` 的共享提取已迁到同一官方 extractor；lmxxf 转换与校验不变。
+  安装器的模型包校验只保留 `lmxxf-small.ps1` 内嵌原生验证，删除 Python 后备。
+- 删除旧 `mochizuki-model.py`、`mochizuki-python.ps1`、`mochizuki-int4.ps1` 及旧模型
+  提取测试入口。它们不属于 lmxxf 必需实现，也不再是 Mochi 备用依赖。
+
+
+## 2026-11-03: Mochizuki 风格码改为 MZ4（ASI dlssnr-amd.ini）
+
+- MZ4 使用单行 Base64 载荷承载节+键 schema；游戏标签/备注中的 `|`/`;`/`~` 转义后再放入协议，目标仅游戏目录 `dlssnr-amd.ini`；MZ1/2/3 全部拒绝并提示重新导出。UI 默认显示网络/位置/处理/图层数的紧凑摘要；导入默认展示与当前配置不同的参数，“全部参数”折叠后按全局/Layer 及处理/风格/Pass/Look/HDR 分组，操作按钮固定在滚动区外。
+- 覆盖无层 RenoDX/wilsjo2 与 `LayerN` 链：Network Model/Style Grade/Motion Without Depth/
+  Resize History/History Precision、History/ClassicScaler/Downscale/PassesMode/Fast 系列/
+  Pass2..Pass30 动态键、Preprocess 视觉键、
+  RenoDX 视觉键、wilsjo2 视觉键、HudFix Mode、NRControl Layers、Layer Enabled/Processing/
+  Placement/Network。热键、驻留/显存策略、截图、OSD、Inspect/Log/诊断不分享；Layer 的本地
+  热键留在目标。
+- 导入先清空旧 LayerN 并中和全局已知风格键，再写码中值，避免旧层/旧全局残留；保留非风格
+  键、注释、BOM/编码，仍用临时文件+`File.Replace` 备份。
+- 预览显示网络、图层数、每层 Processing/Placement/Network，或无层时 RenoDX NRHookPoint /
+  wilsjo2 RunBeforeSR。
+- 自动覆盖清单：`tools/dev/mz4-schema-coverage.py --source-root <DLSSNR-AMD> [--game-ini <ini>]`
+  以消费 parser 为全集（wilsjo2 232、RenoDX 115 个独立键，展开 Pass2..Pass30），
+  缺源码明确非零，未提供游戏 ini 标注未查；模板/writer 补充。报告在
+  `work/notes/2026-11-03-mz4-key-coverage.md`（本地）。
