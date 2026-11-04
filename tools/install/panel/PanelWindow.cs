@@ -341,6 +341,7 @@ namespace OptScalerNR.Launcher
                 AddHeroFact("Wiki", WikiFact(advice), 1);
                 AddHeroFact(L("OptiPatcher支持", "OptiPatcher"), OptiFact(advice), 2);
             }
+            AddNrLayerFact();
             // 刷新时保留当前背景图：LocalArtwork 有缓存，同目录刷新返回同一实例不会重绘；
             // 清空再加载会闪。换目录时由新结果（或 null）自然替换。
 
@@ -401,6 +402,101 @@ namespace OptScalerNR.Launcher
             if (names == null) return;
             foreach (var name in names)
                 if (!string.IsNullOrEmpty(name)) set.Add(name.IndexOf('.') >= 0 ? name : name + ".dll");
+        }
+
+        // ---------------------------------------------------------------- NR layer vs frame generation
+        // 实测（2026-11-04，《尘白禁区》）：帧生成开着时只有「RenoDX 处理 + 放在 Present」不闪，
+        // RenoDX 的 before/after 和 wilsjo2 的三个放置全部逐帧闪，且闪频随倍率上升。这两项在插件
+        // 菜单里随手就能改错，改错了没有任何提示，所以面板把当前组合读出来直接说。
+        static void AddNrLayerFact()
+        {
+            var asiIni = Path.Combine(_dir, "dlssnr-amd.ini");
+            if (!File.Exists(asiIni)) return;
+            bool risky;
+            AddHeroFact(L("NR 层", "NR layer"), NrLayerState(asiIni, out risky), risky ? 3 : 1);
+        }
+
+        static string IniValue(string path, string section, string key)
+        {
+            try
+            {
+                string current = null;
+                foreach (var raw in File.ReadAllLines(path))
+                {
+                    var line = raw.Trim();
+                    if (line.StartsWith("[", StringComparison.Ordinal) && line.EndsWith("]", StringComparison.Ordinal))
+                    {
+                        current = line.Substring(1, line.Length - 2).Trim();
+                        continue;
+                    }
+                    if (!string.Equals(current, section, StringComparison.OrdinalIgnoreCase)) continue;
+                    var split = line.IndexOf('=');
+                    if (split <= 0) continue;
+                    if (string.Equals(line.Substring(0, split).Trim(), key, StringComparison.OrdinalIgnoreCase))
+                        return line.Substring(split + 1).Trim();
+                }
+            }
+            catch { }
+            return "";
+        }
+
+        static bool FrameGenerationOn()
+        {
+            var ini = Path.Combine(_dir, "OptiScaler.ini");
+            if (!File.Exists(ini)) return false;
+            var enabled = IniValue(ini, "FrameGen", "Enabled").Trim().ToLowerInvariant();
+            if (enabled != "true" && enabled != "1") return false;
+            var output = IniValue(ini, "FrameGen", "FGOutput").Trim().ToLowerInvariant();
+            return output.Length > 0 && output != "nofg" && output != "auto";
+        }
+
+        // 真正会跑的层：[NRControl] Layers=1 时每个启用的 [LayerN] 都跑；默认（0）只有第一层；
+        // 完全没有 [LayerN] 段时才轮到 [RenoDX] / [wilsjo2] 段本身。
+        static string NrLayerState(string asiIni, out bool risky)
+        {
+            risky = false;
+            var fg = FrameGenerationOn();
+            var multi = IniValue(asiIni, "NRControl", "Layers").Trim();
+            var running = new List<string>();
+            for (var n = 1; n <= 30; n++)
+            {
+                var section = "Layer" + n.ToString(CultureInfo.InvariantCulture);
+                var enabled = IniValue(asiIni, section, "Enabled").Trim().ToLowerInvariant();
+                if (enabled != "1" && enabled != "true") continue;
+                running.Add(section);
+                if (multi != "1") break;
+            }
+
+            if (running.Count == 0)
+            {
+                var style = IniValue(asiIni, "RenoDX", "Enabled").Trim().ToLowerInvariant();
+                var processing = style == "0" || style == "false" ? "wilsjo2" : "renodx";
+                var hook = IniValue(asiIni, "RenoDX", "NRHookPoint").Trim();
+                var placement = hook == "1" ? "before" : hook == "0" ? "after" : "present";
+                if (fg && (processing != "renodx" || placement != "present")) risky = true;
+                return Describe(processing + " " + placement, fg, risky);
+            }
+
+            var parts = new List<string>();
+            foreach (var section in running)
+            {
+                var processing = IniValue(asiIni, section, "Processing").Trim().ToLowerInvariant();
+                var placement = IniValue(asiIni, section, "Placement").Trim().ToLowerInvariant();
+                if (processing.Length == 0) processing = "renodx";
+                if (placement.Length == 0) placement = "present";
+                if (fg && (processing != "renodx" || placement != "present")) risky = true;
+                parts.Add(processing + " " + placement);
+            }
+            return Describe(string.Join(" + ", parts), fg, risky);
+        }
+
+        static string Describe(string state, bool fg, bool risky)
+        {
+            if (!fg) return state;
+            return risky
+                ? state + L(" — 帧生成开着会逐帧闪，改成 RenoDX + Present",
+                            " flickers with frame generation on; switch the layer to RenoDX + Present")
+                : state + L("（帧生成下唯一不闪的组合）", " (the only combination that stays steady under frame generation)");
         }
 
         // 列表上方的说明行：有首选就把名字直接写在这里（行内芯片之外再给一次显式答案），
@@ -499,12 +595,14 @@ namespace OptScalerNR.Launcher
                 System.Windows.Media.Color.FromRgb(0x2A, 0x3A, 0x4F),
                 System.Windows.Media.Color.FromRgb(0x23, 0x40, 0x2F),
                 System.Windows.Media.Color.FromRgb(0x46, 0x32, 0x1F),
+                System.Windows.Media.Color.FromRgb(0x4A, 0x24, 0x24),
             }[palette];
             var fore = new[]
             {
                 System.Windows.Media.Color.FromRgb(0xA9, 0xC4, 0xE8),
                 System.Windows.Media.Color.FromRgb(0x9B, 0xD8, 0xB4),
                 System.Windows.Media.Color.FromRgb(0xE8, 0xC6, 0x9A),
+                System.Windows.Media.Color.FromRgb(0xF2, 0xA8, 0xA0),
             }[palette];
             var badgeBack = new System.Windows.Media.SolidColorBrush(back); badgeBack.Freeze();
             var badgeFore = new System.Windows.Media.SolidColorBrush(fore); badgeFore.Freeze();
