@@ -1596,3 +1596,38 @@ README 里补上两个包名、tag、以及这 5 个文件的 SHA-256 表，因�
 `OptiScaler/plugins/dlssnr-amd.asi` 与 `dlssnr-amd/lang/zh-CN.txt` 哈希等于正式包；
 `tests\install\run.cmd release` 5 组全 `OK`、`SUITE_RC=0`，另跑 `test_mz4_share_code.py`、
 `plugin-paths.ps1`、`amd_uninstall.ps1`。
+
+## 2026-11-04: 新增 [DlssNr] AsiFgHandoff，把宿主真实插帧倍率交给 NR 插件
+
+**现象**：《尘白禁区》开帧生成就闪、关掉就稳；2X 与 4X 都闪，三个 `NRHookPoint` 都闪，
+`NRPresentFrames` 0/1 都闪；插件自己的层数显示在 0/1 之间跳，倍率越高跳得越快。
+
+**定位**：交替发生在**每一次呈现**，不是每一个游戏帧。宿主侧证据在
+`shaders/dlssnr/DlssNr_Dx12.cpp:3624`：`IsActiveForFrameGeneration()` 第一句就是
+`if (!DlssNr::AsiTakeover::NrRuntimeEnabled()) return false;`，而它的两个消费点
+`framegen/xefg/XeFG_Dx12.cpp:773` 与 `:1279` 用它算 `request.nrRunning`。也就是说 ASI 接管后
+宿主主动退出「NR 感知的帧生成耦合」，`DlssNrXeFGInterpolationCount` 不参与；插件侧也没有对应
+通道 —— 厂商 ini 自己写明 `game`（把 NR 的图交给帧生成）只在**游戏自己的**帧生成提供 HUD-less
+图时成立，`OptiScaler's own frame generation gets no such picture`。于是没人知道哪一次呈现是真实
+游戏帧，NR 落在 1/N 帧上，插帧拿的又是 NR 之前的图。
+
+**排除过的**（都是实测，不是推理）：`ExtraPacing=off`（我们那 1049 行 pacing 层无罪）、
+`HudFix=captured`、`NRPresentFgSource`（本来就已在 `source=stable timing` 回落）、解锁插件
+（根本没装，真正在解锁的是宿主自己的 `XeFGUnlock::Apply`）、倍率估计不一致（这次 4.034 与宿主 4X 一致）、
+burst 覆盖不全（`proxies/XeFGPacing.h:152` 写明只调度 `1..count-1`，最后一帧归 provider，行为正确）。
+
+**处置**：新键 `[DlssNr] AsiFgHandoff`，**默认关**。开时 `inputs/NVNGX_DLSS_Dx12.cpp` 的
+`NVSDK_NGX_D3D12_EvaluateFeature` 入口把 `CurrentFG()->GetInterpolatedFrameCount() + 1` 写进
+`DLSSG.MultiFrameCount` —— 那正是插件 `NRPresentFgSource=0` 的第一优先来源，也是它现在读不到、
+只能按呈现间隔猜的那个键。只在「键开 + `AsiTakeover::Active()` + FG 活跃未暂停」时写，值相同不重复写。
+默认关的理由写进注释：插件的读取时机没有文档，写错会落到游戏自己那份参数表上。
+验收判据是插件自己打印的那行 `Present layers: ... source=`；**若它不变，说明插件不读这个句柄，
+这条路就不通，要撤掉这个键而不是留一个死开关**。
+
+**顺带修的两个真问题**：①`tools/build/build-release-local.cmd` 与 `build-rtgi-shaders.cmd`
+硬写 VS 18 BuildTools 的 vcvars/MSBuild 路径并强制 `/p:PlatformToolset=v145`，而项目自己是 v143、
+本机只有 VS 2022 Community —— 第一次编译就是 `HOST_RC=1` 且 DLL 时间没变；现在走
+`tests\_lib\msvc-env.cmd`（候选列表 + vswhere）+ PATH 上的 `msbuild`，不再覆盖工具集，CI 不受影响
+（workflow 自己算 `PLATFORM_TOOLSET`）。②`build-lmxxf-runtime.cmd` 也依赖调用方先进开发环境，
+现在自己兜一次。③打包器 `PACKAGE_RELEASE.ps1:276` 会整段替换 `[DlssNr]`，只改随包模板不够，
+新键必须同时写进那段 here-string。

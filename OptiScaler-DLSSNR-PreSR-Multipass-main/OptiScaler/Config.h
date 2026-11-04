@@ -295,6 +295,10 @@ class Config
     // an undocumented feature driven directly through its snippet, not something NVIDIA exposes.
     CustomOptional<bool> DlssNrEnabled { false };
     CustomOptional<int> DlssNrXeFGInterpolationCount { 0 };
+    // The ASI plugin owns NR and cannot see our frame generation, so it works the burst length out
+    // from present intervals. On: our real multiplier also goes into DLSSG.MultiFrameCount, the key
+    // the plugin tries first. Off keeps the vendor behaviour untouched.
+    CustomOptional<bool> DlssNrAsiFgHandoff { false };
     // Run the NR pass on the upscaler's colour input, at render resolution, immediately before SR.
     // Off selects experimental SR -> NR. Mochizuki keeps render-resolution motion and the runtime
     // scales it. Daniel and lmxxf resample those guides onto the output grid in the host.

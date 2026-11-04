@@ -267,6 +267,10 @@ inline constexpr const char *AmdUseGameExposure = "AmdUseGameExposure";
 inline constexpr const char *AmdToneChannels = "AmdToneChannels";
 inline constexpr const char *Quality = "Quality";
 inline constexpr const char *XeFGInterpolationCount = "XeFGInterpolationCount";
+// Publishes our real multiplier into DLSSG.MultiFrameCount so the NR plugin reads our word instead
+// of guessing the burst length from present intervals. Off by default: the plugin's read order is
+// not documented, so the handoff is opt-in until a game proves it.
+inline constexpr const char *AsiFgHandoff = "AsiFgHandoff";
 inline constexpr const char *kXeFGSection = "XeFG";
 inline constexpr const char *XeFGDynamicMFG = "DynamicMFG";
 inline constexpr const char *XeFGFramerateTargetDMFG = "FramerateTargetDMFG";
@@ -304,6 +308,7 @@ inline constexpr const char *const kKnown[] = {
     FpsOverlayShowRatio,                                   // [Menu], overlay upscale ratio display
     "Enabled",
     XeFGInterpolationCount,
+    AsiFgHandoff,
     XeFGDynamicMFG, XeFGFramerateTargetDMFG, XeFGRoundingDMFG, XeFGDynamicAllow1X, XeFGFlipQueue,
     XeFGTargetAsCapDMFG, XeFGOverrideInterpolationCount,
     DLSSGRequiredReadyFrames,
