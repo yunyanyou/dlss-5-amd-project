@@ -1518,7 +1518,9 @@ lmxxf 额外多槽吞吐回落；更少的 16/8 段没有进一步收益，因�
   「正在获取 Wiki 推荐…」。
   「先试 dxgi」不是拍脑袋：随包 707 条 profile 里 687 条 preferred 是 `dxgi.dll`，而且真被游戏占用时
   行上仍有 `被占用` 芯片、`SwitchTo` 也不覆盖别人的文件。
-- 代理名 12.5 → 14，芯片字 10 → 10.5，说明行 10.5 → 11（两行需要 LineHeight 15 才不挤）。
+- 代理名 12.5 → 14 且**全部加粗**，标题「注入代理」12.5 SemiBold → 14 Bold，芯片字 10 → 10.5，
+  说明行 10.5 → 11（两行需要 LineHeight 15 才不挤）。首选不再靠字重区分——七个名字都是粗体时
+  字重就没了信息量——它靠主题红字 + 红描边芯片 + 顶部说明行。
 - `ProxyHint` 加 `TextWrapping="Wrap"`（文案变长），语言切换走同一个 `UpdateProxyHint()`，
   避免切语言把动态文案冲回静态默认。
 - 卸载确认框删掉「随时可以再点回来装上。」——按钮就在下面，不需要解释。
@@ -1532,3 +1534,31 @@ Wiki 表格给了两个代理 / 完全没记录 / 还没取到数）的说明行
 Background=null 只有 BorderBrush）。再用 `PrintWindow` 真实截图两张（`dxgi` 为当前注入、
 `winmm` 为当前注入），确认 14px 名字 + 芯片在 240px 列宽内不截断，实心 `当前注入` 与描边
 `Wiki 首选` 同时出现时层级仍然分明。打包 `RUN_RC=0`。
+
+## 2026-11-04: 面板风格码接到 dlssnr-amd.ini，删掉它自己那份 MZ[1-3] 取码副本
+
+**问题**：面板的「画面风格分享」整套还停在 ASI 之前的接线上，两个按钮实际是死的：
+①`Encode`/`Apply` 的入参是 `OptiScaler.ini`，而 MZ4 的 schema 只有
+`[Network]/[RenoDX]/[Preprocess]/[wilsjo2]/[HudFix]/[NRControl]/[LayerN]`——随包 `OptiScaler.ini`
+模板里这些段一个都没有（grep 命中 0），所以导出永远是 0 条参数、那句「当前全部为默认值」永远为真，
+导入写回的也是这个插件根本不读的文件；②面板自己抄了一份取码正则且停在 `MZ[1-3]`，而
+`MochizukiShareCode.Decode` 只收 MZ4、对 MZ1/2/3 抛 `old`，于是粘真码只会报「没认出画面分享码」。
+启动器早就改成 `dlssnr-amd.ini`（MainController.ShareCode.cs:280、:501）和 `MZ[1-4]`。
+
+**处置**：只动面板，对齐启动器，不动共享编码器（用户明确「对齐上游启动器就好了」）：
+`ShareIniPath()` 统一指向 `dlssnr-amd.ini`，缺这个文件时按钮禁用并说明「风格码只带 ASI 的画面参数」
+（新状态 `noasi`），删掉面板那份 `CodeInText`/`ExtractCode` 改调 `MochizukiShareCode.ExtractCode`，
+`ShareError` 补齐启动器已有而面板缺的 `old`/`unknown`/`layer`/`version` 四种，文案里的「MZ 开头」
+改成「MZ4 开头」。顺手补了面板里两处漏掉 `L()` 的硬编码中文（换游戏确认框、全默认值提示）和文件
+选择框标题。
+
+**验证**：反射驱动产物 EXE——用随包 `dlssnr-amd-optiscaler.ini` 真编出 MZ4 码（173 条、6701 字符），
+面板 `ExtractCode` 现在能在整段分享文本里取到它且与原文一致（旧的 `MZ[1-3]` 模式对同一段命中 0 次），
+MZ3 码走 `old` 分支拿到正确中文提示，`ShareError` 对编码器实际会抛的 12 种 reason 逐一核对。
+再用 UI Automation 点真实按钮：目录里有 `dlssnr-amd.ini` 时导出框里出现 6701 字符的 `MZ4:` 码，
+没有该文件时导出按钮 `IsEnabled=False`。打包 `RUN_RC=0`。
+
+**仍未处理（已确认但不是本次范围）**：`format` 这个 reason 面板和启动器都没有专门分支，都落到默认文案；
+`Apply` 会把码里没有的风格键注释掉（`NRPresentFrames` 在 schema 里，所以来自旧安装的码能把我们的
+安装默认值 1 撤掉），以及 `Apply` 原样保留输入文件的 BOM、缺失的 `[Network]` 段追加到文件末尾
+（安装器专门剥 BOM 就是为了让 ASI 解析器认第一个 `[Network]`）——后两条动的是共享编码器。

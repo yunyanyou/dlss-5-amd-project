@@ -1,7 +1,9 @@
 ﻿# Mochizuki backend (local integration)
 
-> Status (2026-11-02): new installs ship the **official `dlssnr-amd.asi`** (0.0.8.2
-> resources) and no longer build, install or require `MochizukiNrRuntime.dll`.
+> Status (2026-11-02): new installs ship the **official `dlssnr-amd.asi`** (0.0.8.2-pre1
+> resources; the vendor has since published a formal 0.0.8.2 whose asi differs from ours —
+> see `third_party/mochizuki-asi/README.md`) and no longer build, install or require
+> `MochizukiNrRuntime.dll`.
 > When the plugin is loaded, it owns Neural Rendering: the host's NR page, NR
 > hotkey, Ctrl+F11 model switch, background model work and NR execution are
 > disabled; RR, Super Resolution and frame generation keep working. Open NR
