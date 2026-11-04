@@ -1518,9 +1518,10 @@ lmxxf 额外多槽吞吐回落；更少的 16/8 段没有进一步收益，因�
   「正在获取 Wiki 推荐…」。
   「先试 dxgi」不是拍脑袋：随包 707 条 profile 里 687 条 preferred 是 `dxgi.dll`，而且真被游戏占用时
   行上仍有 `被占用` 芯片、`SwitchTo` 也不覆盖别人的文件。
-- 代理名 12.5 → 14 且**全部加粗**，标题「注入代理」12.5 SemiBold → 14 Bold，芯片字 10 → 10.5，
-  说明行 10.5 → 11（两行需要 LineHeight 15 才不挤）。首选不再靠字重区分——七个名字都是粗体时
-  字重就没了信息量——它靠主题红字 + 红描边芯片 + 顶部说明行。
+- 代理名 12.5 → 14（**保持常规字重**），标题「注入代理」12.5 SemiBold → 14 Bold，芯片字 10 → 10.5
+  且**芯片加粗**，说明行 10.5 → 11（两行需要 LineHeight 15 才不挤），左列 240 → 255。
+  强调放在芯片上而不是名字上：七个名字一起加粗等于没加粗，`当前注入` / `Wiki 首选` 这类状态
+  才是需要一眼扫到的东西。
 - `ProxyHint` 加 `TextWrapping="Wrap"`（文案变长），语言切换走同一个 `UpdateProxyHint()`，
   避免切语言把动态文案冲回静态默认。
 - 卸载确认框删掉「随时可以再点回来装上。」——按钮就在下面，不需要解释。
@@ -1562,3 +1563,33 @@ MZ3 码走 `old` 分支拿到正确中文提示，`ShareError` 对编码器实�
 `Apply` 会把码里没有的风格键注释掉（`NRPresentFrames` 在 schema 里，所以来自旧安装的码能把我们的
 安装默认值 1 撤掉），以及 `Apply` 原样保留输入文件的 BOM、缺失的 `[Network]` 段追加到文件末尾
 （安装器专门剥 BOM 就是为了让 ASI 解析器认第一个 `[Network]`）——后两条动的是共享编码器。
+
+## 2026-11-04: ASI 载荷升到厂商正式 0.0.8.2（原来带的是 pre1）
+
+**问题**：用户问「上游好像有正式版 0.0.8.2 了，我们好像还是 pre1」。核对结论：是对的。
+`third_party/mochizuki-asi/README.md` 记的来源是 `...0.0.8.2-pre1-preview-x86_64`，而厂商在
+2026-11-02 发布了 tag `v0.0.8.2`（commit `c53878b5`）。asi 的版本资源是空的
+（`FileVersion=""`、`FileVersionRaw=0.0.0.0`），所以只能靠哈希区分——同大小 8,339,128 字节，
+我们的 `bfd964e1…` vs 正式的 `50cc270c…`，签名也是重新签的（正式构建 10:41 UTC，pre1 是 08:15 UTC）。
+`docs/mochizuki.md` 当时含糊写成「0.0.8.2 resources」，两个标签其实不等价。
+
+**处置**：下载正式包（Windows 包 + `DLSSNR-AMD-lang-CJK-0.0.8.2.zip`，CJK 语言文件不在 Windows 包里），
+逐文件比对整个载荷树（1139 个文件）：**只有 5 个变了**——`dlssnr-amd.asi`、`nr_present_probe.exe`、
+`model-tools/dlssnr_extract_model.exe`、`model-tools/dlssnr-int4-weights.exe`、`dlssnr-amd/lang/zh-CN.txt`；
+着色器、ACO、INT4 数据、两份 ini 模板、`English.txt`、许可证全部字节不变。只替换这 5 个厂商文件，
+不改任何厂商字节（zh-CN.txt 换成厂商正式版，顺带从有 BOM 变成无 BOM——那本来就是厂商的写法）。
+README 里补上两个包名、tag、以及这 5 个文件的 SHA-256 表，因为版本资源为空、哈希是唯一标识。
+
+**zh-CN.txt 的实际变化**：3158 行里 172 行不同（约 86 组词条），是厂商重译术语：
+「超分/超分前/超分后」改成「放大器/放大器之前/放大器之后」，Passes 措辞收紧，
+另有一处把「神经渲染」退回英文 `Neural Rendering`。我们不动厂商翻译，面板/菜单的中文文案
+（`menu/MenuStrings.inl`）是另一套，不受影响。
+
+**源码 pin 不动**：`tools/mochizuki-sync/manifest.json` 仍钉 `cc27501`（Windows 0.0.7），
+它和二进制载荷是两个不同的东西；replay 校验照旧通过。
+
+**验证**：换完再整树哈希比对，除 5 个 `NO-SOURCE`（我的映射把 `English.txt`/`lang/README.txt`
+错指到 CJK 包，实际两者与 Windows 包一致）外零差异；打包 `RUN_RC=0`，产物里的
+`OptiScaler/plugins/dlssnr-amd.asi` 与 `dlssnr-amd/lang/zh-CN.txt` 哈希等于正式包；
+`tests\install\run.cmd release` 5 组全 `OK`、`SUITE_RC=0`，另跑 `test_mz4_share_code.py`、
+`plugin-paths.ps1`、`amd_uninstall.ps1`。
