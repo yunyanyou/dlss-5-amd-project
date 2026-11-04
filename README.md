@@ -45,7 +45,7 @@ Radeon 780M 也已完成一次真实 INT8 上下文与提交后的模型核对�
 | **[MatheusGViana / dlss-5-amd-project](https://github.com/MatheusGViana/dlss-5-amd-project)** | 将 Pre-SR 接到 AMD 运行时：游戏 DLSS 输入 → AMD NR → FFX 超分；引入 [RenoDX](https://github.com/clshortfuse/renodx) 的 OkLab 与双分支色调映射改善高光偏色 | 在此基础上首创**多槽调度（Multi-slot）**，消除了单槽空等 **8.7 ms/帧** 的 GPU 挂起；适配 0.3.1；补全新等待 D3D12 状态冻结/恢复；增强 XBOX PC 兼容性。**桥接开销实测仅 0.01～0.03 ms** 量级 |
 | **[danielblnc / DLSS-NR-on-AMD](https://github.com/danielblnc/DLSS-NR-on-AMD)** | AMD 神经渲染运行时本体（0.3.0–0.6.0） | **不改动其核心**，按规范接口调用；并针对 0.3.1+ 的 1 像素 Draw 等待补齐状态保护，确保在 DLSS/XeSS 游戏上安全运行 |
 | **[lmxxf / dlss5-on-amd-9070xt-porting](https://github.com/lmxxf/dlss5-on-amd-9070xt-porting)** | 包含 71 块网络的 AMD HIP 开源神经渲染算力核心 | **接入 OptiScaler 通用代理框架以兼容更多纯 DLSS / XeSS 游戏**；实现主队列同帧同步执行；开发标准版本化 C-ABI 独立运行时（`LmxxfNrRuntime` 并反哺合并至上游）；增加动态色彩/细节无级滑条等 |
-| **[Mochizuki / DLSSNR-AMD](https://github.com/mochizuki0323/DLSSNR-AMD)** | 纯开源 Vulkan / RDNA4 神经渲染网络核心与 SPIR-V 着色器体系 | 深度接入多后端架构并重构生命周期安全：解决跨 API 在无关游戏队列上的死等卡顿与显存泄漏；整合着色器取消机制与 26.9.2+ 驱动修复（由 [@MatheusFerreiraS](https://github.com/MatheusFerreiraS) 提供） |
+| **[Mochizuki / DLSSNR-AMD](https://gitlab.com/mochizuki0323/DLSSNR-AMD)** | 纯开源 Vulkan / RDNA4 神经渲染网络核心与 SPIR-V 着色器体系 | 深度接入多后端架构并重构生命周期安全：解决跨 API 在无关游戏队列上的死等卡顿与显存泄漏；整合着色器取消机制与 26.9.2+ 驱动修复（由 [@MatheusFerreiraS](https://github.com/MatheusFerreiraS) 提供） |
 
 使用 danielblnc 0.6.0 的 RX 6000（RDNA2）显卡需要安装 AMD HIP 7.2 runtime。
 
@@ -404,7 +404,7 @@ daniel 自有、未进 Ins 的键（含 **OverlayKey**、`PollSpacing`、`HipDev
 - [**MatheusGViana / dlss-5-amd-project**](https://github.com/MatheusGViana/dlss-5-amd-project) — **GPL-3.0 License**：AMD Pre-SR 桥接方案；
 - [**danielblnc / DLSS-NR-on-AMD**](https://github.com/danielblnc/DLSS-NR-on-AMD) — **Custom Non-Commercial / All Rights Reserved**：danielblnc 保留所有权利，禁止未经授权重新分发，本项目不随包分发其二进制，采用外部检测安装方式对接；
 - [**lmxxf / dlss5-on-amd-9070xt-porting**](https://github.com/lmxxf/dlss5-on-amd-9070xt-porting) — **MIT License**：开源 HIP 神经渲染算力核心与 71 块网络还原；
-- [**Mochizuki / DLSSNR-AMD**](https://github.com/mochizuki0323/DLSSNR-AMD) — **MIT License**：纯开源 Vulkan / RDNA4 神经渲染核心网络与 SPIR-V 着色器体系；
+- [**Mochizuki / DLSSNR-AMD**](https://gitlab.com/mochizuki0323/DLSSNR-AMD) — **MIT License**：纯开源 Vulkan / RDNA4 神经渲染核心网络与 SPIR-V 着色器体系；
 - [**RenoDX / clshortfuse**](https://github.com/clshortfuse/renodx) — **MIT License**：`dlssnr.hlsl` 色彩通道合成算法；
 - [**本项目 (TheAutomatic / dlss-5-amd-project)**](https://github.com/TheAutomatic/dlss-5-amd-project) — **GPL-3.0 License**：多槽调度架构、主队列同帧同步执行、C-ABI 标准化运行时与 PR 反哺、0.3.1 状态冻结/恢复、双后端共存与智能安装器。
 

@@ -1,6 +1,6 @@
 # Mochizuki Vulkan NR core
 
-- Source: https://github.com/mochizuki0323/DLSSNR-AMD
+- Source: https://gitlab.com/mochizuki0323/DLSSNR-AMD
 - Source snapshot: `cc27501dc116bdcfbb43612e497c5ca12497574a` (2026-10-19), Windows 0.0.7. Includes Natural/Cinematic style grade, graph/arena ownership, sampled-image usage fixes and CPU weight-packing changes. Product adoption and deliberate deferrals are described below.
 - Previous pins, kept only as history: Windows 0.0.6 `191b97b54175d50c7ec5992b54322dd3eb0ef8ac`, Windows `a9b13dd4cdb5f4bf43db358492d72e6e5e2acd67`,  Linux-only v0.0.4 tag `9e4574e1812d7d0632d6db02721a20c9617be434`, and the old Windows v0.0.3 baseline `82560c4fbfaac347fc5e22c22025191402ae916b`. Do not mix those trees back in.
 - License: MIT for this core; the original LICENSE is retained. The product adapter under `dlssnr/backend/mochizuki_runtime/` comes from MatheusFerreiraS/neural-amd-opti `283fdb0a1df9e9c4c78de0d2d848e775cf6ae8ae` (GPL-3.0). The combined runtime is distributed under GPL-3.0, with the MIT notice retained.

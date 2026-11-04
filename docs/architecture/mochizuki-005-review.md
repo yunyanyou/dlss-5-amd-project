@@ -55,18 +55,18 @@ RenoDX MIT notices are retained in source and package checks.
 
 All links below identify the pinned upstream commit, not a moving branch:
 
-1. [`nr_graph.cpp:215`](https://github.com/mochizuki0323/DLSSNR-AMD/blob/8a70f7f418294ff1e306b66893456e5319ff8205/windows/src/core/nr_graph.cpp#L215)
+1. [`nr_graph.cpp:215`](https://gitlab.com/mochizuki0323/DLSSNR-AMD/-/blob/8a70f7f418294ff1e306b66893456e5319ff8205/windows/src/core/nr_graph.cpp#L215)
    retains the C64 persistent → fused-C32 barrier. The decoder expression is
    `((g(p) && up(q)) || (up(p) && up(q)))`, exactly the former patch's expression;
    `fswinfusedup32` is no longer accepted as the second decoder pair consumer.
-2. [`nr_graph.cpp:4261`](https://github.com/mochizuki0323/DLSSNR-AMD/blob/8a70f7f418294ff1e306b66893456e5319ff8205/windows/src/core/nr_graph.cpp#L4261)
+2. [`nr_graph.cpp:4261`](https://gitlab.com/mochizuki0323/DLSSNR-AMD/-/blob/8a70f7f418294ff1e306b66893456e5319ff8205/windows/src/core/nr_graph.cpp#L4261)
    uses the same predicate when extending arena lifetimes across a chain. The
    corrected boundary therefore also governs memory reuse.
-3. [`nr_graph.cpp:4469`](https://github.com/mochizuki0323/DLSSNR-AMD/blob/8a70f7f418294ff1e306b66893456e5319ff8205/windows/src/core/nr_graph.cpp#L4469)
+3. [`nr_graph.cpp:4469`](https://gitlab.com/mochizuki0323/DLSSNR-AMD/-/blob/8a70f7f418294ff1e306b66893456e5319ff8205/windows/src/core/nr_graph.cpp#L4469)
    rejects the pair before setting its counter-only/no-barrier state;
-   [line 5179](https://github.com/mochizuki0323/DLSSNR-AMD/blob/8a70f7f418294ff1e306b66893456e5319ff8205/windows/src/core/nr_graph.cpp#L5179)
+   [line 5179](https://gitlab.com/mochizuki0323/DLSSNR-AMD/-/blob/8a70f7f418294ff1e306b66893456e5319ff8205/windows/src/core/nr_graph.cpp#L5179)
    transfers only admitted pairs to `runner.no_barrier_after`.
-4. [`nr_runtime.cpp:2604`](https://github.com/mochizuki0323/DLSSNR-AMD/blob/8a70f7f418294ff1e306b66893456e5319ff8205/windows/src/core/nr_runtime.cpp#L2604)
+4. [`nr_runtime.cpp:2604`](https://gitlab.com/mochizuki0323/DLSSNR-AMD/-/blob/8a70f7f418294ff1e306b66893456e5319ff8205/windows/src/core/nr_runtime.cpp#L2604)
    skips a barrier only when that bit is set. The decoder-tail barrier remains.
 
 RX 9070 XT comparisons against a separately built all-barrier DLL cover 512×512,

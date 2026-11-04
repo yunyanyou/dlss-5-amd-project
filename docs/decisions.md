@@ -1082,7 +1082,7 @@ CPU 专项 `tests/host/amdxc64_hook_init.cpp` 使用真实 Detours 和合成函�
 
 ## 2026-10-07：Mochizuki v0.0.4 按 Windows 适用范围定向接入
 
-官方 [v0.0.4](https://github.com/mochizuki0323/DLSSNR-AMD/releases/tag/v0.0.4)
+官方 [v0.0.4](https://gitlab.com/mochizuki0323/DLSSNR-AMD/-/tags/v0.0.4)
 只发布 Linux 版，Windows 仍为 v0.0.3。已审阅 `82560c4f..9e4574e1` 完整差异，
 更新 vendor Windows 注释，并从 Linux 移植 HDR 高饱和色按峰值统一缩放的修复，
 同时覆盖模型输入和低模型分辨率的合成，防止分别裁切通道导致偏色。

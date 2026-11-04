@@ -20,7 +20,7 @@ interop when `LmxxfAllowEnhancedBarriers=true`; partial/pending or unknown layou
 remain unsupported. See [inline execution](architecture/nr-inline-recording.md).
 
 The network core and shaders come from the
-[official repository](https://github.com/mochizuki0323/DLSSNR-AMD).
+[official repository](https://gitlab.com/mochizuki0323/DLSSNR-AMD).
 The runtime adapts native D3D12/Vulkan interop and pipeline prewarming code from
 [MatheusFerreiraS/neural-amd-opti](https://github.com/MatheusFerreiraS/neural-amd-opti).
 This product implements backend selection, host recording ownership, configuration,
