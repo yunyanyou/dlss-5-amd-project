@@ -57,7 +57,11 @@ $refs = @(
 $res = @(
     "/resource:`"$(Join-Path $panel 'PanelWindow.xaml')`",OptiScalerPanel.PanelWindow.xaml",
     "/resource:`"$(Join-Path $launcher 'DialogTheme.xaml')`",OptiScalerPanel.DialogTheme.xaml",
-    "/resource:`"$(Join-Path $root 'assets/compatibility/proxy-profiles.json')`",OptiScalerPanel.proxy-profiles.json"
+    "/resource:`"$(Join-Path $root 'assets/compatibility/proxy-profiles.json')`",OptiScalerPanel.proxy-profiles.json",
+    # ProxyRecommendations.ReadSeed() looks the same document up under the launcher's resource
+    # name; the panel compiles that class in, so the name has to resolve here too or touching
+    # ProxyRecommendations.ProxyNames throws on a null stream.
+    "/resource:`"$(Join-Path $root 'assets/compatibility/proxy-profiles.json')`",OptScalerNR.Launcher.proxy-profiles.json"
 )
 
 $argFile = Join-Path $obj 'csc.rsp'

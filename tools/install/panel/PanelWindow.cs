@@ -18,7 +18,15 @@ namespace OptScalerNR.Launcher
     /// </summary>
     public static class PanelWindow
     {
-        static readonly string[] Candidates = { "dxgi", "winmm", "d3d12", "winhttp", "wininet", "dbghelp", "version" };
+        // One source of truth for the proxy names: the launcher's recommendation baseline
+        // (ProxyRecommendations.cs, compiled into this EXE by tools/build/build-panel.ps1). The
+        // baseline spells them with ".dll"; this tool composes its own file names, so strip it.
+        // If upstream adds or drops a proxy, the panel follows instead of silently showing a
+        // stale list of seven.
+        static readonly string[] Candidates = Array.ConvertAll(ProxyRecommendations.ProxyNames,
+            name => name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+                      ? name.Substring(0, name.Length - 4)
+                      : name);
 
         static Window _window;
         static string _dir;
@@ -1874,7 +1882,9 @@ namespace OptScalerNR.Launcher
             return string.Equals(_gameExeDir, _dir, StringComparison.OrdinalIgnoreCase) ? _gameExeCache : null;
         }
 
-        // ---- wiki 检测：照搬 tools/proxy-switch.ps1 的两级检测 + OptiPatcher 支持列表 ----
+        // ---- wiki 检测：两级（先按目录命中 profile，再从备注里抽代理名）+ OptiPatcher 支持列表。
+        // 名字与推荐基线来自 ProxyRecommendations（启动器同一份）；命令行版 tools/proxy-switch.ps1
+        // 已被本面板取代并删除（7a910606），不要再把它当规则出处。 ----
 
         // DataContractJsonSerializer fills these through reflection; auto-properties keep the
         // compiler from warning CS0649 on the private nested types.
@@ -1915,7 +1925,8 @@ namespace OptScalerNR.Launcher
         const string OptiSupportUrl = "https://raw.githubusercontent.com/optiscaler/OptiPatcher/main/GameSupport.md";
 
         // Remote only for the catalogue: nothing is written to disk, and the copy embedded in
-        // this EXE is the fallback when the network is unavailable - same as proxy-switch.ps1.
+        // the embedded copy is the fallback when the network is unavailable; the same document is
+        // also embedded under OptScalerNR.Launcher.proxy-profiles.json for ProxyRecommendations.
         static PanelProxyDoc LoadProfileCatalog()
         {
             var text = Fetch(ProfileCatalogUrl, 5000);
@@ -1933,7 +1944,7 @@ namespace OptScalerNR.Launcher
         }
 
         // Profiles identify a game by (case-insensitive) folder-name segment containment, the
-        // same rule as proxy-switch.ps1's Find-Profile: store launchers append the app id to
+        // profile matching rule: store launchers append the app id to
         // the folder ("Wuthering Waves(2002137)"), so containment is required; short segments
         // are skipped to avoid false hits.
         static PanelProxyProfile FindProfileIn(PanelProxyDoc doc, string folder)
