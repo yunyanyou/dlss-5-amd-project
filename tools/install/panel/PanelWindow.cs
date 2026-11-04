@@ -354,13 +354,14 @@ namespace OptScalerNR.Launcher
         }
 
         // 行尾状态芯片：只给"这条对当前游戏有意义"的状态做芯片。名单里其余的代理不需要
-        // "备用"之类的标签——它们只是可点的名字。
+        // "备用"之类的标签——它们只是可点的名字。填充只留给"当前注入"（唯一已经生效的状态），
+        // 其余都是描边：首选靠主题色描边 + 名字加粗已经够显眼，实心块会把七个行里的一行压成按钮。
         static Border StateChip(bool isOurs, bool isOcc, bool isRec, bool isAlt)
         {
             string text, foreKey, backKey, borderKey;
-            if (isOurs) { text = L("当前注入", "in use"); foreKey = "ThemeSuccess"; backKey = "ThemeSurface"; borderKey = "ThemeSuccess"; }
-            else if (isOcc) { text = L("被占用", "taken"); foreKey = "ThemeWarning"; backKey = "ThemeSurface"; borderKey = "ThemeWarning"; }
-            else if (isRec) { text = L("Wiki 首选", "wiki pick"); foreKey = "ThemeOnAccent"; backKey = "ThemeAccent"; borderKey = null; }
+            if (isOurs) { text = L("当前注入", "in use"); foreKey = "ThemeOnAccent"; backKey = "ThemeSuccess"; borderKey = null; }
+            else if (isOcc) { text = L("被占用", "taken"); foreKey = "ThemeWarning"; backKey = null; borderKey = "ThemeWarning"; }
+            else if (isRec) { text = L("Wiki 首选", "wiki pick"); foreKey = "ThemeAccent"; backKey = null; borderKey = "ThemeAccent"; }
             else if (isAlt) { text = L("Wiki 备选", "also ok"); foreKey = "ThemeMuted"; backKey = null; borderKey = "ThemeBorder"; }
             else return null;
             var chip = new Border
