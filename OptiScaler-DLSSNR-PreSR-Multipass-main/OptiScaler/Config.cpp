@@ -506,7 +506,6 @@ bool Config::Reload(std::filesystem::path iniPath)
             DlssNrXeFGInterpolationCount.set_from_config(readInt(CfgKey::kSection, CfgKey::XeFGInterpolationCount));
             if (DlssNrXeFGInterpolationCount.has_value() && DlssNrXeFGInterpolationCount.value() < 0)
                 DlssNrXeFGInterpolationCount.reset();
-            DlssNrAsiFgHandoff.set_from_config(readBool(CfgKey::kSection, CfgKey::AsiFgHandoff));
             DlssNrRunBeforeSr.set_from_config(readBool("DlssNr", "RunBeforeSR"));
             DlssNrApplyAfterRR.set_from_config(readBool("DlssNr", "ApplyAfterRR"));
             DlssNrRRPasses.set_from_config(readUInt("DlssNr", "RRPasses"));
@@ -2177,8 +2176,6 @@ bool Config::SaveIni()
     ini.SetValue("DlssNr", "Enabled", GetBoolValue(Instance()->DlssNrEnabled.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::XeFGInterpolationCount,
                  GetIntValue(Instance()->DlssNrXeFGInterpolationCount.value_for_config()).c_str());
-    ini.SetValue(CfgKey::kSection, CfgKey::AsiFgHandoff,
-                 GetBoolValue(Instance()->DlssNrAsiFgHandoff.value_for_config()).c_str());
     ini.SetValue("DlssNr", "RunBeforeSR",
                  GetBoolValue(Instance()->DlssNrRunBeforeSr.value_for_config()).c_str());
     ini.SetValue("DlssNr", "ApplyAfterRR",

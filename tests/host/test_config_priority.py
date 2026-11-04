@@ -596,7 +596,6 @@ int main() {
                 "XeFGRoundingDMFG",
                 "XeFGDynamicAllow1X",
                 "XeFGFlipQueue",  # Read by MFG Unlocker 1.7.0+ (plugin-owned semantics, our ini).
-                "AsiFgHandoff",  # Written out to the NR plugin via DLSSG.MultiFrameCount; host-owned, no runtime alias.
                 # Host-owned public INI keys (foundation A1/A2, D1-D3, LL input, HUDless binding
                 # capture): no upstream runtime environment aliases cross the boundary.
                 "Fsr4GpuSupport", "Fsr4Model", "Fsr4DisableDriverHooks",

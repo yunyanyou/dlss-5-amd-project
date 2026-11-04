@@ -8,7 +8,6 @@
 #include "NVNGX_Parameter.h"
 #include "proxies/NVNGX_Proxy.h"
 #include "dlssnr/DlssNr.h"
-#include <dlssnr/AsiTakeover.h>
 #include "dlssnr/DlssNr_ExposureScan.h"
 #include <upscalers/dlss/DLSSFeature_Dx12.h>
 #include <upscalers/fsr31/FSRDFeature_Dx12.h>
@@ -1232,31 +1231,6 @@ static NVSDK_NGX_Result TryEvaluateOptiFeature(ID3D12GraphicsCommandList* InCmdL
  * @brief Per-frame feature execution. Runs a feature (upscaler, framegen, etc.) on a given command list using a
  * preexisting feature instance referenced by a unique handle.
  */
-// The NR plugin owns Neural Rendering but has no view of our frame generation: it reads
-// DLSSG.MultiFrameCount from this parameter list and, finding nothing, times the presents and
-// guesses the burst length. With FGInput=dlssg we answer that input ourselves, so the game's own
-// word never reaches it. Writing our real multiplier here is what makes its cadence exact; it is
-// opt-in because the plugin's read order is not documented and a wrong write would land on the
-// game's own copy of the same list.
-static void PublishFgMultiplierToAsi(NVSDK_NGX_Parameter* InParameters)
-{
-    if (!Config::Instance()->DlssNrAsiFgHandoff.value_or_default())
-        return;
-    if (!DlssNr::AsiTakeover::Active())
-        return;
-
-    auto fg = State::Instance().CurrentFG();
-    if (fg == nullptr || !fg->IsActive() || fg->IsPaused())
-        return;
-
-    const int multiplier = static_cast<int>(fg->GetInterpolatedFrameCount() + 1);
-    int seen = 0;
-    if (InParameters->Get("DLSSG.MultiFrameCount", &seen) == NVSDK_NGX_Result_Success && seen == multiplier)
-        return;
-
-    InParameters->Set("DLSSG.MultiFrameCount", multiplier);
-}
-
 NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCommandList* InCmdList,
                                                                const NVSDK_NGX_Handle* InFeatureHandle,
                                                                NVSDK_NGX_Parameter* InParameters,
@@ -1273,8 +1247,6 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_EvaluateFeature(ID3D12GraphicsCom
         LOG_ERROR("InCmdList is null");
         return NVSDK_NGX_Result_Fail;
     }
-
-    PublishFgMultiplierToAsi(InParameters);
 
     const uint32_t handleId = InFeatureHandle->Id;
     LOG_DEBUG("EvaluateFeature - Handle: {}, CmdList: {:p}", handleId, (void*) InCmdList);
