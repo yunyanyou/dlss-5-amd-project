@@ -297,7 +297,7 @@ namespace OptScalerNR.Launcher
                     FontSize = 14,
                     VerticalAlignment = VerticalAlignment.Center,
                     TextTrimming = TextTrimming.CharacterEllipsis,
-                    FontWeight = FontWeights.Bold,
+                    FontWeight = FontWeights.Normal,
                     Foreground = isOurs ? LauncherTheme.Brush("ThemeSuccess")
                                : isOcc ? LauncherTheme.Brush("ThemeWarning")
                                : isRec ? LauncherTheme.Brush("ThemeAccent")
@@ -375,6 +375,7 @@ namespace OptScalerNR.Launcher
                 {
                     Text = text,
                     FontSize = 10.5,
+                    FontWeight = FontWeights.Bold,
                     Foreground = LauncherTheme.Brush(foreKey)
                 }
             };

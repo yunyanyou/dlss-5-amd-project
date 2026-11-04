@@ -499,7 +499,7 @@
     <!-- 主体：左注入列表 240 + 间距 + 右内容（游戏卡 / 兼容修复 / ini 共享配置） -->
     <Grid Margin="16">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="240"/>
+        <ColumnDefinition Width="255"/>
         <ColumnDefinition Width="14"/>
         <ColumnDefinition Width="*"/>
       </Grid.ColumnDefinitions>
