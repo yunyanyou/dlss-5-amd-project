@@ -7,6 +7,9 @@ if not defined OUT set "OUT=exports\lmxxf-runtime"
 if not exist "%OUT%" mkdir "%OUT%"
 
 rem Check if MSVC cl.exe is available in PATH
+rem Callers used to have to enter a developer prompt first; doing it here keeps the script usable
+rem on its own and is a no-op wherever cl is already on PATH (CI, developer prompts).
+where cl.exe >nul 2>&1 || call "tests\_lib\msvc-env.cmd" >nul 2>&1
 where cl.exe >nul 2>&1
 if %errorlevel%==0 (
   echo Building LmxxfNrRuntime.dll with MSVC...

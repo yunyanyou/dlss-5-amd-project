@@ -8,7 +8,7 @@ cd /d "%~dp0..\.."
 set "OUT=%~1"
 if not defined OUT set "OUT=assets\experimental_lighting"
 if not exist "%OUT%" mkdir "%OUT%"
-where fxc.exe >nul 2>&1 || call "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" x64 -vcvars_ver=14.44 >nul 2>&1
+where fxc.exe >nul 2>&1 || call "tests\_lib\msvc-env.cmd" >nul 2>&1
 where fxc.exe >nul 2>&1 || (
   echo FAIL: fxc.exe not found. Run from an MSVC x64 developer prompt with the Windows SDK.
   exit /b 1

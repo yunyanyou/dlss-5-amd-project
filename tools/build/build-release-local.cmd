@@ -15,7 +15,7 @@ if not "%~1"=="" if not defined FAST (
   exit /b 2
 )
 if not exist "exports\release-local" mkdir "exports\release-local"
-call "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" x64 10.0.26100.0 -vcvars_ver=14.44.35207 || exit /b 1
+call "tests\_lib\msvc-env.cmd" || exit /b 1
 set "LOGARGS="
 if defined FAST goto optiscaler
 
@@ -33,7 +33,10 @@ set "LOGARGS=/fl /flp:logfile=%CD%\exports\release-local\build.log;verbosity=nor
 
 :optiscaler
 echo === Release build (CI-equivalent): OptiScaler.dll ===
-"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\MSBuild\Current\Bin\MSBuild.exe" "OptiScaler-DLSSNR-PreSR-Multipass-main\OptiScaler\OptiScaler.vcxproj" /m:4 /t:Build /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v145 /p:VCToolsVersion=14.44.35207 /p:WindowsTargetPlatformVersion=10.0.26100.0 /p:PostBuildEventUseInBuild=false /p:SolutionDir="%CD%/OptiScaler-DLSSNR-PreSR-Multipass-main/" /p:OutDir="%CD%/exports/release-local/" /p:IntDir="%CD%/exports/release-local/obj/" /v:minimal /nologo %LOGARGS% || exit /b 1
+rem MSBuild comes from the environment msvc-env.cmd just entered, and the project's own
+rem PlatformToolset (v143) is left alone: CI computes its own toolset in the workflow and never
+rem reaches this line, while a VS 2022 machine has no v145 to be forced into.
+msbuild "OptiScaler-DLSSNR-PreSR-Multipass-main\OptiScaler\OptiScaler.vcxproj" /m:4 /t:Build /p:Configuration=Release /p:Platform=x64 /p:WindowsTargetPlatformVersion=10.0.26100.0 /p:PostBuildEventUseInBuild=false /p:SolutionDir="%CD%/OptiScaler-DLSSNR-PreSR-Multipass-main/" /p:OutDir="%CD%/exports/release-local/" /p:IntDir="%CD%/exports/release-local/obj/" /v:minimal /nologo %LOGARGS% || exit /b 1
 if not exist "exports\release-local\OptiScaler.dll" (
   echo FAIL: OptiScaler.dll not produced
   exit /b 1
