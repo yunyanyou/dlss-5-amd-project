@@ -171,7 +171,7 @@ namespace OptScalerNR.Launcher
 
             _optiButton = (Button)_window.FindName("OptiBtn");
             _logButton = (Button)_window.FindName("LogBtn");
-            if (_optiButton != null) _optiButton.Click += (s, e) => InstallOptiPatcher();
+            if (_optiButton != null) _optiButton.Click += (s, e) => OnOptiButton();
             if (_logButton != null) _logButton.Click += (s, e) => OpenLog();
             _compatSummary = (TextBlock)_window.FindName("CompatSummary");
             _compatStatus = (TextBlock)_window.FindName("CompatStatus");
@@ -209,6 +209,8 @@ namespace OptScalerNR.Launcher
         static void Refresh()
         {
             RenderNow();
+            // The button is install OR uninstall, so it has to be re-evaluated on every refresh.
+            UpdateOptiButton();
             // 上游同款：扫描/检查期间名字栏底部的进度条进入加载动画，完成后停止。
             if (_heroProgress != null) _heroProgress.IsIndeterminate = true;
             // 与上游启动器一致：窗口先渲染缓存，扫描 EXE、拉 Wiki、找封面都在后台做，完成后回填。
@@ -625,7 +627,7 @@ namespace OptScalerNR.Launcher
             if (_compatRepairBtn != null) _compatRepairBtn.Content = L("兼容修复", "Compat Repair");
             if (_compatRestoreBtn != null) _compatRestoreBtn.Content = L(L("恢复原文件", "Restore originals"), "Restore Files");
             if (_compatHelpBtn != null) _compatHelpBtn.Content = "?";
-            if (_optiButton != null) _optiButton.Content = L("安装 OptiPatcher（DLSS 伪装增强）", "Install OptiPatcher (DLSS spoofing)");
+            UpdateOptiButton();
             if (_logButton != null) _logButton.Content = L("打开日志", "Open Log");
             ((System.Windows.Documents.Run)_window.FindName("PackCaption")).Text = L("整合：", "Pack: ");
             ((System.Windows.Documents.Run)_window.FindName("AuthorCaption")).Text = L(" · 来源：", " · Source: ");
@@ -687,31 +689,52 @@ namespace OptScalerNR.Launcher
             catch { return false; }
         }
 
-        static void SetAsiPlugins(string value)
+        // The panel no longer writes LoadAsiPlugins. On this route dlssnr-amd.asi is loaded through
+        // the same switch, so a "declined OptiPatcher" write of auto used to switch Neural Rendering
+        // off as collateral damage. The installer owns that key (its shipped template sets true);
+        // the panel only reports what it finds.
+        static bool OptiPatcherInstalled()
         {
-            var ini = System.IO.Path.Combine(_dir, "OptiScaler.ini");
-            if (!File.Exists(ini)) { CompatNote(L("目录里没有 OptiScaler.ini，无法写入 LoadAsiPlugins。", "No OptiScaler.ini here; cannot write LoadAsiPlugins.")); return; }
-            var text = File.ReadAllText(ini);
-            if (System.Text.RegularExpressions.Regex.IsMatch(text, "(?m)^LoadAsiPlugins="))
-                text = System.Text.RegularExpressions.Regex.Replace(text, "(?m)^LoadAsiPlugins=.*$", "LoadAsiPlugins=" + value);
-            else if (System.Text.RegularExpressions.Regex.IsMatch(text, @"(?m)^\[Plugins\]"))
-                text = System.Text.RegularExpressions.Regex.Replace(text, @"(?m)^(\[Plugins\][ \t]*)$", "$1\r\nLoadAsiPlugins=" + value);
-            else
-                text = text.TrimEnd() + "\r\n\r\n[Plugins]\r\nLoadAsiPlugins=" + value + "\r\n";
-            File.WriteAllText(ini, text, new System.Text.UTF8Encoding(false));
+            return File.Exists(System.IO.Path.Combine(_dir, "plugins", "OptiPatcher.asi"))
+                || File.Exists(System.IO.Path.Combine(_dir, "OptiScaler", "plugins", "OptiPatcher.asi"));
+        }
+
+        static void UpdateOptiButton()
+        {
+            if (_optiButton == null) return;
+            _optiButton.Content = OptiPatcherInstalled()
+                ? L("卸载 OptiPatcher", "Uninstall OptiPatcher")
+                : L("安装 OptiPatcher（DLSS 伪装增强）", "Install OptiPatcher (DLSS spoofing)");
+        }
+
+        static void OnOptiButton()
+        {
+            if (OptiPatcherInstalled()) UninstallOptiPatcher(); else InstallOptiPatcher();
+        }
+
+        static void UninstallOptiPatcher()
+        {
+            // Deleting a file is the one place that still asks.
+            if (DialogTheme.Show(_window, L("删除 OptiPatcher.asi？随时可以再点回来装上。",
+                    "Delete OptiPatcher.asi? You can install it again with one click."), "OptiPatcher",
+                    MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+            var removed = new List<string>();
+            foreach (var candidate in new[] {
+                System.IO.Path.Combine(_dir, "plugins", "OptiPatcher.asi"),
+                System.IO.Path.Combine(_dir, "OptiScaler", "plugins", "OptiPatcher.asi") })
+            {
+                try { if (File.Exists(candidate)) { File.Delete(candidate); removed.Add(System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(candidate)) + "/OptiPatcher.asi"); } }
+                catch (Exception ex) { CompatNote(L("删除失败：", "Delete failed: ") + ex.Message); return; }
+            }
+            CompatNote(removed.Count > 0
+                ? L("已删除 ", "Removed ") + string.Join(", ", removed) + L("。重启游戏生效。", ". Restart the game to take effect.")
+                : L("没有找到 OptiPatcher.asi。", "No OptiPatcher.asi found."));
+            Refresh();
         }
 
         static void InstallOptiPatcher()
         {
-            // 命令行版流程：只有明确的 是/否 才生效；否 = 插件留在磁盘但不再加载（auto 读作 false）。
-            var answer = DialogTheme.Show(_window, L("是否安装 OptiPatcher（DLSS 伪装增强）？", "Install OptiPatcher (DLSS spoofing enhancement)?"), "OptiPatcher",
-                MessageBoxButton.YesNo, MessageBoxImage.Question);
-            if (answer != MessageBoxResult.Yes)
-            {
-                SetAsiPlugins("auto");
-                CompatNote(L("已跳过 OptiPatcher（LoadAsiPlugins=auto，插件不会加载）。", "Skipped OptiPatcher (LoadAsiPlugins=auto, plugins stay unloaded)."));
-                return;
-            }
+            // 直接安装，不再二级确认：装不上就是下载或 PE 校验失败，会明确说。
             CompatNote(L("正在下载 OptiPatcher...", "Downloading OptiPatcher…"));
             _window.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background);
 
@@ -779,8 +802,7 @@ namespace OptScalerNR.Launcher
                 var plugins = System.IO.Path.Combine(_dir, "plugins");
                 if (!Directory.Exists(plugins)) Directory.CreateDirectory(plugins);
                 File.Copy(source, System.IO.Path.Combine(plugins, "OptiPatcher.asi"), true);
-                SetAsiPlugins("true");
-                CompatNote(L("OptiPatcher 安装完成。", "OptiPatcher installed."));
+                CompatNote(L("OptiPatcher 安装完成，重启游戏生效。", "OptiPatcher installed. Restart the game to take effect."));
             }
             catch (Exception ex) { CompatNote(L("安装失败：", "Install failed: ") + ex.Message); }
             finally
@@ -926,8 +948,11 @@ namespace OptScalerNR.Launcher
             }
             catch { }
             if (mode == "true") return L("OptiPatcher：已安装，插件加载中", "OptiPatcher: installed, plugins loading");
-            if (mode == "false") return L("OptiPatcher：已安装，已禁用（LoadAsiPlugins=false）", "OptiPatcher: installed, disabled (LoadAsiPlugins=false)");
-            return L("OptiPatcher：已安装，未启用（LoadAsiPlugins=auto）", "OptiPatcher: installed, not enabled (LoadAsiPlugins=auto)");
+            // The panel never edits this key, so say where it is instead of implying we will fix it.
+            var where = L("（安装器负责写这个键；要手动改：OptiScaler.ini 的 [Plugins] LoadAsiPlugins）",
+                          "(the installer owns this key; to change it by hand set [Plugins] LoadAsiPlugins in OptiScaler.ini)");
+            if (mode == "false") return L("OptiPatcher：已安装，已禁用（LoadAsiPlugins=false）", "OptiPatcher: installed, disabled (LoadAsiPlugins=false)") + where;
+            return L("OptiPatcher：已安装，未启用（LoadAsiPlugins=auto）", "OptiPatcher: installed, not enabled (LoadAsiPlugins=auto)") + where;
         }
 
         // 摘要文案与按钮可用性照抄上游 UpdateCompatibilitySummary。
