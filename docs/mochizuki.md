@@ -279,6 +279,44 @@ Submission failures preserve their originating-thread error and replace stale
 building status; bounded logs trace the first two recordings of each session.
 This validation does not cover every game, ReShade add-on or loading arrangement.
 
+## Frame generation and the ASI's Present layers
+
+On this route NR's default place is the finished picture: the plugin's own wording is
+`NRHookPoint (OptiScaler route). Present (default): the game's finished picture. Before
+the upscaler: not with Ray Reconstruction.` The panel shows the three places as 超分后
+(after the upscaler), 超分前（更高帧数） (before the upscaler) and 最佳效果 (at Present).
+
+A layer placed at Present can run on **every presented frame**, and then the plugin scales
+its motion vectors by the frame-generation multiplier it works out on its own. With this
+fork's chain (`[FrameGen] FGInput=dlssg`, `FGOutput=xefg`) the plugin cannot read
+`DLSSG.MultiFrameCount`, so it falls back to timing; observed in `dlssnr-amd.log`:
+
+```
+[nr] Present layers: 3.983 presents per game frame: frame generation detected (4x);
+     source=stable timing; RenoDX layers run on every present,
+     motion scaled by 1/multiplier (NRPresentFrames=0)
+[nr] Present layers: 2.933 presents per game frame: frame generation now 3x; ...
+```
+
+while `OptiScaler.log` states the real factor steadily (`XeFGPacing::ReportStats XeFG
+pacing: 3X`). Estimating 4x for a 3x chain scales motion by 1/4 instead of 1/3, which
+mis-warps NR's history: the picture jitters visibly and the footer ms jumps with it.
+
+`[RenoDX] NRPresentFrames = 1` (panel: Present frames → 每个游戏帧的第一次呈现 /
+"First present per game frame") runs NR once per game frame instead, so the estimate no
+longer drives extra runs. Confirmed by a user in *Neverness to Everness* on 2026-11-04:
+the jitter and the jumping ms both stopped.
+
+**The installer sets `NRPresentFrames = 1` on every ASI install** (fresh, kept and overwrite),
+because a value of `0` is overwhelmingly the vendor default rather than a deliberate choice, and
+a kept user file would otherwise never get the fix. A value that is neither absent nor `0` is
+left untouched, so someone who sets it back to `0` in NR Control keeps it until they change the
+number again. The plugin's own `[RenoDX] NRPresentFrames` key and the panel's "Present frames"
+selector remain the way to override it; the vendored payload and its ini templates are not
+modified, so the deviation is applied at install time and is visible in `dlssnr-amd.ini`.
+The real fix belongs in the plugin reading the host's actual multiplier; the reproduce-and-report
+notes are in [docs/research/2026-11-04-asi-fg-cadence-repro.md](research/2026-11-04-asi-fg-cadence-repro.md).
+
 ## Controls
 
 All keys below are in `[DlssNr]`, prefixed `Mochizuki`, independent of Daniel and

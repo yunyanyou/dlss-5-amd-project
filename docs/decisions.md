@@ -1451,3 +1451,25 @@ lmxxf 额外多槽吞吐回落；更少的 16/8 段没有进一步收益，因�
   以消费 parser 为全集（wilsjo2 232、RenoDX 115 个独立键，展开 Pass2..Pass30），
   缺源码明确非零，未提供游戏 ini 标注未查；模板/writer 补充。报告在
   `work/notes/2026-11-03-mz4-key-coverage.md`（本地）。
+
+## 2026-11-04: 帧生成开启时把 ASI 的 NRPresentFrames 设为 1（安装器不自动改）
+
+**现象**：《Neverness to Everness》开插帧后，NR Control 页脚的 ms 与画面一起明显抖动。
+
+**根因（有日志为证）**：ASI 的 Present 层默认 `NRPresentFrames = 0` = 每次呈现都跑 NR，
+运动矢量按「插件自己估出的插帧倍率」缩放。我们 fork 的 `FGInput=dlssg` + `FGOutput=xefg`
+不暴露 `DLSSG.MultiFrameCount`，于是它退回按呈现间隔猜：`dlssnr-amd.log` 里先后估出
+`3.983 presents per game frame → 4x` 和 `2.933 → 3x`，而同一时刻宿主 `OptiScaler.log`
+明写 `XeFG pacing: 3X`。猜成 4x 时运动矢量按 1/4 缩放 → NR 历史被错 warp → 画面抖、ms 跳。
+
+**处置**：`dlssnr-amd.ini` 里 `NRPresentFrames = 1`（面板 Present frames →「每个游戏帧的第一次呈现」），
+用户已验证抖动与页脚跳动都消失。**安装器在每次 ASI 安装时都设为 1**（全新装、保留用户配置、覆盖安装
+都设）：`0` 几乎总是厂商默认值而非用户主动选择，若只改新装，老用户永远拿不到这个修正。值既不是缺失也不是
+`0` 时不动，所以用户在 NR Control 里主动改回 `0` 之后不会被我们偷偷翻回来。**不修改厂商 payload 与其 ini
+模板**——偏离在安装时落到 `dlssnr-amd.ini`，用户看得见、也能自己改回去。真正的修复仍应在插件侧读取宿主
+真实倍率；复现与说明见 `docs/research/2026-11-04-asi-fg-cadence-repro.md`。
+（决策过程：我先建议不覆盖厂商默认，用户明确要求「默认带上修复」，故改为安装时设置。）
+
+**边界**：`1` 模式下生成帧不再各自过一遍 NR（只显示插帧结果），生成帧观感可能略软；关闭 FG 时
+两种模式等价（每游戏帧只有一个 present）。文档同步在 `docs/mochizuki.md` 的
+"Frame generation and the ASI's Present layers"。

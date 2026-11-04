@@ -2456,6 +2456,19 @@ if ($installMochizuki) {
             $mochizukiActiveNetwork = $activeModelName
         }
     }
+    # Fork-side default. With this fork's frame generation the plugin cannot read the real
+    # multiplier: it logs "source=stable timing" and lands on 4x for a chain the host reports as
+    # a steady 3X. The vendor's NRPresentFrames = 0 then scales motion by that wrong factor on
+    # every presented frame, which visibly jitters the picture. 1 runs NR once per game frame and
+    # is identical to 0 whenever frame generation is off, so it is safe for every install. A value
+    # that is neither absent nor 0 is the user's own choice and stays untouched.
+    if (Test-Path -LiteralPath $asiIni -PathType Leaf) {
+        $asiPresentFrames = Get-IniSetting $asiIni 'RenoDX' 'NRPresentFrames'
+        if (-not $asiPresentFrames -or $asiPresentFrames -eq '0') {
+            Set-IniSettings $asiIni 'RenoDX' ([ordered]@{ 'NRPresentFrames' = '1' })
+            Write-Host '  dlssnr-amd.ini: NRPresentFrames=1 (NR once per game frame; this fork gives the plugin no frame-generation count to scale by).' -ForegroundColor Green
+        }
+    }
     # Upstream keeps the resolved config as dlssnr-amd\dlssnr-amd.default.ini;
     # the ASI restores a deleted dlssnr-amd.ini from it. Mirror the current main
     # file so user edits and this install's choices are what gets restored.
