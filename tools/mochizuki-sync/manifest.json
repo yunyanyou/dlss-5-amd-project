@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "upstream": "https://github.com/mochizuki0323/DLSSNR-AMD.git",
+  "upstream": "https://gitlab.com/mochizuki0323/DLSSNR-AMD.git",
   "commit": "cc27501dc116bdcfbb43612e497c5ca12497574a",
   "vendor": "third_party/mochizuki",
   "text_extensions": [

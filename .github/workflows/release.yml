@@ -451,7 +451,7 @@ jobs:
           $upstream = Join-Path $env:RUNNER_TEMP 'mochizuki-source-check'
           git init $upstream
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          git -C $upstream fetch --depth=1 https://github.com/mochizuki0323/DLSSNR-AMD.git $pin
+          git -C $upstream fetch --depth=1 https://gitlab.com/mochizuki0323/DLSSNR-AMD.git $pin
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -B tools/mochizuki-sync/check.py --upstream $upstream
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -538,7 +538,7 @@ jobs:
           $upstream = Join-Path $env:RUNNER_TEMP 'mochizuki-source-check'
           git init $upstream
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          git -C $upstream fetch --depth=1 https://github.com/mochizuki0323/DLSSNR-AMD.git $pin
+          git -C $upstream fetch --depth=1 https://gitlab.com/mochizuki0323/DLSSNR-AMD.git $pin
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -B tools/mochizuki-sync/check.py --upstream $upstream
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
