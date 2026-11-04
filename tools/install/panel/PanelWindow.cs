@@ -294,7 +294,7 @@ namespace OptScalerNR.Launcher
                 var label = new TextBlock
                 {
                     Text = suffix,
-                    FontSize = 12.5,
+                    FontSize = 14,
                     VerticalAlignment = VerticalAlignment.Center,
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     FontWeight = isRec ? FontWeights.SemiBold : FontWeights.Normal,
@@ -367,13 +367,13 @@ namespace OptScalerNR.Launcher
             {
                 CornerRadius = new CornerRadius(9),
                 BorderThickness = new Thickness(borderKey == null ? 0 : 1),
-                Padding = new Thickness(7, 1, 7, 2),
+                Padding = new Thickness(8, 2, 8, 3),
                 Margin = new Thickness(6, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
                 Child = new TextBlock
                 {
                     Text = text,
-                    FontSize = 10,
+                    FontSize = 10.5,
                     Foreground = LauncherTheme.Brush(foreKey)
                 }
             };
@@ -424,22 +424,36 @@ namespace OptScalerNR.Launcher
                     : L("Wiki 没有这个游戏的记录：先试 dxgi.dll，进不去再逐个换", "No wiki record for this game: start with dxgi.dll, then try the others"), "ThemeWarning", false);
                 return;
             }
-            AddHintRun(hint, L("Wiki 首选 ", "Wiki pick "), "ThemeMuted", false);
+            // A profile rule really has two facts (preferred, then the ones that also worked), so it
+            // gets two lines. A wiki-table hit is just the list of DLLs that row mentions: one line.
+            var fromRule = advice.Profile != null && !string.IsNullOrEmpty(advice.Profile.Preferred);
+            var also = OrderedAlternatives(advice, preferred);
+            AddHintRun(hint, fromRule ? L("Wiki 首选 ", "Wiki pick ") : L("Wiki 推荐 ", "wiki lists "), "ThemeMuted", false);
             AddHintRun(hint, preferred, "ThemeAccent", true);
-            var others = new List<string>();
+            if (also.Count > 0 && fromRule)
+            {
+                hint.Inlines.Add(new System.Windows.Documents.LineBreak());
+                AddHintRun(hint, L("Wiki 备选 ", "Also tried "), "ThemeMuted", false);
+                AddHintRun(hint, string.Join(" / ", also), "ThemeInk", false);
+            }
+            else if (also.Count > 0)
+            {
+                AddHintRun(hint, " / " + string.Join(" / ", also), "ThemeMuted", false);
+            }
+        }
+
+        // 备选名按注入名单的固定顺序排，避免 profile 数组顺序变化让文字左右跳动。
+        static List<string> OrderedAlternatives(WikiAdvice advice, string preferred)
+        {
+            var alt = AlternativeNames(advice);
+            var ordered = new List<string>();
             foreach (var name in Candidates)
             {
                 var suffix = name + ".dll";
-                if (!string.Equals(suffix, preferred, StringComparison.OrdinalIgnoreCase)) others.Add(suffix);
+                if (!string.Equals(suffix, preferred, StringComparison.OrdinalIgnoreCase) && alt.Contains(suffix))
+                    ordered.Add(suffix);
             }
-            var alt = AlternativeNames(advice);
-            var also = new List<string>();
-            foreach (var name in others) if (alt.Contains(name)) also.Add(name);
-            if (also.Count > 0)
-            {
-                AddHintRun(hint, L(" · 备选 ", " · also "), "ThemeMuted", false);
-                AddHintRun(hint, string.Join(" / ", also), "ThemeMuted", false);
-            }
+            return ordered;
         }
 
         static void AddHintRun(TextBlock hint, string text, string foreKey, bool bold)

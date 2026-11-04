@@ -507,9 +507,10 @@
       <Border Style="{StaticResource Surface}" Padding="10">
         <DockPanel>
           <StackPanel DockPanel.Dock="Top" Margin="2,0,2,8">
-            <TextBlock x:Name="ProxyHeading" Text="注入代理" FontWeight="SemiBold" FontSize="12"/>
+            <TextBlock x:Name="ProxyHeading" Text="注入代理" FontWeight="SemiBold" FontSize="12.5"/>
             <TextBlock x:Name="ProxyHint" Text="点击切换，立即生效" Foreground="{DynamicResource ThemeMuted}"
-                       FontSize="10.5" Margin="0,2,0,0" TextWrapping="Wrap"/>
+                       FontSize="11" Margin="0,3,0,0" LineHeight="15" LineStackingStrategy="BlockLineHeight"
+                       TextWrapping="Wrap"/>
           </StackPanel>
           <ScrollViewer VerticalScrollBarVisibility="Auto">
             <StackPanel x:Name="LoaderList"/>
