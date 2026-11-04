@@ -1616,18 +1616,45 @@ README 里补上两个包名、tag、以及这 5 个文件的 SHA-256 表，因�
 （根本没装，真正在解锁的是宿主自己的 `XeFGUnlock::Apply`）、倍率估计不一致（这次 4.034 与宿主 4X 一致）、
 burst 覆盖不全（`proxies/XeFGPacing.h:152` 写明只调度 `1..count-1`，最后一帧归 provider，行为正确）。
 
-**处置**：新键 `[DlssNr] AsiFgHandoff`，**默认关**。开时 `inputs/NVNGX_DLSS_Dx12.cpp` 的
-`NVSDK_NGX_D3D12_EvaluateFeature` 入口把 `CurrentFG()->GetInterpolatedFrameCount() + 1` 写进
-`DLSSG.MultiFrameCount` —— 那正是插件 `NRPresentFgSource=0` 的第一优先来源，也是它现在读不到、
-只能按呈现间隔猜的那个键。只在「键开 + `AsiTakeover::Active()` + FG 活跃未暂停」时写，值相同不重复写。
-默认关的理由写进注释：插件的读取时机没有文档，写错会落到游戏自己那份参数表上。
-验收判据是插件自己打印的那行 `Present layers: ... source=`；**若它不变，说明插件不读这个句柄，
-这条路就不通，要撤掉这个键而不是留一个死开关**。
+**处置（试过，已删）**：实现过 `[DlssNr] AsiFgHandoff`（默认关）。开时
+`inputs/NVNGX_DLSS_Dx12.cpp` 的 `NVSDK_NGX_D3D12_EvaluateFeature` 入口把
+`CurrentFG()->GetInterpolatedFrameCount() + 1` 写进 `DLSSG.MultiFrameCount` —— 那正是插件
+`NRPresentFgSource=0` 的第一优先来源。**真机跑完，插件那行仍是 `source=stable timing`**：它不读
+这个参数句柄，写了没人看。按事先写好的判据整个删掉 —— 代码 revert、随包模板、打包器
+`[DlssNr]` 段（`:276` 会整段替换，只改模板不够）、`tests/host/test_config_priority.py` 白名单、
+以及用户游戏目录里那一行都清了。留一个「看着能修其实没接线」的开关比不修更坏。
+真正的原因是下面那条，跟倍率通信无关。
 
 **顺带修的两个真问题**：①`tools/build/build-release-local.cmd` 与 `build-rtgi-shaders.cmd`
 硬写 VS 18 BuildTools 的 vcvars/MSBuild 路径并强制 `/p:PlatformToolset=v145`，而项目自己是 v143、
 本机只有 VS 2022 Community —— 第一次编译就是 `HOST_RC=1` 且 DLL 时间没变；现在走
 `tests\_lib\msvc-env.cmd`（候选列表 + vswhere）+ PATH 上的 `msbuild`，不再覆盖工具集，CI 不受影响
 （workflow 自己算 `PLATFORM_TOOLSET`）。②`build-lmxxf-runtime.cmd` 也依赖调用方先进开发环境，
-现在自己兜一次。③打包器 `PACKAGE_RELEASE.ps1:276` 会整段替换 `[DlssNr]`，只改随包模板不够，
-新键必须同时写进那段 here-string。
+现在自己兜一次。
+
+## 2026-11-04: 帧生成开着时 NR 层只有「RenoDX + Present」不闪（实测矩阵）
+
+**结论**：用户实测 —— `RenoDX@Present` 不闪；`RenoDX@before`、`RenoDX@after`、
+`wilsjo2@before/after/present` 全部逐帧闪，倍率越高闪得越快。这是厂商插件在
+「OptiScaler 自己的帧生成」下的固有行为，不是我们改坏的：`RefuseUnderGameFsrFg()` 那条
+检测在这台机器上从没触发（`OptiScaler.log` 里 `FSR Frame Generation` 0 次），而且我们和
+`upstream/main` 都还带着这两个函数，`e57377fc` 不在我们任何 remote 里 —— 那条「上游已 revert」
+的线索对本例无贡献。
+
+**为什么之前所有测试都在空转**：`dlssnr-amd.ini` 里只要存在 `[LayerN]` 段，厂商就写明
+`with [LayerN] sections ... this one is not used`，"this one" 指 `[RenoDX]` 段。于是
+`[RenoDX] NRHookPoint` 和 `[RenoDX] NRPresentFrames` 都不参与，真正生效的是
+`[Layer1] Processing` / `Placement`。用户改 hook point、改 present frames、以及我们安装器写的
+`NRPresentFrames=1`，在有 `[LayerN]` 的目录里全都落不到实际跑的层上；插件日志
+`NR: 1 wilsjo2 before` 才是真相。也就是说安装期那个默认值只在「没有 `[LayerN]` 段」时有效。
+
+**处置**：面板新增一行「NR 层」，把真正会跑的组合读出来；帧生成开着且不是 `renodx present`
+时用警示色写「会逐帧闪，改成 RenoDX + Present」，FG 关着不警告。读取规则跟厂商一致：
+`[NRControl] Layers=1` 时每个启用的 `[LayerN]` 都算，默认只算第一层，完全没有 `[LayerN]` 才轮到
+`[RenoDX] Enabled` + `NRHookPoint`。不做安装期静默改写 —— 那是用户在菜单里的主动选择，
+我们负责说清楚（同 `feedback-fork-side-fixes-as-defaults`：只覆盖默认值，用户改过的不动）。
+
+**验证**：反射驱动产物 EXE 跑完整矩阵（8 组合 + FG 关 + 真实游戏目录）。只有
+`renodx present` 的两种写法（无层 / 有层）`risky=False`，其余 6 种 `risky=True`；FG 关时即使
+层是 `wilsjo2 before` 也 `risky=False`；真实目录读回
+`renodx present（帧生成下唯一不闪的组合）`。

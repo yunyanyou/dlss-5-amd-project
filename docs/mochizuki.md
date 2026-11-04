@@ -308,6 +308,14 @@ mis-warps NR's history: the picture jitters visibly and the footer ms jumps with
 longer drives extra runs. Confirmed by a user in *Neverness to Everness* on 2026-11-04:
 the jitter and the jumping ms both stopped.
 
+**That key only has an effect while no `[LayerN]` section exists.** The vendor ini says it
+plainly: `with [LayerN] sections (layers stacked in NR Control) each layer's settings are in its
+own section and this one is not used` - "this one" being `[RenoDX]`. Once a layer is added in NR
+Control, `[RenoDX] NRPresentFrames`, `[RenoDX] NRHookPoint` and everything else in that section
+stop applying, and the live combination becomes the layer's own `Processing` and `Placement`. The
+plugin log is the only honest read of which case you are in: `NR: 1 wilsjo2 before` means the
+layer, not the section.
+
 **The installer sets `NRPresentFrames = 1` on every ASI install** (fresh, kept and overwrite),
 because a value of `0` is overwhelmingly the vendor default rather than a deliberate choice, and
 a kept user file would otherwise never get the fix. A value that is neither absent nor `0` is
@@ -317,6 +325,41 @@ selector remain the way to override it; the vendored payload and its ini templat
 modified, so the deviation is applied at install time and is visible in `dlssnr-amd.ini`.
 The real fix belongs in the plugin reading the host's actual multiplier; the reproduce-and-report
 notes are in [docs/research/2026-11-04-asi-fg-cadence-repro.md](research/2026-11-04-asi-fg-cadence-repro.md).
+
+## What does and does not flicker under OptiScaler's frame generation
+
+Measured on *Neverness to Everness*, 2026-11-04, with the vendor `dlssnr-amd.asi` 0.0.8.2 and
+`FGInput=dlssg`, `FGOutput=xefg`, at 2X and 4X:
+
+| NR layer combination | with frame generation on |
+|---|---|
+| RenoDX processing, placed at Present | steady |
+| RenoDX, before the upscaler | flickers every presented frame |
+| RenoDX, after the upscaler | flickers every presented frame |
+| wilsjo2 processing, any of the three places | flickers every presented frame |
+
+The rate follows the multiplier: at 4X it flickers about twice as fast as at 2X, which is what
+"one of every presented frame gets NR, the rest do not" looks like. Turning frame generation off
+makes every combination steady, and turning NR off (F6) while keeping frame generation on also
+does, so the fault is the pair, not either half.
+
+Nothing in this fork causes it, and two plausible leads were checked and dismissed with evidence:
+our `XeFGPacing` layer is not involved (`[XeFG] ExtraPacing=off` changed nothing), and the
+game-FSR-FG refusal (`RefuseUnderGameFsrFg()`, which the official OptiScaler repository later
+reverted as noisy) never fires in this game - `OptiScaler.log` contains no `FSR Frame Generation`
+line at all, and both this fork and `upstream/main` still carry those functions.
+
+We also tried telling the plugin our real multiplier: `[DlssNr] AsiFgHandoff` wrote
+`CurrentFG()->GetInterpolatedFrameCount() + 1` into `DLSSG.MultiFrameCount`, the key
+`NRPresentFgSource=0` says it tries first. The plugin kept printing `source=stable timing`, so it
+does not read that handle and the whole key was removed rather than left in the ini looking like a
+fix. See [decisions.md](decisions.md), 2026-11-04.
+
+What the fork does instead: the game-directory panel reads the combination that will actually run
+(a `[LayerN]` section overrides `[RenoDX]` entirely) and, when frame generation is on and it is not
+`renodx present`, shows it in the warning colour with the fix named - "改成 RenoDX + Present". With
+frame generation off it stays quiet. We do not rewrite the choice at install time, because in NR
+Control it is a deliberate user setting.
 
 ## Controls
 
