@@ -1452,7 +1452,7 @@ lmxxf 额外多槽吞吐回落；更少的 16/8 段没有进一步收益，因�
   缺源码明确非零，未提供游戏 ini 标注未查；模板/writer 补充。报告在
   `work/notes/2026-11-03-mz4-key-coverage.md`（本地）。
 
-## 2026-11-04: 帧生成开启时把 ASI 的 NRPresentFrames 设为 1（安装器不自动改）
+## 2026-11-04: 帧生成开启时把 ASI 的 NRPresentFrames 设为 1（先定不自动改→改为安装时自动设）
 
 **现象**：《Neverness to Everness》开插帧后，NR Control 页脚的 ms 与画面一起明显抖动。
 
@@ -1473,3 +1473,24 @@ lmxxf 额外多槽吞吐回落；更少的 16/8 段没有进一步收益，因�
 **边界**：`1` 模式下生成帧不再各自过一遍 NR（只显示插帧结果），生成帧观感可能略软；关闭 FG 时
 两种模式等价（每游戏帧只有一个 present）。文档同步在 `docs/mochizuki.md` 的
 "Frame generation and the ASI's Present layers"。
+
+## 2026-11-04: 面板 OptiPatcher 按钮改成一键安装/卸载，并删掉它写 ini 的逻辑
+
+**问题**：面板按钮点下去先弹「是否安装 OptiPatcher（DLSS 伪装增强）？」，选「否」时执行
+`SetAsiPlugins("auto")`。在 ASI 路线上这是真 bug 而不只是啰嗦：`dlssnr-amd.asi` 与 OptiPatcher
+走同一个 `[Plugins] LoadAsiPlugins` 开关，安装器刚写好的 `true` 会被一次「拒绝无关插件」的点击
+改回 `auto`（宿主读作 false）→ Neural Rendering 连带被关闭，而且用户看不到任何提示。安装后写
+`true` 那一步同样多余：ASI 安装已经把键写成 `true`。
+
+**处置**：删掉 `SetAsiPlugins`，安装前后的两处写入一起去掉，「否 → auto」分支消失。按钮变成文件
+状态开关：`plugins/OptiPatcher.asi` 或 `OptiScaler/plugins/OptiPatcher.asi` 在就在，标签转成
+「卸载 OptiPatcher」，点击直接删除；不在就是「安装」，点击直接下载/回退包内副本并落盘，不再有二级
+确认（失败本来就会打印原因）。`Refresh()` 与语言切换都会重算标签。卸载是唯一仍要确认的动作，因为
+它删文件；删除失败立即返回，不会报「已删除」。面板从此只读 `LoadAsiPlugins`，状态文案改为说明这个
+键由安装器负责、要手动改去哪里。
+
+**验证**：反射调用产物 EXE 的私有方法，四种目录状态（空 / `plugins/` / 两处都有 / 只有
+`OptiScaler/plugins/`）的 `OptiPatcherInstalled()` 与按钮标签都符合预期；`DetectOptiPatcherState()`
+对 `true`、`false`、缺键三种 `OptiScaler.ini` 跑完后文件 SHA-256 不变（只读）。打包
+`RUN_RC=0`，产物面板经反射复验是本次构建。启动器（`MainWindow` / `MainController`）的 OptiPatcher
+勾选仍按原设计写 `LoadAsiPlugins`——那是安装动作的一部分，本次不动。
