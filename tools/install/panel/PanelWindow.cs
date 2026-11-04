@@ -266,46 +266,57 @@ namespace OptScalerNR.Launcher
             var occupied = Occupied();
             var advice = AdviceCached();
             var recommend = advice != null ? advice.Recommended : null;
+            var alternatives = AlternativeNames(advice);
 
             foreach (var name in Candidates)
             {
+                var suffix = name + ".dll";
                 var isOurs = current != null && string.Equals(current.Name, name, StringComparison.OrdinalIgnoreCase);
                 var isOcc = occupied.Contains(name);
-                var isRec = recommend != null && string.Equals(recommend, name + ".dll", StringComparison.OrdinalIgnoreCase);
+                var isRec = !string.IsNullOrEmpty(recommend) && string.Equals(recommend, suffix, StringComparison.OrdinalIgnoreCase);
+                var isAlt = !isOurs && !isOcc && !isRec && alternatives.Contains(suffix);
 
                 var row = new Border
                 {
                     CornerRadius = new CornerRadius(6),
-                    Padding = new Thickness(10, 7, 10, 7),
-                    Margin = new Thickness(0, 0, 0, 6),
+                    Padding = new Thickness(10, 6, 8, 6),
+                    Margin = new Thickness(0, 0, 0, 5),
                     Cursor = System.Windows.Input.Cursors.Hand,
                     Background = isOurs ? LauncherTheme.Brush("ThemeSuccessBg")
                                : isOcc ? LauncherTheme.Brush("ThemeWarningBg")
                                : LauncherTheme.Brush("ThemeSubtle")
                 };
-                var stack = new StackPanel();
-                stack.Children.Add(new TextBlock
+                // One line per row: name left, state chip right. Rows that say nothing about
+                // this game get no chip, so the badges that remain are the ones that mean something.
+                var grid = new Grid();
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                var label = new TextBlock
                 {
-                    Text = name + ".dll",
+                    Text = suffix,
                     FontSize = 12.5,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    FontWeight = isRec ? FontWeights.SemiBold : FontWeights.Normal,
                     Foreground = isOurs ? LauncherTheme.Brush("ThemeSuccess")
                                : isOcc ? LauncherTheme.Brush("ThemeWarning")
                                : isRec ? LauncherTheme.Brush("ThemeAccent")
                                : LauncherTheme.Brush("ThemeInk")
-                });
-                var state = isOurs ? L("当前注入", "active") : isOcc ? L("被占用", "occupied") : isRec ? L("Wiki 推荐", "wiki pick") : L("备用", "spare");
-                stack.Children.Add(new TextBlock
+                };
+                Grid.SetColumn(label, 0);
+                grid.Children.Add(label);
+                var chip = StateChip(isOurs, isOcc, isRec, isAlt);
+                if (chip != null)
                 {
-                    Text = state,
-                    FontSize = 10.5,
-                    Foreground = LauncherTheme.Brush("ThemeMuted"),
-                    Margin = new Thickness(0, 1, 0, 0)
-                });
-                row.Child = stack;
+                    Grid.SetColumn(chip, 1);
+                    grid.Children.Add(chip);
+                }
+                row.Child = grid;
                 var capture = name;
                 row.MouseLeftButtonUp += (s, e) => SwitchTo(capture);
                 _list.Children.Add(row);
             }
+            UpdateProxyHint();
 
             // Hero 卡：顶部小字=目录路径，大字=游戏名，说明区=分组标签行，底部=横排按钮。
             var exe = GameExe();
@@ -340,6 +351,104 @@ namespace OptScalerNR.Launcher
             RefreshHardware();
 
             SelectGameProfiles();
+        }
+
+        // 行尾状态芯片：只给"这条对当前游戏有意义"的状态做芯片。名单里其余的代理不需要
+        // "备用"之类的标签——它们只是可点的名字。
+        static Border StateChip(bool isOurs, bool isOcc, bool isRec, bool isAlt)
+        {
+            string text, foreKey, backKey, borderKey;
+            if (isOurs) { text = L("当前注入", "in use"); foreKey = "ThemeSuccess"; backKey = "ThemeSurface"; borderKey = "ThemeSuccess"; }
+            else if (isOcc) { text = L("被占用", "taken"); foreKey = "ThemeWarning"; backKey = "ThemeSurface"; borderKey = "ThemeWarning"; }
+            else if (isRec) { text = L("Wiki 首选", "wiki pick"); foreKey = "ThemeOnAccent"; backKey = "ThemeAccent"; borderKey = null; }
+            else if (isAlt) { text = L("Wiki 备选", "also ok"); foreKey = "ThemeMuted"; backKey = null; borderKey = "ThemeBorder"; }
+            else return null;
+            var chip = new Border
+            {
+                CornerRadius = new CornerRadius(9),
+                BorderThickness = new Thickness(borderKey == null ? 0 : 1),
+                Padding = new Thickness(7, 1, 7, 2),
+                Margin = new Thickness(6, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = new TextBlock
+                {
+                    Text = text,
+                    FontSize = 10,
+                    Foreground = LauncherTheme.Brush(foreKey)
+                }
+            };
+            if (backKey != null) chip.Background = LauncherTheme.Brush(backKey);
+            if (borderKey != null) chip.BorderBrush = LauncherTheme.Brush(borderKey);
+            return chip;
+        }
+
+        // 除首选之外，Wiki 游戏规则或 Wiki 表格还提到过的代理名（已带 .dll，已去掉首选本身）。
+        static HashSet<string> AlternativeNames(WikiAdvice advice)
+        {
+            var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (advice == null) return set;
+            AddProxyNames(set, advice.Profile != null ? advice.Profile.Alternatives : null);
+            AddProxyNames(set, advice.WikiProxies);
+            var preferred = advice.Recommended;
+            if (!string.IsNullOrEmpty(preferred)) set.Remove(preferred);
+            return set;
+        }
+
+        static void AddProxyNames(HashSet<string> set, string[] names)
+        {
+            if (names == null) return;
+            foreach (var name in names)
+                if (!string.IsNullOrEmpty(name)) set.Add(name.IndexOf('.') >= 0 ? name : name + ".dll");
+        }
+
+        // 列表上方的说明行：有首选就把名字直接写在这里（行内芯片之外再给一次显式答案），
+        // 没首选就明说"Wiki 没记"，而不是留一句谁都像的"点击切换"。
+        static void UpdateProxyHint()
+        {
+            var hint = _window == null ? null : _window.FindName("ProxyHint") as TextBlock;
+            if (hint == null) return;
+            hint.Inlines.Clear();
+            var advice = AdviceCached();
+            if (advice == null)
+            {
+                AddHintRun(hint, L("点击切换，立即生效 · 正在获取 Wiki 推荐…", "Click to switch · fetching wiki data…"), "ThemeMuted", false);
+                return;
+            }
+            var preferred = advice.Recommended;
+            if (string.IsNullOrEmpty(preferred))
+            {
+                // "先试 dxgi" is not a guess: 687 of the 707 upstream proxy rules prefer it, and the
+                // row-level 被占用 chip still stops the switch if the game owns that name.
+                AddHintRun(hint, advice.WikiName != null
+                    ? L("Wiki 收录了这个游戏，但没记代理名：先试 dxgi.dll", "Listed on the wiki with no proxy recorded: start with dxgi.dll")
+                    : L("Wiki 没有这个游戏的记录：先试 dxgi.dll，进不去再逐个换", "No wiki record for this game: start with dxgi.dll, then try the others"), "ThemeWarning", false);
+                return;
+            }
+            AddHintRun(hint, L("Wiki 首选 ", "Wiki pick "), "ThemeMuted", false);
+            AddHintRun(hint, preferred, "ThemeAccent", true);
+            var others = new List<string>();
+            foreach (var name in Candidates)
+            {
+                var suffix = name + ".dll";
+                if (!string.Equals(suffix, preferred, StringComparison.OrdinalIgnoreCase)) others.Add(suffix);
+            }
+            var alt = AlternativeNames(advice);
+            var also = new List<string>();
+            foreach (var name in others) if (alt.Contains(name)) also.Add(name);
+            if (also.Count > 0)
+            {
+                AddHintRun(hint, L(" · 备选 ", " · also "), "ThemeMuted", false);
+                AddHintRun(hint, string.Join(" / ", also), "ThemeMuted", false);
+            }
+        }
+
+        static void AddHintRun(TextBlock hint, string text, string foreKey, bool bold)
+        {
+            hint.Inlines.Add(new System.Windows.Documents.Run(text)
+            {
+                Foreground = LauncherTheme.Brush(foreKey),
+                FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal
+            });
         }
 
         static string WikiFact(WikiAdvice advice)
@@ -572,8 +681,9 @@ namespace OptScalerNR.Launcher
             {
                 if (IsOurs(dest))
                 {
-                    var answer = DialogTheme.Show(_window, "旧的 " + target + ".dll 是我们之前的注入，删除它并改用当前这份？",
-                        "确认", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                    var answer = DialogTheme.Show(_window, L("旧的 " + target + ".dll 是我们之前的注入，删除它并改用当前这份？",
+                            "The old " + target + ".dll is our earlier injection. Delete it and keep the current one?"),
+                        L("确认", "Confirm"), MessageBoxButton.YesNo, MessageBoxImage.Question);
                     if (answer != MessageBoxResult.Yes) return;
                     File.Delete(dest);
                 }
@@ -622,7 +732,7 @@ namespace OptScalerNR.Launcher
             }
             if (langEn != null) langEn.Background = LauncherTheme.Brush(zh ? "ThemeSubtle" : "ThemeSurface");
             SetText("ProxyHeading", L("注入代理", "Injection proxy"));
-            SetText("ProxyHint", L("点击切换，立即生效", "Click to switch, effective immediately"));
+            UpdateProxyHint();
             SetText("DiagnosticsHeading", L("配置与运行库兼容诊断", "Configuration & Runtime Compatibility"));
             if (_compatRepairBtn != null) _compatRepairBtn.Content = L("兼容修复", "Compat Repair");
             if (_compatRestoreBtn != null) _compatRestoreBtn.Content = L(L("恢复原文件", "Restore originals"), "Restore Files");
@@ -715,8 +825,7 @@ namespace OptScalerNR.Launcher
         static void UninstallOptiPatcher()
         {
             // Deleting a file is the one place that still asks.
-            if (DialogTheme.Show(_window, L("删除 OptiPatcher.asi？随时可以再点回来装上。",
-                    "Delete OptiPatcher.asi? You can install it again with one click."), "OptiPatcher",
+            if (DialogTheme.Show(_window, L("删除 OptiPatcher.asi？", "Delete OptiPatcher.asi?"), "OptiPatcher",
                     MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
             var removed = new List<string>();
             foreach (var candidate in new[] {
