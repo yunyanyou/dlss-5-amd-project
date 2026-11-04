@@ -100,10 +100,12 @@ def main(argv=None):
     WILSJO2 = source / "windows/src/core/nr_wilsjo2.cpp"
     RENODX_KEYS = source / "windows/src/core/nr_renodx_keys.hpp"
     WRITER = source / "windows/src/pe/nr_pe_config.cpp"
-    for required in (WILSJO2, RENODX_KEYS, WRITER):
-        if not required.is_file():
-            print("ERROR: consumer source file missing: " + str(required), file=sys.stderr)
-            return 2
+    # The template-vs-schema half of this check needs nothing but files we vendor, so a machine
+    # without a DLSSNR-AMD checkout still gets the answer that matters: does MZ4 carry every key
+    # the shipped template has. The consumer/writer half can only be done against the vendor's
+    # parser source, which is not in the pinned closure (27 core files, no windows/src/pe), so it
+    # is reported as skipped rather than exiting before printing anything.
+    consumer_source = [path for path in (WILSJO2, RENODX_KEYS, WRITER) if path.is_file()]
     if not TEMPLATE.is_file():
         print("ERROR: release template missing: " + str(TEMPLATE), file=sys.stderr)
         return 2
@@ -139,8 +141,8 @@ def main(argv=None):
         if key in ("DlssNr",): continue
         if any(k == key for _, k in global_keys) or key in layer_keys or key in LAYER_EXCLUDED: continue
         if key in ("Enabled", "Exposure", "ExposureBias", "Curve", "Contrast", "Saturation", "Inverse", "Model", "Placement", "Processing"): continue
-        # Writer keys not present in the release template/PBZ are reported, not silently dropped.
-        rows.append(("writer", "?", key, "source-only", "not present in pre1 template/PBZ; not claimed as pre1 support"))
+        # Writer keys absent from the shipped template are reported, not silently dropped.
+        rows.append(("writer", "?", key, "source-only", "not present in the 0.0.8.2 template/PBZ; not claimed as supported"))
     consumer = set()
     for key in sorted(consumer_wilsjo()):
         consumer.add(("wilsjo2", key))
@@ -159,6 +161,9 @@ def main(argv=None):
     print("| source | section | key | status | reason |")
     print("|---|---|---|---|---|")
     for row in rows: print("| " + " | ".join(row) + " |")
+    if len(consumer_source) < 3:
+        print("consumer/writer source: %d of 3 found under %s - parser cross-check skipped"
+              % (len(consumer_source), source))
     print(f"\n{len(rows)} rows, {len(missing)} missing; consumer keys: wilsjo2={len(consumer_wilsjo())}, renodx={len(consumer_renodx())}")
     print("game ini: " + (str(game) if game is not None else "not checked (--game-ini not supplied)"))
     return 1 if missing else 0

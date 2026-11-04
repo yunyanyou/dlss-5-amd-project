@@ -1451,6 +1451,9 @@ lmxxf 额外多槽吞吐回落；更少的 16/8 段没有进一步收益，因�
   以消费 parser 为全集（wilsjo2 232、RenoDX 115 个独立键，展开 Pass2..Pass30），
   缺源码明确非零，未提供游戏 ini 标注未查；模板/writer 补充。报告在
   `work/notes/2026-11-03-mz4-key-coverage.md`（本地）。
+  （2026-11-04 改：缺源码不再直接 exit 2——模板半边只依赖随包文件，现在照跑并打印
+  「consumer/writer source: N of 3 found … skipped」，只有真的漏键才非零。随包树里没有
+  `windows/src/pe`，core 只有 27 个文件，所以外部 checkout 那半边在普通机器上就是跳过。）
 
 ## 2026-11-04: 帧生成开启时把 ASI 的 NRPresentFrames 设为 1（先定不自动改→改为安装时自动设）
 
