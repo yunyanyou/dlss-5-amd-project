@@ -1819,8 +1819,15 @@ sync 层带「本周成功凭据复用」（`tools/lmxxf-sync/test-cache.py`，`
   Network」的逻辑，small 模型在时它本来就会写这个值。
 
 **没固定**：NR Control 存盘时顺带整层落盘的那批键（`AutoMask`、`Environment*`、`Skin*`、
-`ReplaceDetailStrength`、`TransferStrength`、`WhitePointScale`、`LocalStructure`），实测这些值就等于
-插件自己的默认 —— 钉进安装器只是把厂商默认搬进我们的代码，上游改默认时反而失效。
+`TransferStrength`、`WhitePointScale`、`LocalStructure`），实测这些值就等于插件自己的默认 ——
+钉进安装器只是把厂商默认搬进我们的代码，上游改默认时反而失效。
+
+**同日的更正（我上面那句说错了一处）**：那批键里 `ReplaceDetailStrength`（面板「恢复锐度」）**不是**
+插件默认：模板注释写着 `0 .. 2, default 0`，而他实机是 `2.00`。已加进 `[Layer1]` 基线。教训记下来：
+判断「是不是他改的」不能靠「整层都是存盘顺手写的」这种印象，要拿模板里每个键后面那行
+`; … default N` 注释逐键比（`work/scratch/layer-vs-default.py` 干的就是这件事）；`Intensity = 1.00`
+经核对确实等于默认（保留显式写入无害），`ColourStrength 0.50`、`LocalTone 0.00`、`Style 2`、
+`ReplaceDetailStrength 2.00` 四条是真偏离。
 
 **验证**：更新后的块套在随包模板副本上跑，`Intensity 1.00 / FastExtrapolationPasses 3 /
 ExposureBias 1.00 / Theme 4` 与他实机文件一致；install 层重跑；包重出后核 `[DlssNr]

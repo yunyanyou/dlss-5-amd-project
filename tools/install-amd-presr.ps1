@@ -2402,6 +2402,9 @@ if ($installMochizuki) {
             'Enabled' = '1'; 'Processing' = 'wilsjo2'; 'Placement' = 'before'; 'Style' = '2'
             'Intensity' = '1.00'; 'LocalTone' = '0.00'; 'PassesMode' = 'fast'
             'FastExtrapolationPasses' = '3'; 'ColourStrength' = '0.50'
+            # Restore sharpness. The plugin defaults it to 0 (no detail recovery in the replace
+            # modes); this fork's baseline runs it at the top of its 0..2 range.
+            'ReplaceDetailStrength' = '2.00'
         })
         Set-IniSettings $asiIni 'NRControl' ([ordered]@{ 'Theme' = '4' })
         Set-IniSettings $asiIni 'Preprocess' ([ordered]@{ 'ExposureBias' = '1.00' })
