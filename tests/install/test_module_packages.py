@@ -115,6 +115,14 @@ Add-Type -TypeDefinition 'public static class PackageFixture { public static int
         self.env = {k.upper(): v for k, v in os.environ.items()}
         self.env.pop('PSMODULEPATH', None)
         self.archive = self.root / 'dist/package.zip'
+        # The frame-generation unlocker is a required delivery file (dlssnr-amd.asi only adopts
+        # frame generation when an outside module asks XeSS for its swap chain). Carry a synthetic
+        # plugin and the vendor licence so the packager's guard runs here instead of being skipped.
+        (self.root / 'assets/plugins').mkdir(parents=True, exist_ok=True)
+        (self.root / 'assets/plugins/MFGUnlocker171.asi').write_bytes(self.pe_bytes)
+        (self.root / 'third_party/mfg-unlocker').mkdir(parents=True, exist_ok=True)
+        shutil.copy2(REPO / 'third_party/mfg-unlocker/LICENSE',
+                     self.root / 'third_party/mfg-unlocker/LICENSE')
         # Official ASI payload is vendored; packaging checks names/layout only.
         payload = self.root / 'third_party/mochizuki-asi/payload'
         (payload / 'OptiScaler/plugins').mkdir(parents=True)

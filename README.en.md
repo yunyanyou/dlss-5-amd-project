@@ -157,15 +157,16 @@ If you prefer manual file placement:
 <details>
 <summary><strong>👉 Click to expand: 3x+ Frame Generation (Intel XeFG / Arturs DLSS Enabler)</strong></summary>
 
-These options are independent of DLSSNR. Required files are not bundled; obtain them separately.
+These options are independent of DLSSNR. Apart from the XeSS unlocker bundled below, required files are not shipped; obtain them separately.
 **Note**: Game restarts are required when changing INI settings. Keep `[FrameGen] External=false`. **Do not enable both simultaneously**.
 
 ---
 
 #### Option 1: Intel XeFG (Multi-Frame Generation & Dynamic MFG)
-`XeFGUnlock.asi` / `MFGUnlocker.asi` originate from the community (only the `.asi` plugin file is needed; not bundled with this package).
+`XeFGUnlock.asi` / `MFGUnlocker.asi` originate from the community. This package carries the author's unmodified v1.7.0 release as `plugins\MFGUnlocker171.asi` (MIT, renamed only; digest and provenance in `third_party\mfg-unlocker\README.md`).
+> **With Mochizuki NR (the ASI plugin) this unlocker is required, not an optional tweak**: the NR plugin takes over the frame generator only when the module asking XeSS for its swap chain is not OptiScaler itself. Without it NR lands on 1 of every N presented frames and the picture flickers frame by frame (the proof line in `dlssnr-amd.log` is `the game's own frame generation ... before frame generation`). Higher multipliers (4X/6X/8X) need it too; without it XeFG stays at the provider's own 2X.
 Thanks to [@Overclockers](https://github.com/Overclockers) for contributing the NR-active independent XeFG frame generation multiplier override feature in PR #3 (allowing a dedicated XeFG interpolation multiplier when NR is active).
-1. Place your `.asi` unlocker plugin into the pre-created `OptiScaler\plugins\` folder in the game directory (or into the package's `plugins\` folder before running `Setup.bat`, which copies it while preserving existing plugin configuration and explicit loader settings; only a missing or auto loader setting is enabled), without the `-loadlate` parameter;
+1. The bundled `plugins\MFGUnlocker171.asi` is copied by `Setup.bat` into the game's `OptiScaler\plugins\` (existing plugin configuration and an explicit loader switch are preserved; only a missing or `auto` switch is enabled). You may instead drop your own `.asi` into the game's pre-created `OptiScaler\plugins\` folder, or into the package's `plugins\` folder before running `Setup.bat`. Do not add the `-loadlate` parameter;
 2. Configure `OptiScaler.ini` in the game root:
    ```ini
    [Plugins]
@@ -315,7 +316,7 @@ Advanced process env (no Ins toggle): `DLSSNR_NO_REG`, `DLSSNR_CHAIN`, `DLSSNR_N
 ### 2. Log Locations & Diagnostics
 
 > [!IMPORTANT]
-> **Primary Crash / Startup Error Troubleshooting**: If the game crashes on startup or throws errors, **please first try disabling XeFG Frame Generation** (turn it off in the Ins menu, or remove `XeFGUnlock.asi` from `OptiScaler\plugins\` and restart the game). The vast majority of reported crashes are related to third-party XeFG plugin compatibility. **This project focuses on the Neural Rendering (NR) pipeline and does not accept compatibility reports regarding XeFG frame generation.**
+> **Primary Crash / Startup Error Troubleshooting**: If the game crashes on startup or throws errors, **please first try disabling XeFG Frame Generation** (turn it off in the Ins menu, or remove `XeFGUnlock.asi` / `MFGUnlocker171.asi` from `OptiScaler\plugins\` and restart the game). The vast majority of reported crashes are related to third-party XeFG plugin compatibility. **This project focuses on the Neural Rendering (NR) pipeline and does not accept compatibility reports regarding XeFG frame generation.**
 
 Inspect the following logs in the game directory (or `_storage_` for Microsoft Store / XBOX PC games):
 - `OptiScaler.log`: Main initialization, hooking, and backend creation log;

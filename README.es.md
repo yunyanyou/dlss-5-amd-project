@@ -156,15 +156,16 @@ Si prefiere colocar los archivos manualmente:
 <details>
 <summary><strong>👉 Haga clic para desplegar: Generación de fotogramas 3x o superior (Intel XeFG / Arturs DLSS Enabler)</strong></summary>
 
-Estas opciones son independientes de DLSSNR. Los archivos requeridos no están incluidos; obténgalos por separado.
+Estas opciones son independientes de DLSSNR. Salvo el desbloqueador de XeSS incluido más abajo, los archivos requeridos no están incluidos; obténgalos por separado.
 **Nota**: Es necesario reiniciar el juego al modificar los ajustes INI. Mantenga `[FrameGen] External=false`. **No active ambas opciones a la vez**.
 
 ---
 
 #### Opción 1: Intel XeFG (Generación de fotogramas múltiples y Dynamic MFG)
-`XeFGUnlock.asi` / `MFGUnlocker.asi` provienen de la comunidad (solo se requiere el archivo `.asi`; no se incluye en este paquete).
+`XeFGUnlock.asi` / `MFGUnlocker.asi` provienen de la comunidad. Este paquete incluye el archivo original v1.7.0 del autor como `plugins\MFGUnlocker171.asi` (MIT, solo renombrado; resumen y procedencia en `third_party\mfg-unlocker\README.md`).
+> **Con NR Mochizuki (el plugin ASI) este desbloqueador es obligatorio, no un extra opcional**: el plugin de NR solo toma el generador de fotogramas cuando el módulo que pide el swap chain a XeSS no es el propio OptiScaler. Sin él, NR cae en 1 de cada N presentaciones y la imagen parpadea fotograma a fotograma (la línea que lo demuestra en `dlssnr-amd.log` es `the game's own frame generation ... before frame generation`). Los multiplicadores altos (4X/6X/8X) también lo necesitan; sin él XeFG se queda en el 2X que informa el proveedor.
 Agradecimientos a [@Overclockers](https://github.com/Overclockers) por contribuir en PR #3 con la función de anulación de multiplicador XeFG independiente al activar NR (permite configurar un multiplicador de interpolación XeFG dedicado cuando NR está activo).
-1. Coloque su plugin `.asi` en la carpeta precreada `OptiScaler\plugins\` dentro del directorio del juego (o en la carpeta `plugins\` del paquete antes de ejecutar `Setup.bat`, lo que lo copiará conservando la configuración existente y las opciones explícitas; la carga solo se activa si falta la opción o está en auto), sin el parámetro `-loadlate`;
+1. El archivo `plugins\MFGUnlocker171.asi` incluido es copiado por `Setup.bat` a `OptiScaler\plugins\` del juego (conserva la configuración existente y las opciones explícitas de carga; la carga solo se activa si falta la opción o está en `auto`). También puede colocar su propio `.asi` en la carpeta precreada `OptiScaler\plugins\` del juego o en `plugins\` del paquete antes de ejecutar `Setup.bat`, sin el parámetro `-loadlate`;
 2. Configure `OptiScaler.ini` en la raíz del juego:
    ```ini
    [Plugins]
@@ -314,7 +315,7 @@ Variables de entorno avanzadas (sin interruptor Ins): `DLSSNR_NO_REG`, `DLSSNR_C
 ### 2. Ubicación de registros y diagnósticos
 
 > [!IMPORTANT]
-> **Solución primaria para cierres inesperados (crashes) / errores de inicio**: Si el juego se cierra al iniciar o muestra errores, **intente primero desactivar la generación de fotogramas XeFG** (desactívela en el menú Ins, o elimine `XeFGUnlock.asi` de `OptiScaler\plugins\` y reinicie el juego). La gran mayoría de los reportes de cierres están relacionados con la compatibilidad del plugin de terceros XeFG. **Este proyecto se centra en la canalización de Renderizado Neuronal (NR) y no acepta reportes de incompatibilidad relacionados con XeFG.**
+> **Solución primaria para cierres inesperados (crashes) / errores de inicio**: Si el juego se cierra al iniciar o muestra errores, **intente primero desactivar la generación de fotogramas XeFG** (desactívela en el menú Ins, o elimine `XeFGUnlock.asi` / `MFGUnlocker171.asi` de `OptiScaler\plugins\` y reinicie el juego). La gran mayoría de los reportes de cierres están relacionados con la compatibilidad del plugin de terceros XeFG. **Este proyecto se centra en la canalización de Renderizado Neuronal (NR) y no acepta reportes de incompatibilidad relacionados con XeFG.**
 
 Revise los siguientes archivos de registro en el directorio del juego (o en `_storage_` para juegos de Microsoft Store / XBOX PC):
 - `OptiScaler.log`: Registro principal de inicialización, enganches y creación de backends;

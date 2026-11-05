@@ -170,9 +170,14 @@ Radeon 780M 也已完成一次真实 INT8 上下文与提交后的模型核对�
 ---
 
 #### 方案 1：Intel XeFG（多倍插帧与动态多帧生成 Dynamic MFG）
-`XeFGUnlock.asi` / `MFGUnlocker.asi` 来源于社区（当前版本仅需 `.asi` 插件文件，不随本包分发）。
-感谢 [@Overclockers](https://github.com/Overclockers) 在 PR #3 中为本项目贡献的 NR 激活时独立 XeFG 插帧倍率覆盖功能（支持在 NR 激活时独立设置专用的 XeFG 插帧倍率）。
-1. 将自行准备的 `.asi` 解锁插件直接放入游戏目录已预建的 `OptiScaler\plugins\` 子目录中（或在运行 `Setup.bat` 前放入解压包的 `plugins\` 目录，安装器会自动拷贝，保留已有插件配置和显式加载开关；仅在开关缺失或为 `auto` 时开启），不要加 `-loadlate` 参数；
+`XeFGUnlock.asi` / `MFGUnlocker.asi` 来源于社区。本包已带作者发布的原件
+`plugins\MFGUnlocker171.asi`（dashdogy MFG-Unlocker v1.7.0，MIT，代码未改动、仅改名；作者那份本身未签名，
+打包时按包内其它 `.asi` 的同样流程加上我们自己的签名，摘要与来源见 `third_party\mfg-unlocker\README.md`）。感谢 [@Overclockers](https://github.com/Overclockers) 在 PR #3 中为本项目贡献的 NR 激活时独立 XeFG 插帧倍率覆盖功能（支持在 NR 激活时独立设置专用的 XeFG 插帧倍率）。
+> **用 Mochizuki NR（ASI 插件）时这个解锁插件是必需的，不是可选优化**：NR 插件只在「向 XeSS 索要
+> swap chain 的调用方不是 OptiScaler 自己」时才会接管插帧，缺它时 NR 每 N 个呈现只落在 1 个帧上，
+> 画面会逐帧闪（判据：`dlssnr-amd.log` 出现 `the game's own frame generation ... before frame generation`）。
+> 不用 NR、只要插帧倍率上到 4X/6X/8X，同样需要它；没有它 XeFG 回到 provider 自报的 2X。
+1. 随包的 `plugins\MFGUnlocker171.asi` 会在运行 `Setup.bat` 时自动拷贝到游戏目录的 `OptiScaler\plugins\`（保留已有插件配置和显式加载开关；仅在开关缺失或为 `auto` 时开启）；也可把自己准备的 `.asi` 放进游戏目录已预建的 `OptiScaler\plugins\` 子目录，或先放进解压包的 `plugins\` 目录，不要加 `-loadlate` 参数；
 2. 修改游戏根目录下的 **`OptiScaler.ini`**（非 plugins 内部的 ini）：
    ```ini
    [Plugins]
@@ -339,7 +344,7 @@ daniel 自有、未进 Ins 的键（含 **OverlayKey**、`PollSpacing`、`HipDev
 ### 二、日志定位与排错
 
 > [!IMPORTANT]
-> **游戏闪退 / 启动报错首要排查**：若遇到游戏启动闪退或报错，**请首先尝试关闭 XeFG 帧生成**（在 Ins 菜单中关闭，或从 `OptiScaler\plugins\` 中移出 `XeFGUnlock.asi` 并重启游戏）。绝大多数崩溃反馈均与第三方 XeFG 插件兼容性有关。**本插件专注于神经渲染（NR）管线，不接受 XeFG 帧生成的不兼容反馈**。
+> **游戏闪退 / 启动报错首要排查**：若遇到游戏启动闪退或报错，**请首先尝试关闭 XeFG 帧生成**（在 Ins 菜单中关闭，或从 `OptiScaler\plugins\` 中移出 `XeFGUnlock.asi` / `MFGUnlocker171.asi` 并重启游戏）。绝大多数崩溃反馈均与第三方 XeFG 插件兼容性有关。**本插件专注于神经渲染（NR）管线，不接受 XeFG 帧生成的不兼容反馈**。
 
 排查问题时，请查看游戏主程序目录（或 XBOX PC 的 `_storage_` 目录）生成的日志：
 - `OptiScaler.log`：OptiScaler 核心主日志（检查注入、初始化与各后端创建状态）；

@@ -653,6 +653,15 @@ $pluginSrc = Join-Path $root 'assets/plugins'
 if (Test-Path -LiteralPath $pluginSrc -PathType Container) {
     Get-ChildItem -LiteralPath $pluginSrc -Filter '*.asi' -File | Copy-Item -Destination $pluginDst -Force
 }
+# The MFG unlocker is required, not optional: dlssnr-amd.asi adopts frame generation only when the
+# XeSS calls come from a module that is not OptiScaler itself (its game_fg_call gate). Without it
+# the NR layers run at the game's outer Present and only 1 of every N presented frames carries NR.
+foreach ($needed in @(@('assets/plugins', 'MFGUnlocker171.asi'), @('third_party/mfg-unlocker', 'LICENSE'))) {
+    if (!(Test-Path -LiteralPath (Join-Path $root (Join-Path $needed[0] $needed[1])) -PathType Leaf)) {
+        throw "Missing MFG unlocker delivery file: $($needed[0])/$($needed[1])"
+    }
+}
+Copy-Item -LiteralPath (Join-Path $root 'third_party/mfg-unlocker/LICENSE') -Destination (Join-Path $stage 'Licenses/MFGUnlocker_MIT.txt') -Force
 
 # Bundled person segmentation model & ONNX Runtime (optional feature)
 $personSrc = Join-Path $root 'assets/person-model'
@@ -948,7 +957,7 @@ try {
             finally { $stream.Dispose(); $sha.Dispose() }
             if ($actual -ne $expectedEntries[$relative]) { throw "Archive checksum mismatch: $relative" }
         }
-        foreach ($required in @('OptiScaler.dll', 'LmxxfNrRuntime.dll', 'OptiScaler.ini', 'Setup.ps1', 'Setup.bat', 'lmxxf-module-package.ps1', 'OptScalerNR.Launcher.exe', 'launcher-worker.ps1', 'proxy-probe.ps1', 'library-scan.ps1', 'install-capabilities.ps1', 'xess-compat.ps1', 'compat-repair.ps1', 'proxy-profiles.json', 'OptiScalerPanel.exe', 'Licenses/OptiScaler-wiki-profiles.md', 'OptiScaler/plugins/dlssnr-amd.asi', 'dlssnr-amd/nr_present_probe.exe', 'model-tools/dlssnr_extract_model.exe', 'experimental/dlssnr-small-experimental.delta', 'dlssnr-amd-optiscaler.ini', 'dlssnr-amd-optiscaler-renodx.ini', 'mochizuki-owned.txt') + @($expectedEntries.Keys)) {
+        foreach ($required in @('OptiScaler.dll', 'LmxxfNrRuntime.dll', 'OptiScaler.ini', 'Setup.ps1', 'Setup.bat', 'lmxxf-module-package.ps1', 'OptScalerNR.Launcher.exe', 'launcher-worker.ps1', 'proxy-probe.ps1', 'library-scan.ps1', 'install-capabilities.ps1', 'xess-compat.ps1', 'compat-repair.ps1', 'proxy-profiles.json', 'OptiScalerPanel.exe', 'Licenses/OptiScaler-wiki-profiles.md', 'OptiScaler/plugins/dlssnr-amd.asi', 'plugins/MFGUnlocker171.asi', 'Licenses/MFGUnlocker_MIT.txt', 'dlssnr-amd/nr_present_probe.exe', 'model-tools/dlssnr_extract_model.exe', 'experimental/dlssnr-small-experimental.delta', 'dlssnr-amd-optiscaler.ini', 'dlssnr-amd-optiscaler-renodx.ini', 'mochizuki-owned.txt') + @($expectedEntries.Keys)) {
             if (-not $seen.ContainsKey($required)) { throw "Package archive missing required component: $required" }
         }
     } finally {
