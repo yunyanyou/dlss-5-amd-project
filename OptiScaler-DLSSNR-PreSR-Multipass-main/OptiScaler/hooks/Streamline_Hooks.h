@@ -426,7 +426,6 @@ class StreamlineHooks
     inline static thread_local void* pluginCaller = nullptr;
     inline static thread_local size_t currentPlugin = kPluginSlots;
     inline static std::atomic<size_t> activeDlssg{kPluginSlots};
-
     static PluginCalls& Calls() { return pluginCalls[currentPlugin]; }
     static void hookPlugin(unsigned kind, HMODULE module);
     template <size_t I, auto Hook> struct PluginCallback;

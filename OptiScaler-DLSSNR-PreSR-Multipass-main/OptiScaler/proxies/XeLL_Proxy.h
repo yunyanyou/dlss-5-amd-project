@@ -5,7 +5,6 @@
 #include "Config.h"
 #include "State.h"
 #include "Logger.h"
-#include "XeLLUnLock.h"
 
 #include <proxies/Ntdll_Proxy.h>
 #include <proxies/KernelBase_Proxy.h>
@@ -325,11 +324,6 @@ class XeLLProxy
             return false;
 
         _dll = libxellModule;
-
-        // Same reasoning as the libxess_fg side: the provider's own argument
-        // validation is what caps the generated frame count, so it is patched on
-        // the mapped image rather than worked around at the call site.
-        XeLLUnlock::Apply(_dll);
 
         {
             ScopedSkipDxgiLoadChecks skipDxgiLoadChecks {};

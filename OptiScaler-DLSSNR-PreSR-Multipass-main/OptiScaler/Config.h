@@ -599,7 +599,7 @@ class Config
     // DLSS_Pre_Exposure or, without one, 1/DLSS_Pre_Exposure; manual otherwise), 2 meter (the runtime's
     // own meter, the game's exposure ignored; manual until it has a value), 3 auto (game if usable, else
     // meter, else manual). Values above 3 read as 0.
-    CustomOptional<uint32_t> MochizukiWhitePointSource { 1u };
+    CustomOptional<uint32_t> MochizukiWhitePointSource { 0u };
     CustomOptional<float> MochizukiHistoryStrength { 1.f };
     CustomOptional<bool> MochizukiPreprocess { false };
     CustomOptional<uint32_t> MochizukiPreprocessExposure { 1u };
@@ -985,8 +985,8 @@ class Config
 
     // Sharpness
     CustomOptional<SharpenShader> SharpnessShader { SharpenShader::RCAS };
-    CustomOptional<bool> OverrideSharpness { true };
-    CustomOptional<float> Sharpness { 0.5f };
+    CustomOptional<bool> OverrideSharpness { false };
+    CustomOptional<float> Sharpness { 0.4f };
 
     // RCAS
     CustomOptional<bool> RcasEnabled { false };
@@ -1018,7 +1018,7 @@ class Config
 
     // Menu
     CustomOptional<float, NoDefault> MenuScale;
-    CustomOptional<std::string> MenuLanguage { "zh-CN" }; // UI only: en / zh-CN
+    CustomOptional<std::string> MenuLanguage { "en" }; // UI only: en / zh-CN
     CustomOptional<bool> MenuBlur { true };
     CustomOptional<float> MenuBlurStrength { 1.0f };
     CustomOptional<float, NoDefault> MenuWindowWidth;
@@ -1050,13 +1050,13 @@ class Config
     CustomOptional<int> FGShortcutKey { UnboundKey };
     CustomOptional<bool> LightTheme { false };
     CustomOptional<bool> OverlaysUseTheme { false };
-    CustomOptional<float> MenuAccentColorR { 1.00f };
-    CustomOptional<float> MenuAccentColorG { 0.00f };
-    CustomOptional<float> MenuAccentColorB { 0.00f };
+    CustomOptional<float> MenuAccentColorR { 0.00f };
+    CustomOptional<float> MenuAccentColorG { 0.40f };
+    CustomOptional<float> MenuAccentColorB { 0.77f };
     CustomOptional<float> MenuBGColorR { 0.0f };
     CustomOptional<float> MenuBGColorG { 0.0f };
     CustomOptional<float> MenuBGColorB { 0.0f };
-    CustomOptional<float> MenuBGColorA { 0.0f };
+    CustomOptional<float> MenuBGColorA { 0.99f };
 
     // Hooks
     CustomOptional<bool> HookOriginalNvngxOnly { false };
@@ -1376,9 +1376,9 @@ class Config
     CustomOptional<int> LateAsiPluginsDelay { 30 };
 
     // Frame Generation
-    CustomOptional<FGInput> FGInput { FGInput::DLSSG };
+    CustomOptional<FGInput> FGInput { FGInput::NoFG };
     CustomOptional<bool> ExternalFrameGeneration { false };
-    CustomOptional<FGOutput> FGOutput { FGOutput::XeFG };
+    CustomOptional<FGOutput> FGOutput { FGOutput::NoFG };
     CustomOptional<FGNvngxReplacement> FGNvngxReplacement { FGNvngxReplacement::None };
     CustomOptional<bool> FGDrawUIOverFG { false };
     CustomOptional<bool> FGUIPremultipliedAlpha { true };
@@ -1460,30 +1460,8 @@ class Config
     CustomOptional<bool> FSRFGDisableFlipMetering { false };
 
     // XeFG
-    //
-    // The ceiling for the whole XeFG path, in interpolations: 7 is an 8X
-    // multiplier. This is the limit itself, not a sanity bound with the real one
-    // living somewhere else - FGXeFGMaxInterpolatedFrames defaults to it, the
-    // unlock patches report it to the provider as maxSupportedInterpolations,
-    // and XeFG_Dx12 declares it as the swapchain's maxInterpolatedFrames at init,
-    // so one number decides what the provider accepts, what the menu offers, and
-    // what the ini may ask for. (ported from MatheusFerreiraS/neural-amd-opti)
-    static constexpr int32_t XeFGMaxInterpolations = 7;
-
     CustomOptional<bool, SoftDefault> FGXeFGIgnoreInitChecks { false };
     CustomOptional<int> FGXeFGInterpolationCount { 1 };
-    // Unlocks multi frame generation on non-Intel GPUs. Intel gates it on the provider build, not on
-    // the hardware, so libxess_fg.dll and libxell.dll are patched in memory once loaded; the files on
-    // disk are not changed. A build that is not recognised is left as it is.
-    CustomOptional<bool> FGXeFGUnlockEnabled { true };
-    // What the unlock patch reports to the provider as its maximum, and what the
-    // multiplier menu lets you pick. The number written into the U3/U5 patches is
-    // read back as xefg_swapchain_properties_t::maxSupportedInterpolations, which
-    // is also what feeds the menu's MFG combo, so raising this necessarily raises
-    // the menu ceiling. A value it rejects is clamped in XeFGUnlock to the ceiling.
-    CustomOptional<int> FGXeFGMaxInterpolatedFrames { XeFGMaxInterpolations };
-    // Spaces out each generated frame above 2X instead of presenting the burst at once. Needs a restart.
-    CustomOptional<bool> FGXeFGExtraPacing { true };
     CustomOptional<bool> FGXeFGUIComposition { false };
     CustomOptional<bool> FGXeFGDepthInverted { true };
     CustomOptional<bool> FGXeFGJitteredMV { false };

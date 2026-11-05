@@ -776,11 +776,11 @@ bool XeFG_Dx12::Dispatch(PresentResourceReference& presentResource)
         // frame rate. At 2X it switches between off and 2X. Following the game's own setting leaves the count to it.
         const bool dynamic = config->FGXeFGDynamicMFG.value_or_default() && !config->FGFollowsGame();
 
-        // Dynamic MFG owns the multiplier while it is on: it may use everything the
-        // provider reports (XeFG\MaxInterpolatedFrames) instead of being capped by the
-        // static Frame Gen slider or the NR override. Those two only pick the fixed
-        // multiplier while Dynamic MFG is off, so a 4X slider no longer pins the
-        // controller at 4X when the target needs more.
+        // Dynamic MFG owns the multiplier while it is on: it may use everything the provider
+        // reports (request.maximum, raised to 7 interpolations by an external MFG unlocker)
+        // instead of being capped by the static Frame Gen slider or the NR override. Those two
+        // only pick the fixed multiplier while Dynamic MFG is off, so a 4X slider no longer pins
+        // the controller at 4X when the target needs more.
         int maxTargetCount = dynamic ? (std::max)(1, request.maximum) : resolved.target;
         maxTargetCount = std::clamp(maxTargetCount, 1, (std::max)(1, request.maximum));
 
@@ -1038,14 +1038,8 @@ bool XeFG_Dx12::Dispatch(PresentResourceReference& presentResource)
 
     XeFGProxy::EnableDebugFeature()(_swapChainContext, XEFG_SWAPCHAIN_DEBUG_FEATURE_TAG_INTERPOLATED_FRAMES,
                                     Config::Instance()->FGXeFGDebugView.value_or_default(), nullptr);
-
-    static bool lastOnlyFG = false;
-    if (lastOnlyFG != state.fgOnlyGenerated)
-    {
-        lastOnlyFG = state.fgOnlyGenerated;
-        XeFGProxy::EnableDebugFeature()(_swapChainContext, XEFG_SWAPCHAIN_DEBUG_FEATURE_SHOW_ONLY_INTERPOLATION,
-                                        lastOnlyFG, nullptr);
-    }
+    XeFGProxy::EnableDebugFeature()(_swapChainContext, XEFG_SWAPCHAIN_DEBUG_FEATURE_SHOW_ONLY_INTERPOLATION,
+                                    state.fgOnlyGenerated, nullptr);
 
     xefg_swapchain_frame_constant_data_t constData = {};
 
@@ -1118,10 +1112,6 @@ bool XeFG_Dx12::Dispatch(PresentResourceReference& presentResource)
         constData.frameRenderTime = 0.0f;
         break;
     }
-
-    // Report what the provider actually got, next to the period it came out of.
-    // The two numbers together are what says whether the loop above is real.
-    XeFGPacing::NoteFedFrameTime(constData.frameRenderTime);
 
     LOG_DEBUG("Reset: {}, Opti FT: {}, Source FT: {}, Set FT: {}, Opti Id: {}, Reflex Id: {}", _reset[fIndex],
               constData.frameRenderTime, _ftDelta[fIndex], constData.frameRenderTime, _frameCount,
