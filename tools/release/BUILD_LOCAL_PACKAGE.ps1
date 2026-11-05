@@ -67,8 +67,10 @@ try {
     Write-Host "Project: $Root`nBranch: $branch`nVersion: $Version`nDependencies: $deps`nMochizuki: $mochi"
     Write-Host "Build mode: $(if ($Rebuild) { 'full rebuild' } else { 'incremental host; verified Mochizuki/Worker reuse; lmxxf rebuilt' }). Local test package; no full release test suite."
     if ($PlanOnly) { exit 0 }
+    # Scratch and logs stay stamped: reruns within one second must not share a directory.
+    # The product name does not, so the local build lands where the release build would.
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
-    $name = "OptScaler-NR-$Version-local-$stamp"
+    $name = "OptScaler-NR-$Version"
     $scratch = Join-Path $Root "work/scratch/local-package-$stamp"
     $logs = Join-Path $Root "exports/local-build-$stamp"
     New-Item -ItemType Directory -Path $scratch,$logs -Force | Out-Null
