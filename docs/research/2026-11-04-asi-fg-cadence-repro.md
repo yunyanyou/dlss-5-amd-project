@@ -1,6 +1,12 @@
 # DLSSNR-AMD 0.0.8.2 ASI: FG multiplier is guessed, not read, under a forked OptiScaler
 
-For pasting into an upstream issue (gitlab.com/mochizuki0323/DLSSNR-AMD).
+For pasting into an upstream issue (gitlab.com/mochizuki0323/DLSSNR-AMD). We do not file upstream
+issues in this fork; this stays as the measurement record.
+
+> **2026-11-05 更正**：这里写的是「倍率靠猜、于是多跑几次 + 页脚 ms 抖」。它**不是**逐帧画面闪烁的
+> 原因。闪烁的真因是插件没能 adopt 插帧的 swap chain（`game_fg_call()` 拒绝来自 OptiScaler 自己模块
+> 的调用），见 [mochizuki.md](../mochizuki.md) 的 "Flicker under OptiScaler's frame generation" 与
+> [decisions.md](../decisions.md) 2026-11-05 那条。下面 Setup 里那句 "the picture both jitter" 按此理解。
 
 ## Setup
 

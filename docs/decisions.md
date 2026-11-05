@@ -1616,6 +1616,11 @@ README 里补上两个包名、tag、以及这 5 个文件的 SHA-256 表，因�
 （根本没装，真正在解锁的是宿主自己的 `XeFGUnlock::Apply`）、倍率估计不一致（这次 4.034 与宿主 4X 一致）、
 burst 覆盖不全（`proxies/XeFGPacing.h:152` 写明只调度 `1..count-1`，最后一帧归 provider，行为正确）。
 
+**2026-11-05 更正这一条里的两句**：「解锁插件根本没装、真正在解锁的是宿主自己的 `XeFGUnlock::Apply`」
+——那句描述的是当时的事实，但方向搞反了：**正是「解锁跑在宿主里」让 NR 插件拒绝 adopt 插帧**，
+装上外部插件才是解法（见下一条）。「ExtraPacing=off 无罪」也仍然是无效实测，那次测试没打出
+`XeFG pacing: disabled by config`，层根本没被关掉。
+
 **处置（试过，已删）**：实现过 `[DlssNr] AsiFgHandoff`（默认关）。开时
 `inputs/NVNGX_DLSS_Dx12.cpp` 的 `NVSDK_NGX_D3D12_EvaluateFeature` 入口把
 `CurrentFG()->GetInterpolatedFrameCount() + 1` 写进 `DLSSG.MultiFrameCount` —— 那正是插件
@@ -1658,3 +1663,79 @@ burst 覆盖不全（`proxies/XeFGPacing.h:152` 写明只调度 `1..count-1`，�
 `renodx present` 的两种写法（无层 / 有层）`risky=False`，其余 6 种 `risky=True`；FG 关时即使
 层是 `wilsjo2 before` 也 `risky=False`；真实目录读回
 `renodx present（帧生成下唯一不闪的组合）`。
+
+**2026-11-05 更正**：这一行的结论作废。`renodx present` 当时不闪是巧合配置，不是规律 —— 真因见下一条。
+面板那条「改成 RenoDX + Present」的建议文案同样作废，待改成「缺帧生成解锁插件」。
+
+## 2026-11-05: 宿主回退到上游，插帧解锁改回外部 ASI（逐帧闪的真因是「谁去要 XeSS 的 swap chain」）
+
+**现象**：《尘白禁区》开帧生成就逐帧闪、关了 NR 或关了插帧就稳；2X/4X 都闪，倍率越高闪得越快，
+三个 `NRHookPoint`、两种风格全闪。计数即证据：3X 下插件心跳 162–180 presents/s，
+而 `last 10 s` 只有 ~60 evaluations/s —— 每 3 个呈现里正好 1 个跑了网络。
+
+**定位**：厂商 `dlssnr-amd.asi` 只有在**adopt 上插帧的 proxy** 时才会把 NR 写进插帧要读的那一帧，
+而 adopt 的门槛是调用者：`nr_asi_main.cpp` 里 `game_fg_call()` 明确排除落在 OptiScaler 自己模块内的
+返回地址（`hk_xefg_get_ptr` 只在它返回真时才 `adopt_fg_proxy`）。两种会话的日志一眼可分：
+
+```
+[nr] Present layers: the game's own frame generation (XeSS frame generation) presents through swap chain
+     0x…25d88c0 …; the layers run at its Present, once a game frame, before frame generation   ← 不闪
+[nr] Present layers: the game's swap chain 0x…c62c50 …; they run at its Present, before OptiScaler's  ← 闪
+```
+
+我们闪，是因为我们把插帧解锁做成了**宿主内的内存 patch**：`proxies/XeFGUnlock.h`(309) /
+`XeLLUnLock.h`(305) / `XeFGPacing.h`(1049) + `[XeFG]` 的 `UnlockMFG` / `MaxInterpolatedFrames` /
+`ExtraPacing` 三键。宿主自己调 `xefgSwapChainD3D12GetSwapChainPtr`
+（`framegen/xefg/XeFG_Dx12.cpp:438`、`:594`）→ 被 `game_fg_call` 拒绝 → 永不 adopt。上游不闪，
+是因为它的包里带 `plugins/MFGUnlocker171.asi`，那个调用发生在**别的模块**里；而保留的
+`XeFGFlipQueue` / `XeFGDynamicMFG` 本来就只是给那个插件透传，没插件时是空话。
+
+**处置（尽量同步回上游）**：删掉三个 in-host 代理头 + 三键，
+`Config.h`/`Config.cpp`/`State.h`/`dllmain.cpp`/`InterpolationOverride.h`/`Streamline_Hooks.h`/
+两个 `.proxy.h`/vcxproj(+filters) 全部取 `upstream/main` 版本；`XeFG_Dx12.cpp` 只留两处
+（动态 MFG 可用 provider 上报的全部倍率；applied 从 provider 真值复位）；`SHOW_ONLY_INTERPOLATION`
+那个 edge-trigger 也退回上游写法。包里改带 dashdogy **MFG-Unlocker v1.7.0**（MIT，
+Copyright (c) 2026 Michael Robles），文件 `assets/plugins/MFGUnlocker171.asi` 是官方 zip 里
+`MFGUnlocker.dll` 的原样改名，摘要 `e6b6e6b7…10c7`，与上游包内那份逐字节相同；
+`third_party/mfg-unlocker/{README.md,LICENSE,SHA256SUMS.txt}` 记来源，`Licenses/MFGUnlocker_MIT.txt`
+随包，打包器把两者列进必需件与存在性检查。因作者版本未签名，打包签名会给它加我们的证书（同
+OptiPatcher 的待遇）。
+
+原先写死在 `Config.h` 的 8 项偏离默认值搬到随包 `OptiScaler.ini`：`[Menu] AccentColorR=1.00 /
+G=0.00 / B=0.00 / BGColorA=0.0`、`[Sharpness] OverrideSharpness=true / Sharpness=0.5`
+（`FGInput=dlssg`、`FGOutput=xefg`、`Language=zh-CN`、`MochizukiWhitePointSource=1` 本来就在 ini）。
+理由同既定规则：偏离落在安装期产物，不落在厂商会改的源码行上。
+
+**回到 09-16 的取舍**：本仓早就定过「XeFG 解锁补丁不进公开仓库，多帧生成由用户另加社区插件」，理由
+是包里分发的是**未修改的 Intel `libxess_fg.dll`**（许可允许分发、禁止修改与逆向），同一个包里再嵌一段
+绕过它门禁的内存补丁自相矛盾。`a63cde24` 把它搬进宿主时把这条取舍破了，今天既为闪烁、也为一致性退回来。
+差别只在于：现在不再要求用户自己去攒，包里直接带作者签发的 v1.7.0 原件（MIT，允许再分发）。
+
+**顺带修的旧回归（`bbdedb1e` 引入、今天才暴露）**：`tests/sync/test_local_release_exit.py` 是**静态解析**`build-release-local.cmd` 的命令行、把每个子进程替成 `cmd /c exit /b <code>` 来验「任一子步骤失败就中断」。
+昨天把硬写的 vcvars/MSBuild 路径换成 `call tests\_lib\msvc-env.cmd` + PATH 上的 `msbuild` 之后，
+它等的那两个名字（`vcvarsall.bat`、`MSBuild.exe`）在脚本里不存在了，于是 `assertEqual(seen, STAGES)` 直接崩。
+sync 层带「本周成功凭据复用」（`tools/lmxxf-sync/test-cache.py`，`exports/test-cache/sync.json`），今天没有
+凭据、这一层真的跑了，回归才现形。修法：STAGES 换成
+`msvc-env.cmd` / `msbuild` 等实际名字，并让解析器也认不以 `call`/引号开头的 `msbuild` 行。
+
+**顺带修的测试环境坑（同一天暴露）**：`tests/install/test_local_package.py` 的 CRT 用例用
+`dict(os.environ, VCINSTALLDIR=…, VCToolsRedistDir=…)` 造子进程环境。Windows 上 `os.environ` 大小写
+不敏感、`dict(os.environ)` 却是普通字典：开发环境里那个键叫 `VCTOOLSREDISTDIR`（全大写），混写的
+`VCToolsRedistDir` 变成**追加**而不是覆盖，于是真机的 VS redist 目录泄进子进程，「删掉一个 DLL 就该报
+找不到完整 CRT」的负例反而 rc=0。开发环境外跑永远绿，跑在 `run-all` 里就红。改成 `child_env(**values)`：
+先把同名（不分大小写）的键删干净再写入。
+
+**新的偏离预算**：宿主目录从 20 文件 +2193/−349 降到 **6 文件 +375/−340**，其中中文文案
+`MenuStrings.inl`(+192/−297) 与字体占大头，真正的 C++ 逻辑只剩 4 个文件 +158/−22
+（`DlssNr_Menu.cpp` 模型可选性 gating、`InstallStatus.h` 已安装探测、`XeFG_Dx12.cpp` 两处、
+`MenuNavigation.h` 一行）。全仓 54→ 由面板/工具/文档继续承担。落后上游 0 个提交。
+
+**顺带纠正**：①pre1 与正式 0.0.8.2 是两个不同构建（同尺寸、710,442 字节不同），但**不是**闪的变量；
+②`[DlssNr] AsiFgHandoff` 的思路（往句柄写 `DLSSG.MultiFrameCount`）根本不通，插件不读我们递的句柄；
+③`FGInput=Upscaler`（OptiFG）在 NTE 不可用：它的 HUDFix/MV 取数依赖超分自己供运动矢量与深度，
+切过去后宿主只报 `Depth or Velocity is not ready, skipping`；④`NRPresentFrames=0/1`、
+`HudFix=captured`、倍率估计不一致都不是原因。
+
+**验证**：`build-release-local.cmd`（含 `tests\run-all.cmd --tier ci,device` 与打包）+ 安装 fixture；
+画面判据仍是插件那一行 —— 出现 `the game's own frame generation … before frame generation`
+才算 adopt 成功。**待用户在真机确认**：新包（宿主已回退 + 随包解锁插件）在游戏里开插帧是否还闪。

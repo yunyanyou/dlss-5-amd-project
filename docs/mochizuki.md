@@ -196,7 +196,11 @@ variables cannot replace the selected model or picture options.
 2. Extract the complete OptScaler(NR) package. It carries the official
    `OptiScaler/plugins/dlssnr-amd.asi`, the matching `dlssnr-amd/` resource tree
    (shaders, ACO records and shaders, INT4 data, language files) and the official
-   `model-tools/dlssnr_extract_model.exe` and `dlssnr-int4-weights.exe`.
+   `model-tools/dlssnr_extract_model.exe` and `dlssnr-int4-weights.exe`. It also
+   stages `plugins/MFGUnlocker171.asi` (the MFG unlocker, MIT; see
+   [third_party/mfg-unlocker/README.md](../third_party/mfg-unlocker/README.md)),
+   which the frame-generation section below explains is what lets the plugin put NR
+   into the frame the generator reads.
    The plugin and resources are versioned together; do not mix them with the
    retired built-in runtime's `dlssnr-amd` files.
 3. Supply your own `nvngx_dlssnr.dll`: **310.9.16** provides both networks,
@@ -215,8 +219,13 @@ variables cannot replace the selected model or picture options.
    files are never rewritten. Models and both ini files are preserved by upgrade
    and uninstall; assets an upgrade no longer installs are removed through the
    previous install's inventory only.
-5. Setup enables `[Plugins] LoadAsiPlugins=true` and keeps your `OptiScaler.ini`
-   and host `dxgi.dll`. It changes `[Menu] FGShortcutKey` only when it is still the
+5. Setup copies the staged `plugins\MFGUnlocker171.asi` into the game's
+   `OptiScaler\plugins\` (`.asi` files are replaced by the package's copy, plugin
+   `.ini`/config files already there are kept), enables
+   `[Plugins] LoadAsiPlugins=true` and keeps your `OptiScaler.ini`
+   and host `dxgi.dll`. Keep only one frame-generation unlocker in that folder: a
+   second one of a different name is left in place and the two can conflict.
+   It changes `[Menu] FGShortcutKey` only when it is still the
    default End binding, because NR Control opens with End. A custom FG key is kept.
    The plugin owns NR at runtime; its own settings are in `dlssnr-amd.ini` and its
    NR Control window. Startup logs report the loaded module path and version.
@@ -288,9 +297,10 @@ the upscaler: not with Ray Reconstruction.` The panel shows the three places as 
 (after the upscaler), 超分前（更高帧数） (before the upscaler) and 最佳效果 (at Present).
 
 A layer placed at Present can run on **every presented frame**, and then the plugin scales
-its motion vectors by the frame-generation multiplier it works out on its own. With this
-fork's chain (`[FrameGen] FGInput=dlssg`, `FGOutput=xefg`) the plugin cannot read
-`DLSSG.MultiFrameCount`, so it falls back to timing; observed in `dlssnr-amd.log`:
+its motion vectors by the frame-generation multiplier it works out on its own. With
+`FGInput=dlssg`, `FGOutput=xefg` the plugin cannot read `DLSSG.MultiFrameCount` (that key only
+exists inside a real NGX DLSS-G evaluate, and our host serves the game's Streamline DLSS-G
+itself), so it falls back to timing; observed in `dlssnr-amd.log`:
 
 ```
 [nr] Present layers: 3.983 presents per game frame: frame generation detected (4x);
@@ -299,14 +309,15 @@ fork's chain (`[FrameGen] FGInput=dlssg`, `FGOutput=xefg`) the plugin cannot rea
 [nr] Present layers: 2.933 presents per game frame: frame generation now 3x; ...
 ```
 
-while `OptiScaler.log` states the real factor steadily (`XeFGPacing::ReportStats XeFG
-pacing: 3X`). Estimating 4x for a 3x chain scales motion by 1/4 instead of 1/3, which
-mis-warps NR's history: the picture jitters visibly and the footer ms jumps with it.
+while `OptiScaler.log` states the real factor steadily. Estimating 4x for a 3x chain scales
+motion by 1/4 instead of 1/3, which mis-warps NR's history: the footer ms jumps and the
+detail it synthesizes breathes. **This is a separate fault from the per-frame flicker below, and
+fixing it does not touch that one** - an earlier revision of this page claimed the ms jumping
+and the flicker were the same thing; they are not.
 
 `[RenoDX] NRPresentFrames = 1` (panel: Present frames → 每个游戏帧的第一次呈现 /
-"First present per game frame") runs NR once per game frame instead, so the estimate no
-longer drives extra runs. Confirmed by a user in *Neverness to Everness* on 2026-11-04:
-the jitter and the jumping ms both stopped.
+"First present per game frame") runs NR once per game frame instead of N times, which is what
+cuts the duplicated cost; it does not stop the flicker either.
 
 **That key only has an effect while no `[LayerN]` section exists.** The vendor ini says it
 plainly: `with [LayerN] sections (layers stacked in NR Control) each layer's settings are in its
@@ -323,43 +334,70 @@ left untouched, so someone who sets it back to `0` in NR Control keeps it until 
 number again. The plugin's own `[RenoDX] NRPresentFrames` key and the panel's "Present frames"
 selector remain the way to override it; the vendored payload and its ini templates are not
 modified, so the deviation is applied at install time and is visible in `dlssnr-amd.ini`.
-The real fix belongs in the plugin reading the host's actual multiplier; the reproduce-and-report
-notes are in [docs/research/2026-11-04-asi-fg-cadence-repro.md](research/2026-11-04-asi-fg-cadence-repro.md).
+The real fix for the *estimate* belongs in the plugin reading the host's actual multiplier; the
+reproduce-and-report notes are in
+[docs/research/2026-11-04-asi-fg-cadence-repro.md](research/2026-11-04-asi-fg-cadence-repro.md).
+The frame generation section below is what actually decides whether NR reaches the picture at all.
 
-## What does and does not flicker under OptiScaler's frame generation
+## Flicker under OptiScaler's frame generation: who asks for the XeSS swap chain
 
-Measured on *Neverness to Everness*, 2026-11-04, with the vendor `dlssnr-amd.asi` 0.0.8.2 and
-`FGInput=dlssg`, `FGOutput=xefg`, at 2X and 4X:
+Symptom, measured on *Neverness to Everness* 2026-11-04/05: with NR on and frame generation on the
+picture alternates **on every presented frame** - at 2X and at 4X, faster the higher the
+multiplier; NR off (F6) or FG off makes it stop; all three `NRHookPoint` places and both styles
+(RenoDX and wilsjo2) showed it. The plugin's own counters settle it: 162-180 presents per second
+against ~60 NR evaluations per second at 3X, i.e. exactly one of every three presented frames ran
+the network.
 
-| NR layer combination | with frame generation on |
-|---|---|
-| RenoDX processing, placed at Present | steady |
-| RenoDX, before the upscaler | flickers every presented frame |
-| RenoDX, after the upscaler | flickers every presented frame |
-| wilsjo2 processing, any of the three places | flickers every presented frame |
+The cause is not the multiplier, not pacing, not HUD handling: it is **which module asks XeSS frame
+generation for its swap chain**. `dlssnr-amd.asi` only writes NR into the frame the generator is
+about to consume when it has *adopted* that generator's proxy, and adoption is gated on the return
+address of the call (`nr_asi_main.cpp`, `game_fg_call()`), which deliberately excludes anything
+inside OptiScaler's own module:
 
-The rate follows the multiplier: at 4X it flickers about twice as fast as at 2X, which is what
-"one of every presented frame gets NR, the rest do not" looks like. Turning frame generation off
-makes every combination steady, and turning NR off (F6) while keeping frame generation on also
-does, so the fault is the pair, not either half.
+```
+if (rc == 0 && out && *out && game_fg_call(__builtin_return_address(0)))
+    adopt_fg_proxy(context, static_cast<IUnknown*>(*out), nullptr, "XeSS frame generation");
+```
 
-Nothing in this fork causes it, and two plausible leads were checked and dismissed with evidence:
-our `XeFGPacing` layer is not involved (`[XeFG] ExtraPacing=off` changed nothing), and the
-game-FSR-FG refusal (`RefuseUnderGameFsrFg()`, which the official OptiScaler repository later
-reverted as noisy) never fires in this game - `OptiScaler.log` contains no `FSR Frame Generation`
-line at all, and both this fork and `upstream/main` still carry those functions.
+Adopted (steady) versus refused (flickering), from the two sessions' `dlssnr-amd.log`:
 
-We also tried telling the plugin our real multiplier: `[DlssNr] AsiFgHandoff` wrote
-`CurrentFG()->GetInterpolatedFrameCount() + 1` into `DLSSG.MultiFrameCount`, the key
-`NRPresentFgSource=0` says it tries first. The plugin kept printing `source=stable timing`, so it
-does not read that handle and the whole key was removed rather than left in the ini looking like a
-fix. See [decisions.md](decisions.md), 2026-11-04.
+```
+[nr] Present layers: the game's own frame generation (XeSS frame generation) presents through swap chain
+     0x…25d88c0 (queue 0x…279fb660); the layers run at its Present, once a game frame, before frame generation
+[nr] Present layers: the game's swap chain 0x…c62c50 (presenting on queue 0x…c5bff0) found;
+     they run at its Present, before OptiScaler's
+```
 
-What the fork does instead: the game-directory panel reads the combination that will actually run
-(a `[LayerN]` section overrides `[RenoDX]` entirely) and, when frame generation is on and it is not
-`renodx present`, shows it in the warning colour with the fix named - "改成 RenoDX + Present". With
-frame generation off it stays quiet. We do not rewrite the choice at install time, because in NR
-Control it is a deliberate user setting.
+In the second case NR lands on the already-composed back buffer once per game frame while the
+generated frames come from the game's raw DLSS-G buffers, so they never carry it.
+
+This fork hit it because we had replaced the external MFG unlocker with **in-host** memory patches
+(`proxies/XeFGUnlock.h`, `proxies/XeLLUnLock.h`, `proxies/XeFGPacing.h` and the `[XeFG]` keys
+`UnlockMFG`, `MaxInterpolatedFrames`, `ExtraPacing`). In-host code is exactly what `game_fg_call()`
+rejects, and the `[XeFG] XeFGFlipQueue` / `XeFGDynamicMFG` keys we kept were only ever
+pass-throughs to that plugin. Upstream's own package never hit it because it bundles
+`plugins/MFGUnlocker171.asi`; that module, not OptiScaler, makes the call.
+
+On 2026-11-05 the host was reverted onto `upstream/main`: those three headers and three keys are
+gone, and the release package now bundles the same MIT-licensed unlocker, byte-for-byte the author's
+`MFGUnlocker-v1.7.0.zip` asset (digest in [third_party/mfg-unlocker/README.md](../third_party/mfg-unlocker/README.md)).
+What remains of the fork's XeFG work is two hunks in `framegen/xefg/XeFG_Dx12.cpp` (dynamic MFG may
+use the whole provider ceiling; the applied count resets from what the provider actually holds).
+
+Leads checked and dismissed, all with logs rather than reasoning - do not reopen them:
+`NRPresentFrames` 0 and 1; `HudFix=captured`; multiplier disagreement (the plugin's estimate 4.051
+matched the host's 4X); `[DlssNr] AsiFgHandoff` (the plugin never reads a handle we hand it, so the
+key was removed); `FGInput=Upscaler`/OptiFG (NTE feeds FG through its Streamline DLSS-G inputs and
+OptiFG needs the upscaler's own motion and depth, so the host logs
+`Depth or Velocity is not ready, skipping`); and the pre1-versus-formal `dlssnr-amd.asi` question
+- they are two different builds 710,442 bytes apart, and both flicker or both do not depending
+only on the unlocker being present.
+
+The game-directory panel still prints the live layer combination under frame generation and now
+names the real condition beside it: with frame generation on and no unlocker plugin under
+`OptiScaler\plugins\`, the row takes the warning colour and says
+「帧生成开着会逐帧闪，缺插帧解锁插件」. It still does not rewrite the user's placement, which is a
+deliberate choice in NR Control.
 
 ## Controls
 
