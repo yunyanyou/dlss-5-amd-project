@@ -1804,3 +1804,23 @@ sync 层带「本周成功凭据复用」（`tools/lmxxf-sync/test-cache.py`，`
 
 顺带记一条证据：他实机不闪的这套里层是 `wilsjo2 before`，也就是**放置从来不是闪的变量**，
 `game_fg_call` 那条 adopt 才是——与前一天的矩阵结论一致。
+
+## 2026-11-05（同日第二次固定）：他再调的那几项也进默认
+
+面板与菜单又改过一次，差集很小，逐条跟着固定：
+
+- `[Sharpness] Sharpness` 0.5 → **auto**（保留 `OverrideSharpness=true`，即「开覆盖但用程序默认强度」）。
+- `[DlssNr] XeFGInterpolationCount` 2 → **auto**：不再给 NR 运行期间单独钉倍率，跟 `[XeFG] InterpolationCount`
+  （仍是 2 = 3X）走。这条同时改**打包器 `[DlssNr]` here-string**（那段会整段重写，只改模板没用），
+  并把 `tests/install/test_module_packages.py` 里钉 `2` 的断言换成钉 `auto`。
+- 插件基线块：`[Layer1] Intensity` 1.50 → **1.00**、`FastExtrapolationPasses` 2 → **3**，新增
+  `[Preprocess] ExposureBias = 1.00`。`Network = CC_SMALL_FP8` 不写死 —— 安装器已有「按已装模型写第一层
+  Network」的逻辑，small 模型在时它本来就会写这个值。
+
+**没固定**：NR Control 存盘时顺带整层落盘的那批键（`AutoMask`、`Environment*`、`Skin*`、
+`ReplaceDetailStrength`、`TransferStrength`、`WhitePointScale`、`LocalStructure`），实测这些值就等于
+插件自己的默认 —— 钉进安装器只是把厂商默认搬进我们的代码，上游改默认时反而失效。
+
+**验证**：更新后的块套在随包模板副本上跑，`Intensity 1.00 / FastExtrapolationPasses 3 /
+ExposureBias 1.00 / Theme 4` 与他实机文件一致；install 层重跑；包重出后核 `[DlssNr]
+XeFGInterpolationCount=auto` 与 `[Sharpness] Sharpness=auto` 在包内 ini 里落地。

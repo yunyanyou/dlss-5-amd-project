@@ -2400,11 +2400,12 @@ if ($installMochizuki) {
     if ((-not $asiIniExisted -or $overwriteIni) -and (Test-Path -LiteralPath $asiIni -PathType Leaf)) {
         Set-IniSettings $asiIni 'Layer1' ([ordered]@{
             'Enabled' = '1'; 'Processing' = 'wilsjo2'; 'Placement' = 'before'; 'Style' = '2'
-            'Intensity' = '1.50'; 'LocalTone' = '0.00'; 'PassesMode' = 'fast'
-            'FastExtrapolationPasses' = '2'; 'ColourStrength' = '0.50'
+            'Intensity' = '1.00'; 'LocalTone' = '0.00'; 'PassesMode' = 'fast'
+            'FastExtrapolationPasses' = '3'; 'ColourStrength' = '0.50'
         })
         Set-IniSettings $asiIni 'NRControl' ([ordered]@{ 'Theme' = '4' })
-        Write-Host '  dlssnr-amd.ini: [Layer1] wilsjo2 before (fast, Style 2, Intensity 1.50, ColourStrength 0.50) and Theme 4 - this fork''s verified baseline.' -ForegroundColor Green
+        Set-IniSettings $asiIni 'Preprocess' ([ordered]@{ 'ExposureBias' = '1.00' })
+        Write-Host '  dlssnr-amd.ini: [Layer1] wilsjo2 before (fast, Style 2, Intensity 1.00, ColourStrength 0.50), ExposureBias 1.00, Theme 4 - this fork''s verified baseline.' -ForegroundColor Green
     }
     # A fresh ini gets this install's startup network. An existing user ini is
     # preserved except when the caller explicitly chose a startup network; that

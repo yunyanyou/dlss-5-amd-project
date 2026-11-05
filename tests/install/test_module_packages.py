@@ -313,9 +313,10 @@ Add-Type -TypeDefinition 'public static class PackageFixture { public static int
         with zipfile.ZipFile(self.archive) as archive:
             packaged = configparser.ConfigParser(strict=False)
             packaged.read_string(archive.read('OptiScaler.ini').decode('utf-8-sig'))
-        # This fork ships the tuned multiplier, not upstream's 'auto'; packaging must carry the
-        # template through unchanged, which the comparisons below prove.
-        self.assertEqual(packaged['DlssNr']['XeFGInterpolationCount'], '2')
+        # The packaged [DlssNr] section is rewritten by the packager, so pin what it must end up
+        # holding: no NR-specific XeFG override (the [XeFG] multiplier stands), and the template's
+        # own values carried through rather than silently replaced.
+        self.assertEqual(packaged['DlssNr']['XeFGInterpolationCount'], 'auto')
         self.assertEqual(packaged['DlssNr']['XeFGInterpolationCount'],
                          source['DlssNr']['XeFGInterpolationCount'])
         self.assertEqual(packaged['XeFG']['InterpolationCount'], source['XeFG']['InterpolationCount'])
