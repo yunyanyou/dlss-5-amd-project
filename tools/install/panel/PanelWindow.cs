@@ -405,15 +405,44 @@ namespace OptScalerNR.Launcher
         }
 
         // ---------------------------------------------------------------- NR layer vs frame generation
-        // 实测（2026-11-04，《尘白禁区》）：帧生成开着时只有「RenoDX 处理 + 放在 Present」不闪，
-        // RenoDX 的 before/after 和 wilsjo2 的三个放置全部逐帧闪，且闪频随倍率上升。这两项在插件
-        // 菜单里随手就能改错，改错了没有任何提示，所以面板把当前组合读出来直接说。
+        // 实测（2026-11-05，《尘白禁区》）：逐帧闪跟层怎么摆没关系，跟「插件有没有 adopt 上插帧的
+        // swap chain」有关系，而 adopt 只看调用者是不是 OptiScaler 自己 —— 所以判据是游戏目录里
+        // 有没有那个外部解锁插件。没有它，NR 只落在每 N 个呈现里的 1 个，插出来的帧全是裸图。
+        // 层的组合照旧显示（在 NR Control 里随手就能改错），但不再当作闪的解释。
         static void AddNrLayerFact()
         {
             var asiIni = Path.Combine(_dir, "dlssnr-amd.ini");
             if (!File.Exists(asiIni)) return;
             bool risky;
             AddHeroFact(L("NR 层", "NR layer"), NrLayerState(asiIni, out risky), risky ? 3 : 1);
+        }
+
+        // The XeSS frame-generation unlocker, by any of the names it ships under. The loader looks in
+        // [Plugins] Path (relative to the game directory) and falls back to OptiScaler\plugins.
+        static bool FrameGenUnlockerPresent()
+        {
+            var folders = new List<string> { Path.Combine(_dir, "OptiScaler", "plugins"), Path.Combine(_dir, "plugins") };
+            var configured = IniValue(Path.Combine(_dir, "OptiScaler.ini"), "Plugins", "Path").Trim().Trim('"');
+            if (configured.Length > 0 && !configured.Equals("auto", StringComparison.OrdinalIgnoreCase))
+            {
+                try { folders.Insert(0, Path.IsPathRooted(configured) ? configured : Path.Combine(_dir, configured)); }
+                catch { }
+            }
+            foreach (var folder in folders)
+            {
+                try
+                {
+                    if (!Directory.Exists(folder)) continue;
+                    foreach (var file in Directory.GetFiles(folder, "*.asi"))
+                    {
+                        var name = Path.GetFileName(file).ToLowerInvariant();
+                        if (name.Contains("mfgunlocker") || name.Contains("xefgunlock") || name.Contains("mfg-unlocker"))
+                            return true;
+                    }
+                }
+                catch { }
+            }
+            return false;
         }
 
         static string IniValue(string path, string section, string key)
@@ -456,6 +485,7 @@ namespace OptScalerNR.Launcher
         {
             risky = false;
             var fg = FrameGenerationOn();
+            if (fg) risky = !FrameGenUnlockerPresent();
             var multi = IniValue(asiIni, "NRControl", "Layers").Trim();
             var running = new List<string>();
             for (var n = 1; n <= 30; n++)
@@ -473,7 +503,6 @@ namespace OptScalerNR.Launcher
                 var processing = style == "0" || style == "false" ? "wilsjo2" : "renodx";
                 var hook = IniValue(asiIni, "RenoDX", "NRHookPoint").Trim();
                 var placement = hook == "1" ? "before" : hook == "0" ? "after" : "present";
-                if (fg && (processing != "renodx" || placement != "present")) risky = true;
                 return Describe(processing + " " + placement, fg, risky);
             }
 
@@ -484,7 +513,6 @@ namespace OptScalerNR.Launcher
                 var placement = IniValue(asiIni, section, "Placement").Trim().ToLowerInvariant();
                 if (processing.Length == 0) processing = "renodx";
                 if (placement.Length == 0) placement = "present";
-                if (fg && (processing != "renodx" || placement != "present")) risky = true;
                 parts.Add(processing + " " + placement);
             }
             return Describe(string.Join(" + ", parts), fg, risky);
@@ -494,9 +522,9 @@ namespace OptScalerNR.Launcher
         {
             if (!fg) return state;
             return risky
-                ? state + L(" — 帧生成开着会逐帧闪，改成 RenoDX + Present",
-                            " flickers with frame generation on; switch the layer to RenoDX + Present")
-                : state + L("（帧生成下唯一不闪的组合）", " (the only combination that stays steady under frame generation)");
+                ? state + L(" — 帧生成开着会逐帧闪，缺插帧解锁插件",
+                            " flickers with frame generation on; the frame-generation unlocker is missing")
+                : state + L("（插帧解锁插件在位）", " (frame-generation unlocker present)");
         }
 
         // 列表上方的说明行：有首选就把名字直接写在这里（行内芯片之外再给一次显式答案），
