@@ -6,7 +6,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 if not (ROOT / 'VERSION').is_file():
     ROOT = Path.cwd()
-STAGES = ('vcvarsall.bat', 'build-lmxxf-runtime.cmd', 'tests\\run-all.cmd', 'MSBuild.exe', 'build-person-worker.cmd')
+STAGES = ('msvc-env.cmd', 'build-lmxxf-runtime.cmd', 'tests\\run-all.cmd', 'msbuild', 'build-person-worker.cmd')
 
 class ReleaseExitTests(unittest.TestCase):
     def exercise(self, failing, code):
@@ -15,7 +15,9 @@ class ReleaseExitTests(unittest.TestCase):
         seen=set()
         for line in source.splitlines():
             command, separator, guard = line.partition(' || ')
-            match = next((stage for stage in STAGES if stage in command and (command.lstrip().lower().startswith('call ') or command.lstrip().startswith(chr(34)))), None)
+            head = command.lstrip().lower()
+            match = next((stage for stage in STAGES if stage in command and (
+                head.startswith('call ') or head.startswith('msbuild ') or command.lstrip().startswith(chr(34)))), None)
             if match:
                 seen.add(match)
                 lines.append('echo CALLED_'+match)

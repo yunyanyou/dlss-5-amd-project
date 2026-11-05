@@ -10,6 +10,19 @@ SCRIPT = REPO / 'tools/release/BUILD_LOCAL_PACKAGE.ps1'
 PS = Path(os.environ['SystemRoot']) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
 
 
+def child_env(**values):
+    """Override environment variables for one child, case-safely.
+
+    os.environ is case-insensitive on Windows but dict(os.environ) is not: a developer-prompt
+    session carries VCTOOLSREDISTDIR while a mixed-case override would add a second key, and the
+    real VS redist tree then leaks into the child.
+    """
+    taken = {name.upper() for name in values}
+    env = {k: v for k, v in os.environ.items() if k.upper() not in taken}
+    env.update(values)
+    return env
+
+
 class LocalPackageTests(unittest.TestCase):
     def setUp(self):
         scratch = REPO / 'work/scratch'
@@ -97,7 +110,7 @@ class LocalPackageTests(unittest.TestCase):
         script = self.root / 'crt.ps1'
         script.write_text("$ErrorActionPreference='Stop'\n$CrtDir=''\n" + selection,
                           encoding='utf-8-sig')
-        env = dict(os.environ, VCINSTALLDIR=str(vc), VCToolsRedistDir=str(incomplete))
+        env = child_env(VCINSTALLDIR=str(vc), VCToolsRedistDir=str(incomplete))
         def run():
             return subprocess.run([str(PS), '-NoProfile', '-File', str(script)],
                                   env=env, capture_output=True, timeout=20)
