@@ -1569,6 +1569,12 @@ MZ3 码走 `old` 分支拿到正确中文提示，`ShareError` 对编码器实�
 
 ## 2026-11-04: ASI 载荷升到厂商正式 0.0.8.2（原来带的是 pre1）
 
+> **2026-11-05 已退回 pre1**（跟上游带的同一份）。下面这条的判断有一处错：我曾用「两份二进制里关键
+> 字符串计数相同」推出「正式包与 pre1 是同一份代码、只差签名」——逐字节比对结果是同尺寸
+> 8,339,128 字节里差 **710,442 字节**、散布在 98/127 个 64KB 块，是两个不同构建。也正因如此，
+> 那次升级没解决任何事、也没弄坏任何事：帧生成的分水岭是 `game_fg_call` 的 adopt，见当天
+> 「宿主回退到上游」那条。
+
 **问题**：用户问「上游好像有正式版 0.0.8.2 了，我们好像还是 pre1」。核对结论：是对的。
 `third_party/mochizuki-asi/README.md` 记的来源是 `...0.0.8.2-pre1-preview-x86_64`，而厂商在
 2026-11-02 发布了 tag `v0.0.8.2`（commit `c53878b5`）。asi 的版本资源是空的
@@ -1739,3 +1745,20 @@ sync 层带「本周成功凭据复用」（`tools/lmxxf-sync/test-cache.py`，`
 **验证**：`build-release-local.cmd`（含 `tests\run-all.cmd --tier ci,device` 与打包）+ 安装 fixture；
 画面判据仍是插件那一行 —— 出现 `the game's own frame generation … before frame generation`
 才算 adopt 成功。**待用户在真机确认**：新包（宿主已回退 + 随包解锁插件）在游戏里开插帧是否还闪。
+
+## 2026-11-05: ASI 载荷退回上游带的 pre1（载荷偏离归零）
+
+**理由**：正式包与 pre1 确实是两个不同构建（同尺寸差 710,442 字节），但带着正式包的那一天里
+插帧 + NR 的行为没有任何变化 —— 真正的分水岭是 `game_fg_call` 的 adopt（外部解锁插件）。
+既然这次升级「既不修东西也不坏东西」，就按「尽量同步回上游」退回上游带的同一份，载荷偏离归零。
+
+**做法**：`git checkout upstream/main -- third_party/mochizuki-asi/payload`，回来的是 5 个文件：
+`dlssnr-amd.asi` `bfd964e1…`、`nr_present_probe.exe` `87dd35d8…`、`model-tools/dlssnr_extract_model.exe`
+`5bc5e5c5…`、`model-tools/dlssnr-int4-weights.exe` `fbf2a9f2…`、`dlssnr-amd/lang/zh-CN.txt`
+`965d89e4…`（117,064 字节、**带 BOM**；正式包那份没有 BOM）。
+`third_party/mochizuki-asi/README.md` 改成**只追加**（+35/−0，原来是 +22/−1）：上游原文照留，
+后面加一节 fork notes，写 pre1 摘要表、为什么停在 pre1、以及正式包摘要表备查。
+厂商字节照旧一律不动：不重签、不改 BOM、不改行尾。
+
+**验收**：`git diff --numstat upstream/main -- third_party/mochizuki-asi/payload` 为空；出包后
+包内 `OptiScaler/plugins/dlssnr-amd.asi` 摘要 = `bfd964e1…`；install 层与打包自检重跑。
