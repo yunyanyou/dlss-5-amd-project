@@ -2392,6 +2392,20 @@ if ($installMochizuki) {
             Set-IniSettings $asiIni 'NRControl' ([ordered]@{ 'Language' = $asiMenuLanguage }) -OnlyMissing
         }
     }
+    # Fork baseline, verified on Neverness to Everness with frame generation on (2026-11-05):
+    # one wilsjo2 layer before the upscaler, plus the menu theme it was tested with. A [LayerN]
+    # section replaces [RenoDX] entirely for the running chain, so this is the chain itself, not a
+    # preference - which is why it is written only onto a fresh or overwritten ini. A layer with no
+    # Network key inherits [Network] Model, so the model chosen below still decides the network.
+    if ((-not $asiIniExisted -or $overwriteIni) -and (Test-Path -LiteralPath $asiIni -PathType Leaf)) {
+        Set-IniSettings $asiIni 'Layer1' ([ordered]@{
+            'Enabled' = '1'; 'Processing' = 'wilsjo2'; 'Placement' = 'before'; 'Style' = '2'
+            'Intensity' = '1.50'; 'LocalTone' = '0.00'; 'PassesMode' = 'fast'
+            'FastExtrapolationPasses' = '2'; 'ColourStrength' = '0.50'
+        })
+        Set-IniSettings $asiIni 'NRControl' ([ordered]@{ 'Theme' = '4' })
+        Write-Host '  dlssnr-amd.ini: [Layer1] wilsjo2 before (fast, Style 2, Intensity 1.50, ColourStrength 0.50) and Theme 4 - this fork''s verified baseline.' -ForegroundColor Green
+    }
     # A fresh ini gets this install's startup network. An existing user ini is
     # preserved except when the caller explicitly chose a startup network; that
     # choice must take effect instead of being ignored.

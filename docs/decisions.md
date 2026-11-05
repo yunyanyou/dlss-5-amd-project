@@ -1778,3 +1778,29 @@ sync 层带「本周成功凭据复用」（`tools/lmxxf-sync/test-cache.py`，`
 
 **验收**：`git diff --numstat upstream/main -- third_party/mochizuki-asi/payload` 为空；出包后
 包内 `OptiScaler/plugins/dlssnr-amd.asi` 摘要 = `bfd964e1…`；install 层与打包自检重跑。
+
+## 2026-11-05: 把用户实机跑通的那套设置固定成随包默认
+
+**来源**：他在《尘白禁区》确认「完全不闪、正常玩」之后保存的两份文件（`OptiScaler.ini`、
+`dlssnr-amd.ini`），逐键与随包模板对过差集。真实差集只有几条：
+
+- 宿主：`[XeFG] InterpolationCount` 由 3(4X) 改成 **2(3X)**、`[Menu] BackgroundBlurStrength`
+  由 1.0 改成 **0.5** —— 直接改进随包模板 `OptiScaler.ini`；打包器只整体重写 `[DlssNr]`，
+  不会碰这两行。
+- 插件：新增 `[Layer1]`（`wilsjo2` / `before` / `Style 2` / `Intensity 1.50` / `LocalTone 0.00` /
+  `PassesMode fast` / `FastExtrapolationPasses 2` / `ColourStrength 0.50` / `Enabled 1`）与
+  `[NRControl] Theme = 4`。厂商模板是不可动的厂商字节，所以落在安装器新块里，**只在「全新安装
+  或 `-OverwriteIni`」时写**，保留用户已有文件一律不动；`[RenoDX] Enabled=1`、`Language`、
+  `NRPresentFrames=1` 是原有块已经在做的。
+
+**故意没有固定的**：`[Menu] WindowWidth/WindowHeight` 是他这次拖出来的窗口尺寸，换显示器就错；
+`[FSR-RR] Floor*` 那十几条他文件里是具体值而模板是 `auto`——那是宿主存盘时写下的**推导结果**不是
+他的调节，钉死会让上游后续调参失效；`[DlssNr] NrBackend` 模板保持上游的 `lmxxf`，由安装器按所选
+后端写 `mochizuki`，偏离继续留在安装期、不进源码。
+
+**验证**：把新块单独套在随包 `dlssnr-amd-optiscaler-renodx.ini` 的副本上跑一遍，`[Layer1]` 九个键
+和 `Theme = 4` 与他实机文件逐键一致（`Language`/`NRPresentFrames` 由别的块负责）；随包
+`OptiScaler.ini` 里两行确认落地；`tests\install\run.cmd` 整套跑过。
+
+顺带记一条证据：他实机不闪的这套里层是 `wilsjo2 before`，也就是**放置从来不是闪的变量**，
+`game_fg_call` 那条 adopt 才是——与前一天的矩阵结论一致。
