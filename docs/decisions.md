@@ -1809,7 +1809,8 @@ sync 层带「本周成功凭据复用」（`tools/lmxxf-sync/test-cache.py`，`
 
 面板与菜单又改过一次，差集很小，逐条跟着固定：
 
-- `[Sharpness] Sharpness` 0.5 → **auto**（保留 `OverrideSharpness=true`，即「开覆盖但用程序默认强度」）。
+- `[Sharpness] Sharpness` 0.5 → **0.4**。他实机文件里存的是 `auto`，因为 0.4 恰好就是程序默认强度；
+  这里故意钉 `0.4` 而不是 `auto`，是为了上游以后改默认时他看到的东西不跟着变。`OverrideSharpness=true` 保留。
 - `[DlssNr] XeFGInterpolationCount` 2 → **auto**：不再给 NR 运行期间单独钉倍率，跟 `[XeFG] InterpolationCount`
   （仍是 2 = 3X）走。这条同时改**打包器 `[DlssNr]` here-string**（那段会整段重写，只改模板没用），
   并把 `tests/install/test_module_packages.py` 里钉 `2` 的断言换成钉 `auto`。
@@ -1823,4 +1824,4 @@ sync 层带「本周成功凭据复用」（`tools/lmxxf-sync/test-cache.py`，`
 
 **验证**：更新后的块套在随包模板副本上跑，`Intensity 1.00 / FastExtrapolationPasses 3 /
 ExposureBias 1.00 / Theme 4` 与他实机文件一致；install 层重跑；包重出后核 `[DlssNr]
-XeFGInterpolationCount=auto` 与 `[Sharpness] Sharpness=auto` 在包内 ini 里落地。
+XeFGInterpolationCount=auto` 与 `[Sharpness] Sharpness=0.4` 在包内 ini 里落地。
