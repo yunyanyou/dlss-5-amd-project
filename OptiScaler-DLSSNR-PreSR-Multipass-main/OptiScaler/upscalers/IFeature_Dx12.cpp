@@ -31,8 +31,16 @@ bool IFeature_Dx12::Init(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCo
 
     if (result)
     {
-        if (!Config::Instance()->OverlayMenu.value_or_default() && (Imgui == nullptr || Imgui.get() == nullptr))
-            Imgui = std::make_unique<Menu_Dx12>(Util::GetProcessWindow(), InDevice);
+        if (!Config::Instance()->OverlayMenu.value_or_default())
+        {
+            if (Imgui == nullptr || Imgui.get() == nullptr || ImguiDevice != InDevice)
+            {
+                Imgui.reset();
+                Imgui = std::make_unique<Menu_Dx12>(Util::GetProcessWindow(), InDevice);
+                ImguiDevice = InDevice;
+            }
+            ImguiOwner = this;
+        }
 
         OutputScaler = std::make_unique<OS_Dx12>("Output Scaling", InDevice, (TargetWidth() < DisplayWidth()));
         RCAS = std::make_unique<RCAS_Dx12>("RCAS", InDevice);
@@ -40,6 +48,12 @@ bool IFeature_Dx12::Init(ID3D12Device* InDevice, ID3D12GraphicsCommandList* InCo
         if (GetUpscalerType() != Upscaler::DLSS && GetUpscalerType() != Upscaler::DLSSD)
             Bias = std::make_unique<Bias_Dx12>("Bias", InDevice);
         Magnifier = std::make_unique<Magnifier_Dx12>("Magnifier", InDevice);
+        const bool recordedRr = GetUpscalerType() == Upscaler::FSR_RR;
+        OutputScaler->SetRecordedLifetimeEnabled(recordedRr);
+        RCAS->SetRecordedLifetimeEnabled(recordedRr);
+        if (Bias)
+            Bias->SetRecordedLifetimeEnabled(recordedRr);
+        Magnifier->SetRecordedLifetimeEnabled(recordedRr);
 
         UpscalerTime = std::make_unique<GpuTime_Dx12>(InDevice);
     }
@@ -87,7 +101,9 @@ bool IFeature_Dx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_NGX
         useRcas = false;
 
     bool useOutputScaling =
-        Config::Instance()->OutputScalingEnabled.value_or_default() && (LowResMV() || RenderWidth() == DisplayWidth());
+        Config::Instance()->OutputScalingEnabled.value_or_default() &&
+        (LowResMV() || RenderWidth() == DisplayWidth()) &&
+        (TargetWidth() != DisplayWidth() || TargetHeight() != DisplayHeight());
 
     if (!OutputScaler->IsInit())
         useOutputScaling = false;
@@ -100,6 +116,35 @@ bool IFeature_Dx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_NGX
     InParameters->Get(NVSDK_NGX_Parameter_MotionVectors, &paramMotion);
     InParameters->Get(NVSDK_NGX_Parameter_Depth, &paramDepth);
 
+    struct OutputParameterGuard
+    {
+        NVSDK_NGX_Parameter* parameters;
+        ID3D12Resource* output;
+        ~OutputParameterGuard() { parameters->Set(NVSDK_NGX_Parameter_Output, output); }
+    } outputParameterGuard { InParameters, paramOutput };
+    const bool recordedRr = GetUpscalerType() == Upscaler::FSR_RR;
+    if (recordedRr && (useOutputScaling || useRcas || Magnifier->ShouldRun()) &&
+        !Shader_Dx12::RecordedLifetimeSupported(InCommandList))
+    {
+        LOG_ERROR("FSR-RR postprocessing requires an observable recording lifetime");
+        return false;
+    }
+    struct PostprocessCleanup
+    {
+        std::vector<std::function<void()>> buffers;
+        NVSDK_NGX_Parameter* parameters;
+        float sharpness;
+        bool changedSharpness = false;
+        ~PostprocessCleanup()
+        {
+            for (auto it = buffers.rbegin(); it != buffers.rend(); ++it)
+                (*it)();
+            if (changedSharpness)
+                parameters->Set(NVSDK_NGX_Parameter_Sharpness, sharpness);
+        }
+    } cleanup { {}, InParameters, _sharpness };
+    bool helperSetupFailed = false;
+
     // Order is important as that's the order of shader dispatch
     std::vector<ShaderPass> pipeline;
 
@@ -110,11 +155,14 @@ bool IFeature_Dx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_NGX
               [&](ID3D12Resource* nextOutput) -> ID3D12Resource*
               {
                   if (OutputScaler->CreateBufferResource(Device, nextOutput, TargetWidth(), TargetHeight(),
-                                                         D3D12_RESOURCE_STATE_UNORDERED_ACCESS))
+                                                         D3D12_RESOURCE_STATE_UNORDERED_ACCESS, InCommandList))
                   {
+                      if (recordedRr)
+                          cleanup.buffers.push_back(OutputScaler->RecordedBufferCleanup(InCommandList));
                       OutputScaler->SetBufferState(InCommandList, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
                       return OutputScaler->Buffer();
                   }
+                  helperSetupFailed = recordedRr;
                   return nullptr;
               },
 
@@ -144,12 +192,17 @@ bool IFeature_Dx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_NGX
                   // Disable any built-in sharpness shaders
                   InParameters->Set(NVSDK_NGX_Parameter_Sharpness, 0.0f);
                   _sharpness = 0.0f;
+                  cleanup.changedSharpness = true;
 
-                  if (RCAS->CreateBufferResource(Device, nextOutput, D3D12_RESOURCE_STATE_UNORDERED_ACCESS))
+                  if (RCAS->CreateBufferResource(Device, nextOutput, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                                                 InCommandList))
                   {
+                      if (recordedRr)
+                          cleanup.buffers.push_back(RCAS->RecordedBufferCleanup(InCommandList));
                       RCAS->SetBufferState(InCommandList, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
                       return RCAS->Buffer();
                   }
+                  helperSetupFailed = recordedRr;
                   return nullptr;
               },
 
@@ -207,11 +260,15 @@ bool IFeature_Dx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_NGX
             { // Setup
               [&](ID3D12Resource* nextOutput) -> ID3D12Resource*
               {
-                  if (Magnifier->CreateBufferResource(Device, nextOutput, D3D12_RESOURCE_STATE_UNORDERED_ACCESS))
+                  if (Magnifier->CreateBufferResource(Device, nextOutput, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                                                      InCommandList))
                   {
+                      if (recordedRr)
+                          cleanup.buffers.push_back(Magnifier->RecordedBufferCleanup(InCommandList));
                       Magnifier->SetBufferState(InCommandList, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
                       return Magnifier->Buffer();
                   }
+                  helperSetupFailed = recordedRr;
 
                   return nullptr;
               },
@@ -220,7 +277,7 @@ bool IFeature_Dx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_NGX
               [&](ID3D12Resource* input, ID3D12Resource* output) -> bool
               {
                   if (!Magnifier->CanRender() || !paramMotion || !paramOutput)
-                      return true;
+                      return !recordedRr;
 
                   Magnifier->SetBufferState(InCommandList, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 
@@ -233,6 +290,8 @@ bool IFeature_Dx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_NGX
     for (auto it = pipeline.rbegin(); it != pipeline.rend(); ++it)
     {
         ID3D12Resource* requiredInput = it->Setup(currentTarget);
+        if (helperSetupFailed)
+            return false;
         if (requiredInput)
         {
             it->outputBuffer = currentTarget;
@@ -260,7 +319,7 @@ bool IFeature_Dx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_NGX
         {
             if (!pass.Dispatch(pass.inputBuffer, pass.outputBuffer))
             {
-                return true;
+                return GetUpscalerType() != Upscaler::FSR_RR;
             }
         }
     }
@@ -270,21 +329,29 @@ bool IFeature_Dx12::Evaluate(ID3D12GraphicsCommandList* InCommandList, NVSDK_NGX
     {
         if (Imgui != nullptr && Imgui.get() != nullptr)
         {
-            if (Imgui->IsHandleDifferent())
+            if (Imgui->IsHandleDifferent() || ImguiDevice != Device)
             {
                 Imgui.reset();
+                ImguiDevice = nullptr;
+                ImguiOwner = nullptr;
             }
             else
+            {
+                ImguiOwner = this;
                 Imgui->Render(InCommandList, paramOutput);
+            }
         }
         else
         {
             if (Imgui == nullptr || Imgui.get() == nullptr)
+            {
                 Imgui = std::make_unique<Menu_Dx12>(GetForegroundWindow(), Device);
+                ImguiDevice = Device;
+                ImguiOwner = this;
+            }
         }
     }
 
-    InParameters->Set(NVSDK_NGX_Parameter_Output, paramOutput);
 
     return evalResult;
 }
@@ -329,7 +396,12 @@ IFeature_Dx12::~IFeature_Dx12()
     if (State::Instance().isShuttingDown)
         return;
 
-    Imgui.reset();
+    if (ImguiOwner == this)
+    {
+        Imgui.reset();
+        ImguiDevice = nullptr;
+        ImguiOwner = nullptr;
+    }
     OutputScaler.reset();
     RCAS.reset();
     Bias.reset();

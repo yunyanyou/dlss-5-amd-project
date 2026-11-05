@@ -389,6 +389,7 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_Shutdown(void)
     // Disabled for now to check if it cause any issues
     // UnhookAll();
     DLSSFeatureDx12::Shutdown(D3D12Device);
+    FSRDFeatureDx12::ReapDeferredFeatures();
 
     // Added `&& !State::Instance().isShuttingDown` hack for crash on exit
     if (Config::Instance()->DLSSEnabled.value_or_default() && NVNGXProxy::IsDx12Inited() &&
@@ -951,6 +952,19 @@ NVSDK_NGX_API NVSDK_NGX_Result NVSDK_NGX_D3D12_ReleaseFeature(NVSDK_NGX_Handle* 
             if (deviceContext == State::Instance().currentFeature)
                 State::Instance().currentFeature = nullptr;
 
+            if (entry.createParamsOwned && entry.createParams != nullptr)
+            {
+                TryDestroyNGXParameters(entry.createParams, NVNGXProxy::D3D12_DestroyParameters());
+                entry.createParams = nullptr;
+                entry.createParamsOwned = false;
+            }
+            if (!shutdown)
+            {
+                FSRDFeatureDx12::ReapDeferredFeatures();
+                if (deviceContext->GetUpscalerType() == Upscaler::FSR_RR)
+                    FSRDFeatureDx12::DestroyWhenRetired(
+                        std::unique_ptr<FSRDFeatureDx12>(static_cast<FSRDFeatureDx12*>(entry.feature.release())));
+            }
             // Erase from map (smart pointer reset is implicit on erase)
             Dx12Contexts.erase(it);
             if (!shutdown)
@@ -1179,6 +1193,13 @@ static NVSDK_NGX_Result TryEvaluateOptiFeature(ID3D12GraphicsCommandList* InCmdL
         return NVSDK_NGX_Result_FAIL_FeatureNotFound;
     }
 
+    if (!feature->IsInited() && feature->GetUpscalerType() == Upscaler::FSR_RR)
+    {
+        LOG_ERROR("FSR-RR is not initialized; refusing an undenoised SR fallback");
+        D3D12Hooks::SetRootSignatureTracking(true);
+        return NVSDK_NGX_Result_Fail;
+    }
+
     // Fallback to FSR 2.1.2 if feature failed to initialize and user didn't explicitly request it
     if (!feature->IsInited() && cfg.Dx12Upscaler.value_or_default() != Upscaler::FSR21)
     {
@@ -1207,7 +1228,11 @@ static NVSDK_NGX_Result TryEvaluateOptiFeature(ID3D12GraphicsCommandList* InCmdL
         UpscalerInputsDx12::UpscaleEnd(InCmdList, InParameters, feature);
 
         ScopedSkipHeapCapture skip {};
+        feature->OnEvaluationStarting(InParameters);
         evalSuccess = feature->Evaluate(InCmdList, InParameters);
+        if (!evalSuccess)
+            evalSuccess = feature->EvaluateFallback(InCmdList, InParameters);
+        feature->OnEvaluationFinished(evalSuccess);
         if (evalSuccess)
             nrOutputExtent = {feature->DisplayWidth(), feature->DisplayHeight()};
     }
