@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Remove this project from the folder this script sits in (the game folder after Setup).
   Double-click Uninstall_OptiScaler_NR.bat there. Tests may pass -GameDir.
