@@ -133,8 +133,6 @@ for %%T in (directinput_registry input_hook_lifetime input_key_lifetime input_wi
 call :Xefg || goto fail
 %CXX% /utf-8 /I"%INC%" tests\host\nr_activity_recording.cpp /Fe"%OUT%\nr_activity_recording.exe" /Fo"%OUT%\nr_activity_recording.obj" /link "%DETOURS%" dxguid.lib || goto fail
 "%OUT%\nr_activity_recording.exe" || goto fail
-%CXX% /utf-8 tests\host\amd_model_settings.cpp /Fe"%OUT%\amd_model_settings.exe" /Fo"%OUT%\amd_model_settings.obj" || goto fail
-"%OUT%\amd_model_settings.exe" || goto fail
 %CXX% tests\host\nr_backend_selector.cpp /Fe"%OUT%\nr_backend_selector.exe" /Fo"%OUT%\nr_backend_selector.obj" || goto fail
 "%OUT%\nr_backend_selector.exe" || goto fail
 %CXX% /utf-8 tests\host\nr_release_reason.cpp /Fe"%OUT%\nr_release_reason.exe" /Fo"%OUT%\nr_release_reason.obj" /link dxguid.lib d3d12.lib || goto fail
@@ -159,9 +157,6 @@ mkdir "%OUT%\retirement"
 "%AMD_TEST_PYTHON%" -B -m unittest tests\host\test_retirement_stats.py || goto fail
 powershell -NoProfile -ExecutionPolicy Bypass -File "%REPO%\tests\host\hip_load.ps1" "%OUT%\hip" || goto fail
 "%AMD_TEST_PYTHON%" -B tests\host\test_config_priority.py || goto fail
-
-call tests\host\person-inference.cmd || goto fail
-call tests\host\person-worker.cmd || goto fail
 
 echo host ci: PASS
 if /i not "%TIER%"=="all" exit /b 0

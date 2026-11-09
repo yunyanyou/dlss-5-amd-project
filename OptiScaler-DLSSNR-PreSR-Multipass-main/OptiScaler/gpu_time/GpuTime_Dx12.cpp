@@ -121,7 +121,58 @@ std::optional<double> GpuTime_Dx12::ReadGpuTime(ID3D12CommandQueue* commandQueue
             return elapsedTimeMs;
         }
 
-        elapsedTimeMs = (endTime - startTime) / static_cast<double>(gpuFrequency) * 1000.0;
+        double rawMs = (endTime - startTime) / static_cast<double>(gpuFrequency) * 1000.0;
+
+        // Filter out wall-clock timestamp inflation when a concurrent async-compute queue preempts between Start and End.
+        if (rawMs > 0.0 && rawMs < 100.0)
+        {
+            _rawWindow[_rawHead] = rawMs;
+            _rawHead = (_rawHead + 1) % RAW_WINDOW_SIZE;
+            if (_rawCount < RAW_WINDOW_SIZE)
+                ++_rawCount;
+
+            if (rawMs >= 1.0)
+            {
+                if (_baseMs < 1.0)
+                {
+                    _baseMs = rawMs;
+                    _cleanMs = rawMs;
+                }
+                else if (rawMs < _baseMs)
+                {
+                    _baseMs = rawMs < _baseMs * 0.94 ? rawMs : (_baseMs * 0.2 + rawMs * 0.8);
+                    _cleanMs = rawMs < _cleanMs * 0.94 ? rawMs : (_cleanMs * 0.7 + rawMs * 0.3);
+                }
+                else if (rawMs <= _baseMs * 1.06)
+                {
+                    _baseMs = _baseMs * 0.99 + rawMs * 0.01;
+                    _cleanMs = _cleanMs * 0.85 + rawMs * 0.15;
+                }
+                else
+                {
+                    _baseMs += 0.002;
+                    // Check if the entire recent 32-frame window has shifted to a tight new steady-state floor
+                    // (e.g. switching Fast -> Legacy mode, where max/min spread is < 5%, unlike noisy async preemption).
+                    if (_rawCount == RAW_WINDOW_SIZE)
+                    {
+                        double minW = _rawWindow[0], maxW = _rawWindow[0];
+                        for (size_t i = 1; i < RAW_WINDOW_SIZE; ++i)
+                        {
+                            minW = (std::min)(minW, _rawWindow[i]);
+                            maxW = (std::max)(maxW, _rawWindow[i]);
+                        }
+                        if (minW > _baseMs * 1.06 && maxW <= minW * 1.05)
+                        {
+                            _baseMs = minW;
+                            _cleanMs = minW;
+                        }
+                    }
+                    rawMs = _cleanMs;
+                }
+            }
+        }
+
+        elapsedTimeMs = rawMs;
     }
     else
     {

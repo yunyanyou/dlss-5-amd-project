@@ -89,71 +89,87 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $body = @'
-          ### v1.14.1 (对比 v1.14.0)
+          ### v1.15.1-alpha (对比 v1.14.1)
 
-          重点更新：FSR 光线再生（FSR-RR）转换/合成管线与录制生命周期全面重构，完成整套 FSR-RR 菜单中文本地化，并优化 Mochizuki 官方 ASI 接管性能与交互提示。
+          ## 新增 [OpenRR 0.1.1](https://github.com/OpenNeuralRendering/OpenRR)（DLSS 光线重建 · RX 9000 实验性支持）
 
-          ## FSR 光线再生（FSR-RR）管线与稳定性重构
+          特别感谢 **Matheus（[@MatheusFerreiraS](https://github.com/MatheusFerreiraS) / [OpenNeuralRendering](https://github.com/OpenNeuralRendering/OpenRR)）** 开发并开源 OpenRR 光线重建运行时（MIT 协议，详见仓库 `third_party/openrr/LICENSE` 与发布包 `Licenses/OpenRR_MIT.txt`）。
 
-          - **底光滤波（Floor）与细节恢复系统**：上线新版输入转换与输出合成管线，提供 `快速 / 平衡 / 质量` 三档预设、漫反射/高光独立路径路由（`自动 / 直通 / 间接 / 拆分`），以及针对水面、玻璃等材质的**反照率渗色修复（Albedo Bleed Fix）**。
-          - **录制生命周期与时域历史保护**：合成历史（Composition History）、SR 深度编码及后处理着色器（OutputScaler / RCAS / Bias / Magnifier）全面接入录制生命周期与首次提交定型机制，防止未提交录制丢弃、跨命令列表执行或游戏释放特征时破坏在途 GPU 资源。
-          - **相机与调试视图修复**：完善透视相机近/远平面与无限远平面（Infinite Far）解析及子矩形偏移打包；修复调试视图（如 `UpscalerBypass`、`DenoiserOutput`、`DebugOverview`）下的时域历史保留与重建逻辑，默认关闭重度诊断探针与周期日志输出。
+          - **原生运行 DLSS-D 310.9.1.0 光线重建网络**：在 AMD Radeon RX 9000 系列（RDNA4 / `gfx12`）显卡上直接提取并运行 NVIDIA `nvngx_dlssd.dll`（`310.9.1.0`）的 Transformer 光线重建模型（`rr2`），支持三种录制与桥接模式：
+            - **D3D12 命令列表直录（默认自动优先）**：通过驱动 ELF 接口将计算内核直接录制进游戏的 D3D12 命令列表，支持游戏纹理 SRV 直读与输出 UAV 直写，无需跨队列拷贝或命令列表切分；
+            - **D3D12 ↔ Vulkan 跨队列桥接（回退路径）**：在未启用 D3D12 直录时，通过切分命令列表与共享资源桥接至独立 Vulkan 设备执行；
+            - **原生 Vulkan 游戏直录**：在原生 Vulkan 光追游戏（如《夺宝奇兵：古老之圈》）中直接复用游戏的 `VkDevice` 并录制进游戏 `VkCommandBuffer`。
+          - **OpenRR 0.1.1 `New` 快速模式（默认开启）**：后台异步编译快速模式管线，在几乎无画质损失的前提下降低约 8% GPU 耗时，支持在游戏内 `Insert` 菜单或通过 `[OpenNR-RR] Mode` 在 `New (Fast)` 与 `Legacy` 模式间实时热切。
+          - **游戏内 `OpenRR` ↔ `FSR-RR` 无缝实时热切与显存回收**：支持在游戏内通过顶部超分下拉框或 `启用 OpenRR (DLSS 光线重建)` 复选框当场热切 `OpenRR` 与 `FSR-RR`，无需重启游戏；切换后 1 帧内 100% 释放旧后端占用的显存（~983 MB）。
+          - **显存优化、DRS 预分配与跨队列去抢占计时滤波**：通过金字塔暂存区复用与按需分配将单实例显存占用降至 ~966 MB；修复 DRS 仅改变渲染分辨率时的历史帧重置并采用 64 槽位完成证明；新增零损耗跨队列异步计算（Async Compute）去抢占计时滤波，消除 UE5 等游戏异步光追队列穿插导致的耗时读数虚高。
 
-          ## Mochizuki ASI 接管优化与全菜单汉化
+          ## 神经渲染架构插件化转型（Mochizuki 0.0.8.3 ASI）与 FSR-RR 1.2.1 更新
 
-          - **消除双层命令列表包装与帧生成冲突（#19）**：当 `dlssnr-amd.asi` 接管神经降噪且未开启 FSR-RR 时，宿主自动跳过内置 `CommandListProxy` 与提交 Hook，修复 v1.14.0 中宿主与 ASI 重复钩取导致的帧生成掉帧与帧节奏异常（修复 #19）。
-          - **接管提示横幅重构与动态按键识别**：重绘宿主菜单中的 ASI 接管提示卡，自动读取 `dlssnr-amd.ini` 中的自定义菜单热键（默认 `[End]`）并醒目展示。
-          - **FSR 光线再生全套中文汉化**：完成整个 `FSR-RR` 主面板、实时管线状态、实时输入表、高级调参及悬停说明的简体中文本地化，并同步扩充内嵌中文字体字库。
+          - **移除宿主内置后端，全面转向独立 `.asi` 插件架构**：
+            - 本版本已正式移除原先硬编码集成在 OptiScaler 宿主内部的 **`Mochizuki`、`lmxxf`、`Daniel`** 神经渲染后端及 `person-model` 辅助组件，全面转为集成独立的 **`Mochizuki ASI`（`dlssnr-amd.asi 0.0.8.3`）** 插件；
+            - **后续规划**：计划与其他作者继续合作，共同推动相关神经渲染后端与扩展统一采用标准 **`.asi` 独立插件形式**开发与分发，实现宿主与各后端的解耦独立迭代，减少多端重复移植与维护的负担。
+          - **升级 Mochizuki `0.0.8.3` Direct ELF ASI 载荷**：新增完整的 D3D12 Direct ELF 零拷贝 Stage（涵盖 SDR 与 HDR `NR_LIN_IO` 预热及配套 D3D12 HLSL 着色器），直接在游戏的 D3D12 命令列表上运行 ACO 网络，省去跨 Vulkan 设备桥接拷贝与额外显存开销。
+          - **升级 FSR 光线再生（FSR-RR）至 `1.2.1`（SDK v2.4.0）**：修复 `AdditiveLightSplit` 漫反射反照率分解与粗糙镜面命中距离（Glossy `hitDist`）丢失导致的反射模糊问题；新增 `CanRecordOwnedCompute()` 修复《红色沙漠》等 D3D12 Enhanced Barriers 游戏的崩溃回归。
 
-          ## 帧生成兼容性修复
+          ## 启动器（Launcher）体验与模型管理优化
 
-          - **移除 FSR-FG 误报检查**：移除会导致部分游戏内置 FSR-FG 与 XeFG 发生误判的调用栈检查（同步上游 `e57377fc`）。
+          - **秒开与切游戏极速响应**：将游戏状态检测与 XeSS 兼容性分析迁入 C# 进程内异步缓存，消除切换游戏时拉起后台 PowerShell 造成的 ~3.4 秒界面卡顿，修复安装进度条掉帧。
+          - **模型跨版本自动共享与旧版 `.bin` 自动迁移**：自动发现并复用本机已导入过的 `nvngx_dlssd.dll (310.9.1.0)` 与 `nvngx_dlssnr.dll`，解压新版无需重复导入；安装时自动将旧版 `dlssnr*.bin` 迁移至 `CC_*.bin` 并清理冗余文件（释放约 430 MB 空间）。
+          - **修复大体积游戏主程序识别**：修复超过 8 MB 的大型可执行文件（如 511 MB 的《影之刃零》`PBZ.exe`）PE 导入表探测被截断的问题，优化 `platform\steam\` 等子目录优先级并过滤压缩/环境检测等辅助程序。
 
           ### 已知问题
 
-          - 光线再生（FSR-RR）为实验功能，默认关闭；切换普通超分与光线再生仍依赖游戏重建 NGX 特征。
-          - 在 16GB 显存显卡上以 4K 分辨率运行重度光追游戏时，不建议同时叠开 `FSR-RR`、`dlssnr-amd.asi` 与多倍帧生成，以免超出显存预算引发换页降速。
-          - 多数游戏需开启 DXGI 伪装才会显示 DLSS/RR 选项；部分游戏开伪装后可能报“不支持的 GPU”。
-          - Experimental 与 INT4 模型需特定显卡指令集与权重支持（建议 RX 9000 系列优先体验）；RenoDX 无法与人物保护功能同时生效；Linux/Proton 支持为实验性。
+          - OpenRR 目前仅支持 **AMD RX 9000 系列（RDNA4）** 显卡，且必须搭配 **`310.9.1.0` 版本**的 `nvngx_dlssd.dll`；非 RX 9000 显卡或未导入该 DLL 时将自动回退至内置 FSR 光线再生（FSR-RR 1.2.1）。
+          - 在 16GB 显存显卡上以 4K 分辨率运行重度光追游戏时，不建议同时叠开光线重建、`dlssnr-amd.asi` 与多倍帧生成，以免超出显存预算引发换页降速。
+          - 多数游戏需开启 DXGI 伪装才会显示 DLSS / 光线重建选项；Experimental 与 INT4 模型需特定显卡指令集支持；Linux/Proton 支持为实验性。
 
           ### 安装与模型提取
 
           - 完整解压并运行新包 `Setup.bat` 覆盖安装。
-          - Mochizuki 0.0.8.2 与 lmxxf：启动器从您自备的官方原版 `nvngx_dlssnr.dll` 提取基础模型并生成派生网络；Daniel 需额外获取运行文件。
+          - **OpenRR**：首次使用在启动器主界面点击 `导入 nvngx_dlssd.dll…` 选择 `310.9.1.0` 版 `nvngx_dlssd.dll`（导入一次即跨游戏、跨版本自动复用）。
+          - **Mochizuki 0.0.8.3**：启动器从您自备的官方原版 `nvngx_dlssnr.dll` 提取基础模型并生成派生网络（同样支持跨版本自动复用）。
 
           ---
 
-          ### v1.14.1 (vs v1.14.0)
+          ### v1.15.1-alpha (vs v1.14.1)
 
-          Key updates: comprehensive FSR Ray Regeneration (FSR-RR) conversion/composition and recording-lifetime overhaul, full Simplified Chinese localization for the FSR-RR menu, and Mochizuki ASI takeover hook & UI refinements.
+          ## [OpenRR 0.1.1](https://github.com/OpenNeuralRendering/OpenRR) (DLSS Ray Reconstruction on AMD RX 9000 · Experimental)
 
-          ## FSR Ray Regeneration (FSR-RR) Pipeline & Stability Overhaul
+          Special thanks to **Matheus ([@MatheusFerreiraS](https://github.com/MatheusFerreiraS) / [OpenNeuralRendering](https://github.com/OpenNeuralRendering/OpenRR))** for creating and open-sourcing the OpenRR Ray Reconstruction runtime (MIT License; see `third_party/openrr/LICENSE` and `Licenses/OpenRR_MIT.txt`).
 
-          - **Floor Filtering & Detail Recovery**: Integrated the new conversion and composition pipeline featuring `Fast / Balanced / Quality` profiles, per-lobe `Auto / Direct / Indirect / Split` signal routing, and **Albedo Bleed Fix** for water and glass surfaces.
-          - **Recording Lifetime & History Finalization**: Composition history, SR depth encoding, and post-processing passes (`OutputScaler`, `RCAS`, `Bias`, `Magnifier`) now enforce observable command-list lifetime and first-submit descriptor finalization, preventing unsubmitted recording discards or feature releases from corrupting GPU-live resources.
-          - **Camera & Debug View Fixes**: Hardened perspective near/far and infinite-far camera resolution and subrect origin packing; preserved temporal history across denoiser/composition debug views and gated heavy diagnostic probes/logs behind explicit diagnostic settings.
+          - **Native DLSS-D 310.9.1.0 Ray Reconstruction on RDNA4**: Extracts weights from NVIDIA's `nvngx_dlssd.dll` (`310.9.1.0`) and runs the `rr2` Transformer Ray Reconstruction network natively on AMD Radeon RX 9000 series GPUs across three execution paths:
+            - **D3D12 Direct-Recording (Auto default)**: Compiles and patches pipeline ELFs onto the game's own `ID3D12Device` and records directly into the game's D3D12 command list with direct SRV guide reads and UAV output writes;
+            - **D3D12 ↔ Vulkan Cross-Queue Bridge (Fallback)**: Splits the D3D12 command list and bridges shared buffers to an isolated Vulkan device when D3D12 direct recording is disabled;
+            - **Native Vulkan Game Recording**: Adopts the game's own `VkDevice` in native Vulkan ray-tracing titles (e.g. Indiana Jones and the Great Circle) and records directly into the game's `VkCommandBuffer`.
+          - **OpenRR 0.1.1 `New` Fast Mode (Default)**: Compiles fast-mode pipelines asynchronously in the background for ~8% lower GPU frame time with negligible quality difference, and supports live switching between `New (Fast)` and `Legacy` modes via the in-game `Insert` menu or `[OpenNR-RR] Mode`.
+          - **Seamless In-Game `OpenRR` ↔ `FSR-RR` Live Switching & VRAM Reaping**: Switch between `OpenRR` and `FSR-RR` on the fly via the Upscaler combo or the `Enable OpenRR` checkbox without restarting the game; cross-reaping frees 100% of the retired backend's VRAM (~983 MB) within 1 frame.
+          - **VRAM Optimization, DRS Preallocation & Cross-Queue Preemption Timing Filter**: Reduced per-feature VRAM footprint to ~966 MB via pyramid scratch aliasing and on-demand staging; fixed DRS render-only delta reset (`nr_frame_`) with 64-slot GPU retirement proofs; added a zero-overhead cross-queue async-compute preemption filter so concurrent UE5 async ray-tracing queues no longer inflate reported Upscaler GPU times.
 
-          ## Mochizuki ASI Takeover & Localization Refinements
+          ## Neural Rendering Transition to `.asi` Plugin Architecture (Mochizuki 0.0.8.3) & FSR-RR 1.2.1
 
-          - **Skip Redundant Host Proxy Wrapping (#19)**: When `dlssnr-amd.asi` owns Neural Rendering and FSR-RR is off, the host skips its own `CommandListProxy` and submission hooks, fixing the v1.14.0 frame pacing and performance regression with FSR-FG / XeFG caused by duplicate command-list hooking (fixes #19).
-          - **Redesigned Takeover Banner & Dynamic Keybind Detection**: Redesigned the in-game ASI takeover notice with prominent key hints that automatically reflect custom `[NRControl] MenuKey` bindings from `dlssnr-amd.ini` (default `[End]`).
-          - **Full zh-CN Localization for FSR-RR**: Localized the entire `FSR-RR` panel, live pipeline status, input binding table, advanced settings, and tooltips into Simplified Chinese with updated embedded font glyph coverage.
+          - **Retired Built-in NR Backends in Favor of Standalone `.asi` Plugins**:
+            - Removed the legacy host-integrated **`Mochizuki`**, **`lmxxf`**, and **`Daniel`** neural rendering backends (along with `person-model` helpers) from the OptiScaler host binary, transitioning fully to the standalone **`Mochizuki ASI` (`dlssnr-amd.asi 0.0.8.3`)** plugin;
+            - **Future Direction**: Plans to continue collaborating with other authors to standardize related backends and extensions as modular **`.asi` plugins**, decoupling host and backend release cycles and eliminating duplicated integration and maintenance work across projects.
+          - **Upgraded Mochizuki `0.0.8.3` Direct ELF ASI Payload**: Added zero-copy SDR/HDR (`NR_LIN_IO` prewarm) D3D12 Direct ELF stages and bundled D3D12 HLSL shaders so the ACO network executes directly on the game's D3D12 command list without D3D12↔Vulkan bridge copies.
+          - **Upgraded FSR Ray Regeneration (FSR-RR) to `1.2.1` (SDK v2.4.0)**: Fixed `AdditiveLightSplit` diffuse albedo regression and preserved glossy `hitDist` to restore sharp specular reflections; added `CanRecordOwnedCompute()` to fix the `v1.14.1` FSR-RR crash regression on D3D12 Enhanced Barrier games (e.g. Crimson Desert).
 
-          ## Frame Generation Compatibility
+          ## Launcher Responsiveness & Model Management
 
-          - **Removed False-Positive FSR-FG Stack Check**: Removed the game FSR-FG stack check that caused false positives alongside XeFG (upstream `e57377fc`).
+          - **Instant Startup & `< 1 ms` Game Switching**: Replaced per-click background PowerShell spawns with in-process C# inspection and cached async XeSS probing, eliminating the ~3.4 s UI freeze when selecting games and smoothing install progress animations.
+          - **Cross-Version Shared Model Store & Legacy `.bin` Migration**: Automatically discovers and persists `nvngx_dlssd.dll (310.9.1.0)` and `nvngx_dlssnr.dll` across `%LOCALAPPDATA%\OptScalerNR\Launcher\models\`, `..\weights\`, and installed games so new package releases never require re-importing; automatically migrates/cleans up pre-0.0.8.2 `dlssnr*.bin` files (~430 MB saved).
+          - **Large PE Import Probe & Game EXE Ranking**: Fixed PE import table probing on `> 8 MB` executables (such as 511 MB `PBZ.exe` in Phantom Blade Zero), prioritized `platform\steam\` binary paths, and filtered out auxiliary tools (`8za_v2.exe`, `CheckEnv.exe`, `EpicWebHelper.exe`).
 
           ### Known Issues
 
-          - FSR Ray Regeneration is experimental and off by default; switching between SR and RR relies on the game recreating the NGX feature.
-          - On 16 GB GPUs at 4K with heavy path tracing, avoid stacking `FSR-RR`, `dlssnr-amd.asi`, and high-multiplier frame generation simultaneously to prevent VRAM over-budget paging.
-          - Most games need DXGI spoofing to expose DLSS/RR options; some titles may report unsupported GPUs with spoofing active.
-          - Experimental and INT4 models require specific hardware instruction sets (RX 9000 series recommended); RenoDX cannot be combined with person protection; Linux/Proton support is experimental.
+          - OpenRR requires an **AMD RX 9000 series (RDNA4)** GPU and **`nvngx_dlssd.dll` version `310.9.1.0`**; non-RDNA4 GPUs or setups without `nvngx_dlssd.dll 310.9.1.0` automatically fall back to built-in FSR Ray Regeneration (FSR-RR 1.2.1).
+          - On 16 GB GPUs at 4K with heavy path tracing, avoid stacking Ray Reconstruction, `dlssnr-amd.asi`, and high-multiplier frame generation simultaneously to prevent VRAM over-budget paging.
+          - Most games need DXGI spoofing to expose DLSS/RR options; Linux/Proton support is experimental.
 
           ### Installation & Model Extraction
 
           - Extract the full package and run `Setup.bat` as an overwrite install.
-          - Mochizuki 0.0.8.2 & lmxxf: launcher extracts base models from your official `nvngx_dlssnr.dll` and derives secondary models; Daniel additionally requires runtime files.
+          - **OpenRR**: Click `Import nvngx_dlssd.dll…` on the OpenRR card in the Launcher to import `nvngx_dlssd.dll` (`310.9.1.0`) once (automatically reused across games and future package updates).
+          - **Mochizuki 0.0.8.3**: Launcher extracts base models from your official `nvngx_dlssnr.dll` and derives secondary models (also automatically reused across updates).
           '@
           if ([string]::IsNullOrWhiteSpace($body)) { throw 'Empty release notes' }
           $headings = [regex]::Matches($body, '(?m)^### v([^\s]+)(?:[ \t]+[^\r\n]*)?\r?$')
@@ -216,7 +232,7 @@ jobs:
             'OptiScaler-DLSSNR-PreSR-Multipass-main/external/FidelityFX-SDK-v2/Kits/FidelityFX/signedbin/amd_fidelityfx_loader_dx12.dll',
             'OptiScaler-DLSSNR-PreSR-Multipass-main/external/FidelityFX-SDK-v2/Kits/FidelityFX/signedbin/amd_fidelityfx_framegeneration_dx12.dll',
             'OptiScaler-DLSSNR-PreSR-Multipass-main/external/FidelityFX-SDK-v2/Kits/FidelityFX/signedbin/amd_fidelityfx_upscaler_dx12.dll',
-            'OptiScaler-DLSSNR-PreSR-Multipass-main/external/FidelityFX-SDK-v2/Kits/FidelityFX/signedbin/amd_fidelityfx_denoiser_dx12.dll'
+            'third_party/fsr-rr-1.2.1/amd_fidelityfx_denoiser_dx12.dll'
           )
           foreach ($d in $deps) {
             if (!(Test-Path $d)) { throw "Submodule content missing: $d (did checkout fetch submodules?)" }
@@ -266,12 +282,6 @@ jobs:
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v3
 
-      - name: Module contract gate
-        shell: pwsh
-        run: |
-          powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tools/release/check-module-contract.ps1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
 
       - name: FSRD shader mirror verification
         shell: pwsh
@@ -302,22 +312,6 @@ jobs:
           . ./tools/release/package-signing.ps1
           $cert = Get-PackageSigningCertificate -Ephemeral
           "PACKAGE_SIGNING_THUMBPRINT=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Restore public person assets
-        uses: actions/cache@v5
-        with:
-          path: |
-            assets/person-model/onnxruntime.dll
-            assets/person-model/pphumanseg.onnx
-            assets/person-model/yolo11n-seg.onnx
-            assets/person-model/yunet.onnx
-          key: person-assets-${{ runner.os }}-py312-${{ hashFiles('tools/release/prepare-person-assets.ps1') }}
-
-      - name: Prepare person assets (CRT refreshed each run)
-        shell: pwsh
-        run: |
-          ./tools/release/prepare-person-assets.ps1
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # Best-effort refresh of the bundled OptiPatcher.asi: fetch the latest rolling release,
       # validate the PE image, and only then replace the committed copy that feeds packaging.
@@ -391,7 +385,7 @@ jobs:
           # Independent CI tripwire: inspect the exact archive that Release uploads.
           $ver = '${{ steps.ver.outputs.version }}'
           $zipPath = "dist\OptScaler-NR-$ver.zip"
-          $forbidden = '(?i)^(nvngx.*\.dll|dlssnr_amd_pass.*\.dll|dlssnr_on_amd_weights\.bin|dlssnr(?:-int4|-small)?\.bin|pipeline\.cache|version\.dll|dlssnr_on_amd_setup\.exe)$'
+          $forbidden = '(?i)^(nvngx.*\.dll|dlssnr_amd_pass.*\.dll|dlssnr_on_amd_weights\.bin|dlssnr(?:-int4|-small)?\.bin|CC_(?:SMALL_FP8|SMALL_FP8_EXPERIMENTAL|SILVER_AARDWOLD|SILVER_AARDWOLD_OPTIMIZED|SILVER_AARDWOLD_OPTIMIZED_INT4)\.bin|pipeline\.cache|version\.dll|dlssnr_on_amd_setup\.exe)$'
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           $archive = [IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $zipPath))
           try {
@@ -407,7 +401,7 @@ jobs:
             $bad | ForEach-Object { Write-Host "FORBIDDEN: $_" }
             throw 'Refusing to publish: proprietary/user-supplied binaries found in package zip.'
           }
-          $required = @('OptiScaler.dll', 'LmxxfNrRuntime.dll', 'OptiScaler.ini', 'Setup.ps1', 'Setup.bat', 'LICENSE', 'NOTICE', 'person-worker.exe', 'onnxruntime.dll', 'pphumanseg.onnx', 'yolo11n-seg.onnx', 'yunet.onnx')
+          $required = @('OptiScaler.dll', 'OpenNrRrRuntime.dll', 'OptiScaler.ini', 'Setup.ps1', 'Setup.bat', 'LICENSE', 'NOTICE')
           foreach ($r in $required) {
             if ($entryNames -notcontains $r) {
               throw "REQUIRED COMPONENT MISSING IN ZIP: $r"
@@ -421,10 +415,7 @@ jobs:
             'OptiScaler/amd_fidelityfx_denoiser_dx12.dll',
             'OptiScaler/amd_fidelityfx_vk.dll',
             'OptiScaler/libxess.dll', 'OptiScaler/libxess_fg.dll', 'OptiScaler/libxell.dll',
-            'OptiScaler/D3D12_OptiScaler/D3D12Core.dll',
-            'person-model/person-worker.exe', 'person-model/onnxruntime.dll',
-            'person-model/pphumanseg.onnx', 'person-model/yolo11n-seg.onnx', 'person-model/yunet.onnx',
-            'person-model/msvcp140.dll', 'person-model/vcruntime140.dll', 'person-model/vcruntime140_1.dll'
+            'OptiScaler/D3D12_OptiScaler/D3D12Core.dll'
           )
           foreach ($path in $dependencyPaths) {
             if ($entryPaths -notcontains $path) { throw "REQUIRED DEPENDENCY MISSING IN ZIP: $path" }
@@ -436,25 +427,11 @@ jobs:
             if ($entryPaths -notcontains $path) { throw "REQUIRED MOCHIZUKI ASI COMPONENT MISSING: $path" }
           }
           if ($entryPaths -match '(?i)/(aco-cache|pipeline-binaries)/') { throw 'Driver cache included in package.' }
-          foreach ($license in @('OptiScaler_LICENSE.txt', 'Lmxxf_MIT.txt', 'Mochizuki_MIT.txt', 'RenoDX_MIT.txt', 'ONNXRuntime_MIT.txt', 'YOLO11_AGPL-3.0.txt', 'PPHumanSeg_Apache-2.0.txt', 'YuNet_MIT.txt', 'XeSS_LICENSE.txt', 'FidelityFX_v1_LICENSE.md', 'FidelityFX_v2_LICENSE.md', 'DirectX_LICENSE.txt')) {
+          foreach ($license in @('OptiScaler_LICENSE.txt', 'OpenRR_MIT.txt', 'Mochizuki_MIT.txt', 'RenoDX_MIT.txt', 'XeSS_LICENSE.txt', 'FidelityFX_v1_LICENSE.md', 'FidelityFX_v2_LICENSE.md', 'DirectX_LICENSE.txt')) {
             if ($entryPaths -notcontains "Licenses/$license") {
               throw "REQUIRED LICENSE MISSING IN ZIP: $license"
             }
           }
-
-      - name: Replay Mochizuki upstream pin for test package
-        if: github.event_name == 'workflow_dispatch'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $pin = (Get-Content tools/mochizuki-sync/manifest.json -Raw | ConvertFrom-Json).commit
-          $upstream = Join-Path $env:RUNNER_TEMP 'mochizuki-source-check'
-          git init $upstream
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          git -C $upstream fetch --depth=1 https://gitlab.com/mochizuki0323/DLSSNR-AMD.git $pin
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -B tools/mochizuki-sync/check.py --upstream $upstream
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload tested package
         if: github.event_name == 'workflow_dispatch'
@@ -530,19 +507,6 @@ jobs:
         run: |
           ./tools/build/build-ci.ps1 -FullRegression
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Replay Mochizuki upstream pin
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $pin = (Get-Content tools/mochizuki-sync/manifest.json -Raw | ConvertFrom-Json).commit
-          $upstream = Join-Path $env:RUNNER_TEMP 'mochizuki-source-check'
-          git init $upstream
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          git -C $upstream fetch --depth=1 https://gitlab.com/mochizuki0323/DLSSNR-AMD.git $pin
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -B tools/mochizuki-sync/check.py --upstream $upstream
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
       - name: Upload validation logs
         if: always()
         uses: actions/upload-artifact@v6

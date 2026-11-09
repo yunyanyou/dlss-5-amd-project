@@ -10,16 +10,12 @@ https://github.com/wilsjo2/OptiScaler-DLSSNR-PreSR-Multipass
 https://github.com/MatheusGViana/dlss-5-amd-project
 https://github.com/TheAutomatic/dlss-5-amd-project
 The Mochizuki adapter also derives from MatheusFerreiraS/neural-amd-opti
-(GPL-3.0); see third_party/mochizuki/UPSTREAM.md for its source revision.
+(GPL-3.0); see third_party/mochizuki-asi/UPSTREAM.md for its source revision.
 
-lmxxf: MIT, Copyright (c) 2026 Kien. See third_party/lmxxf/LICENSE
-and third_party/lmxxf/UPSTREAM.md. The HIP API header retains AMD's MIT notice.
-Mochizuki core: MIT; see third_party/mochizuki/LICENSE and UPSTREAM.md.
+Mochizuki core: MIT; see third_party/mochizuki-asi/LICENSE and UPSTREAM.md.
+OpenRR (DLSS Ray Reconstruction runtime by Matheus Ferreira / OpenNeuralRendering):
+https://github.com/OpenNeuralRendering/OpenRR (MIT; see third_party/openrr/LICENSE and Licenses/OpenRR_MIT.txt).
 RenoDX colour-compositing contributions: MIT; notices remain in the source.
-ONNX Runtime and YuNet: MIT; PP-HumanSeg: Apache-2.0;
-YOLO11 segmentation: AGPL-3.0. See third_party/onnxruntime notices.
-The optional YOLO model runs in the separate person worker. AGPL terms are
-retained; this notice does not replace those terms or grant model rights.
 MFG Unlocker (bundled plugins/MFGUnlocker171.asi): MIT, Copyright (c) 2026
 Michael Robles. The release binary is shipped unmodified, only renamed; see
 third_party/mfg-unlocker/LICENSE and third_party/mfg-unlocker/README.md.

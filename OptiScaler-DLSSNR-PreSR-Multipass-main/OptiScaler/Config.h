@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "ConfigKeys.h"
 #include "SysUtils.h"
@@ -373,12 +373,6 @@ class Config
     CustomOptional<bool> NrFlickerDiag { false };
     // Default-off game-thread timing (Present -> submit, fence waits) in NrFrameDiag lines; timestamps only.
     CustomOptional<bool> NrGameWaitDiag { false };
-    CustomOptional<bool> NrPersonPartition { false };
-    CustomOptional<int> NrPersonModel { 0 };
-    CustomOptional<int> NrFaceInputSize { 320 };
-    CustomOptional<float> NrPersonDetailGain { 1.0f };
-    CustomOptional<float> NrPersonStrength { 1.0f };
-    CustomOptional<bool> NrPersonDebugMask { false };
     CustomOptional<bool> NrStabilizerEnabled { false };
     CustomOptional<float> NrStabilizerAlpha { .8f };
     CustomOptional<float> NrStabilizerThreshold { 4.f };
@@ -1259,6 +1253,22 @@ class Config
     CustomOptional<bool> FfxDenoiserDiffuseHitDistance { true };
     // Only the demodulation divisor is floored; unrepresentable energy is routed once.
     CustomOptional<float> FfxDenoiserDemodDivisorFloor { 8e-3f };
+
+    // OpenRR: Ray Reconstruction on the DLSS-RR network (OpenNrRrRuntime.dll), D3D12 & Vulkan, RDNA4.
+    CustomOptional<bool> OpenNrRrEnabled { true };
+    CustomOptional<std::string> OpenNrRrBackend { "auto" };
+    CustomOptional<std::string> OpenNrRrMode { "new" };
+    CustomOptional<std::string> OpenNrRrVkInputLayout { "read_only" };
+    CustomOptional<bool> OpenNrRrUseDisocclusionMask { true };
+    CustomOptional<bool> OpenNrRrUseSssGuide { false };
+    CustomOptional<bool> OpenNrRrInvertDisocclusionMask { false };
+    CustomOptional<bool> OpenNrRrClampDisocclusionMask { false };
+    CustomOptional<float> OpenNrRrDisocclusionMaskScale { 1.0f };
+    CustomOptional<bool> OpenNrRrUseResponsivityMask { true };
+    CustomOptional<bool> OpenNrRrUseColorBeforeTransparency { true };
+    CustomOptional<bool> OpenNrRrUseDepthOfFieldGuide { true };
+    CustomOptional<bool> OpenNrRrUseReflectionMotionVectors { true };
+    CustomOptional<bool> OpenNrRrUseLayerOpacityAndMotion { true };
 
     // FSR4
     CustomOptional<FSR4Support> Fsr4GpuSupport { FSR4Support::None };

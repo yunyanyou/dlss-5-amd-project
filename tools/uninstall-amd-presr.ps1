@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
   Remove this project from the folder this script sits in (the game folder after Setup).
   Double-click Uninstall_OptiScaler_NR.bat there. Tests may pass -GameDir.
@@ -86,14 +86,54 @@ if (!(Test-Path -LiteralPath $GameDir -PathType Container)) {
 $game = (Resolve-Path -LiteralPath $GameDir).Path
 $game = [IO.Path]::GetFullPath($game)
 
-# New packages share the controlled module names. A standalone copied uninstaller
-# can still use the installed manifests; it never claims ownership by extension.
-$moduleHelper = Join-Path $PSScriptRoot 'lmxxf-module-package.ps1'
-$controlledModules = @()
-if (Test-Path -LiteralPath $moduleHelper -PathType Leaf) {
-    . $moduleHelper
-    $controlledModules = @(Get-LmxxfModuleNames)
+function Assert-LmxxfUnlinkedPath([string]$Path) {
+    $full = [IO.Path]::GetFullPath($Path)
+    if ($full.Length -gt [IO.Path]::GetPathRoot($full).Length) { $full = $full.TrimEnd('\', '/') }
+    $cursor = $full
+    while ($cursor) {
+        $item = Get-Item -LiteralPath $cursor -Force -ErrorAction SilentlyContinue
+        if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw "Refusing linked module path (symlink/junction/reparse point): $cursor"
+        }
+        $cursor = [IO.Path]::GetDirectoryName($cursor.TrimEnd('\', '/'))
+    }
+    return $full
 }
+
+function Get-LmxxfUnlinkedFiles([string]$Directory) {
+    $full = Assert-LmxxfUnlinkedPath $Directory
+    if (-not (Test-Path -LiteralPath $full -PathType Container)) { throw "Missing module directory: $full" }
+    $pending = [Collections.Generic.Stack[string]]::new()
+    $pending.Push($full)
+    while ($pending.Count) {
+        foreach ($item in Get-ChildItem -LiteralPath $pending.Pop() -Force -ErrorAction Stop) {
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                throw "Refusing linked module path (symlink/junction/reparse point): $($item.FullName)"
+            }
+            if ($item.PSIsContainer) { $pending.Push($item.FullName) }
+            else { $item }
+        }
+    }
+}
+
+$controlledModules = @(
+    'deep_fast-packed-fast.hsaco',
+    'vit-stream-fast.hsaco',
+    'multi-pass-skin.hsaco',
+    'multi-pass-predict.hsaco',
+    'boundary-fast.hsaco', 'boundary_reference.hsaco', 'c32_fast.hsaco',
+    'c32_fast_attention.hsaco', 'c32_fused_attention.hsaco',
+    'c32_fused_ffn_attention-packed.hsaco', 'c32_fused_ffn_attention.hsaco',
+    'c32_prefix_reference.hsaco', 'c32_tiled.hsaco', 'c32_wmma.hsaco',
+    'c32-wave1-rtz.hsaco', 'c32-wave1-fast.hsaco', 'c64-wave2-fast.hsaco',
+    'c32-wave1.hsaco', 'c64-wave2.hsaco', 'c512-m32-mh.hsaco', 'c512-m32-deep.hsaco',
+    'deep_fast-packed.hsaco', 'deep_fast.hsaco', 'deep_reference.hsaco', 'deep_wmma.hsaco',
+    'multihead-fast-packed.hsaco', 'multihead-fast-padded-wave-packed.hsaco',
+    'multihead-fast-padded-wave.hsaco', 'multihead-fast.hsaco', 'multihead-reference.hsaco',
+    'multihead-tiled.hsaco', 'multihead-wmma.hsaco', 'multihead_fused_attention.hsaco',
+    'prefix_fast.hsaco', 'vit-wide-deep.hsaco', 'wave-pointwise.hsaco', 'vit-stream.hsaco',
+    'swin-persistent.hsaco', 'swin-persistent-fast.hsaco', 'c32-wave1-fast-norm900.hsaco'
+)
 
 # File names this project installs. Proxy names are deleted only when the file is OptiScaler.
 $proxyNames = @('dxgi.dll','winmm.dll','d3d12.dll','version.dll','winhttp.dll','wininet.dll','dbghelp.dll')
@@ -102,7 +142,35 @@ $projectLeafNames = @(
     'dlssnr_core.dll', # Legacy standalone NR core; integrated runtimes do not use it.
     'OptiScaler.ini','amd-presr-install.txt',
     'dlssnr_on_amd.ini', 'dlssnr-amd-crash.dmp', 'dlssnr-amd-install.txt',
-    'LmxxfNrRuntime.dll', 'MochizukiNrRuntime.dll', 'lmxxf-module-package.ps1',
+    'LmxxfNrRuntime.dll', 'MochizukiNrRuntime.dll', 'OpenNrRrRuntime.dll', 'opennr_rr.log', 'lmxxf-module-package.ps1',
+    'opennr-rr/nvngx_dlssd.dll',
+    'opennr-rr/shaders/ae.spv', 'opennr-rr/shaders/d3d_ae.spv', 'opennr-rr/shaders/d3d_downsample.spv', 'opennr-rr/shaders/d3d_downsample_tl.spv',
+    'opennr-rr/shaders/d3d_enc0_attr_f.spv', 'opennr-rr/shaders/d3d_enc0_attr_f_w.spv', 'opennr-rr/shaders/d3d_ingest.spv', 'opennr-rr/shaders/d3d_pack.spv',
+    'opennr-rr/shaders/dec_dfn_128_128_f.spv', 'opennr-rr/shaders/dec_dfn_128_128_fl.spv', 'opennr-rr/shaders/dec_dfn_160_256_f.spv', 'opennr-rr/shaders/dec_dfn_160_256_fl.spv',
+    'opennr-rr/shaders/dec_dfn_64_64_f.spv', 'opennr-rr/shaders/dec_dfn_96_128_f.spv', 'opennr-rr/shaders/dec_dfn_96_128_fl.spv', 'opennr-rr/shaders/dec_head_32_64_f.spv',
+    'opennr-rr/shaders/dec_up_128_128_160_f.spv', 'opennr-rr/shaders/dec_up_128_128_160_fl.spv', 'opennr-rr/shaders/dec_up_160_256_160_f.spv', 'opennr-rr/shaders/dec_up_160_256_160_fl.spv',
+    'opennr-rr/shaders/dec_up_32_64_64_f.spv', 'opennr-rr/shaders/dec_up_64_64_96_f.spv', 'opennr-rr/shaders/dec_up_96_128_128_f.spv', 'opennr-rr/shaders/dec_up_96_128_128_fl.spv',
+    'opennr-rr/shaders/dfn_export.spv', 'opennr-rr/shaders/dfn_import.spv', 'opennr-rr/shaders/downsample.spv', 'opennr-rr/shaders/downsample_tl.spv',
+    'opennr-rr/shaders/enc0_attr_f.spv', 'opennr-rr/shaders/enc0_attr_f_w.spv', 'opennr-rr/shaders/enc0_stage_32_64_f.spv', 'opennr-rr/shaders/enc0_stage_32_64_f_w.spv',
+    'opennr-rr/shaders/enc_stage_128_128_160_f.spv', 'opennr-rr/shaders/enc_stage_128_128_160_fl.spv', 'opennr-rr/shaders/enc_stage_160_256_0_f.spv', 'opennr-rr/shaders/enc_stage_160_256_0_fl.spv',
+    'opennr-rr/shaders/enc_stage_160_256_160_f.spv', 'opennr-rr/shaders/enc_stage_160_256_160_fl.spv', 'opennr-rr/shaders/enc_stage_64_64_96_f.spv',
+    'opennr-rr/shaders/enc_stage_96_128_128_f.spv', 'opennr-rr/shaders/enc_stage_96_128_128_fl.spv', 'opennr-rr/shaders/ingest.spv', 'opennr-rr/shaders/pack.spv',
+    'opennr-rr/shaders/pooled_history2.spv', 'opennr-rr/shaders/post_dlt_f.spv', 'opennr-rr/shaders/post_f.spv', 'opennr-rr/shaders/post_tile.spv',
+    'opennr-rr/shaders/selftest.spv', 'opennr-rr/shaders/selftest_tex.spv',
+    'opennr-rr/shaders/ae_lt.spv', 'opennr-rr/shaders/d3d_ae_lt.spv', 'opennr-rr/shaders/d3d_downsample_lt.spv', 'opennr-rr/shaders/d3d_downsample_tl_lt.spv',
+    'opennr-rr/shaders/d3d_enc0_attr_f_lt.spv', 'opennr-rr/shaders/d3d_enc0_attr_f_w_lt.spv', 'opennr-rr/shaders/d3d_ingest_lt.spv', 'opennr-rr/shaders/d3d_pack_lt.spv',
+    'opennr-rr/shaders/dec_dfn_128_128_f_lt.spv', 'opennr-rr/shaders/dec_dfn_128_128_fl_lt.spv', 'opennr-rr/shaders/dec_dfn_160_256_f_lt.spv', 'opennr-rr/shaders/dec_dfn_160_256_fl_lt.spv',
+    'opennr-rr/shaders/dec_dfn_64_64_f_lt.spv', 'opennr-rr/shaders/dec_dfn_96_128_f_lt.spv', 'opennr-rr/shaders/dec_dfn_96_128_fl_lt.spv', 'opennr-rr/shaders/dec_head_32_64_f_lt.spv',
+    'opennr-rr/shaders/dec_up_128_128_160_f_lt.spv', 'opennr-rr/shaders/dec_up_128_128_160_fl_lt.spv', 'opennr-rr/shaders/dec_up_160_256_160_f_lt.spv', 'opennr-rr/shaders/dec_up_160_256_160_fl_lt.spv',
+    'opennr-rr/shaders/dec_up_32_64_64_f_lt.spv', 'opennr-rr/shaders/dec_up_64_64_96_f_lt.spv', 'opennr-rr/shaders/dec_up_96_128_128_f_lt.spv', 'opennr-rr/shaders/dec_up_96_128_128_fl_lt.spv',
+    'opennr-rr/shaders/dfn_export_lt.spv', 'opennr-rr/shaders/dfn_import_lt.spv', 'opennr-rr/shaders/downsample_lt.spv', 'opennr-rr/shaders/downsample_tl_lt.spv',
+    'opennr-rr/shaders/enc0_attr_f_lt.spv', 'opennr-rr/shaders/enc0_attr_f_w_lt.spv', 'opennr-rr/shaders/enc0_stage_32_64_f_lt.spv', 'opennr-rr/shaders/enc0_stage_32_64_f_w_lt.spv',
+    'opennr-rr/shaders/enc_stage_128_128_160_f_lt.spv', 'opennr-rr/shaders/enc_stage_128_128_160_fl_lt.spv', 'opennr-rr/shaders/enc_stage_160_256_0_f_lt.spv', 'opennr-rr/shaders/enc_stage_160_256_0_fl_lt.spv',
+    'opennr-rr/shaders/enc_stage_160_256_160_f_lt.spv', 'opennr-rr/shaders/enc_stage_160_256_160_fl_lt.spv', 'opennr-rr/shaders/enc_stage_64_64_96_f_lt.spv',
+    'opennr-rr/shaders/enc_stage_96_128_128_f_lt.spv', 'opennr-rr/shaders/enc_stage_96_128_128_fl_lt.spv', 'opennr-rr/shaders/ingest_lt.spv', 'opennr-rr/shaders/pack_lt.spv',
+    'opennr-rr/shaders/pooled_history2_lt.spv', 'opennr-rr/shaders/post_dlt_f_lt.spv', 'opennr-rr/shaders/post_f_lt.spv', 'opennr-rr/shaders/post_tile_lt.spv',
+    'opennr-rr/shaders/selftest_lt.spv', 'opennr-rr/shaders/selftest_tex_lt.spv',
+    'dlssnr-amd.ini', 'dlssnr-amd.default.ini', 'dlssnr-amd/dlssnr-amd.default.ini', 'dlssnr-amd/nr_present_probe.exe', 'mochizuki-owned.txt',
     'Uninstall_OptiScaler_NR.bat','Uninstall_OptiScaler_NR.ps1',
     'OptiScalerPanel.exe','OptiScaler代理切换.bat','compat-repair.ps1','xess-compat.ps1',
     'OptiScaler/dlssnr/README.md',
@@ -209,6 +277,7 @@ $dependencyPaths = @(
     'D3D12_OptiScaler\D3D12Core.dll',
     'D3D12_OptiScaler\d3d12SDKLayers.dll',
     'plugins\OptiPatcher.asi',
+    'plugins\dlssnr-amd.asi',
     'plugins\OptScaler-NR-plugins-README.txt'
 )
 $protectedNames = @(
@@ -777,7 +846,7 @@ foreach ($root in $roots) {
     foreach ($relative in @('dlssnr-amd/shaders/runtime', 'dlssnr-amd/shaders/temporal',
             'dlssnr-amd/aco/shaders/runtime', 'dlssnr-amd/aco/shaders/temporal',
             'dlssnr-amd/aco/shaders', 'dlssnr-amd/aco/records', 'dlssnr-amd/aco',
-            'dlssnr-amd/shaders', 'dlssnr-amd/prewarm', 'dlssnr-amd', 'person-model')) {
+            'dlssnr-amd/shaders', 'dlssnr-amd/prewarm', 'dlssnr-amd', 'opennr-rr/shaders', 'opennr-rr', 'person-model')) {
         Remove-EmptyDirectory (Join-Path $root $relative)
     }
 
@@ -849,7 +918,7 @@ if (-not $keepBackups) {
             $backupPrefix = [IO.Path]::GetFullPath($b).TrimEnd('\') + '\'
             foreach ($file in Get-ChildItem -LiteralPath $b -Recurse -File -Force -ErrorAction Stop) {
                 $relative = $file.FullName.Substring($backupPrefix.Length)
-                if ($file.Name -in @('dlssnr.bin', 'dlssnr-small.bin', 'dlssnr_on_amd_weights.bin', 'nvngx_dlssnr.dll') -or
+                if ($file.Name -in @('CC_SILVER_AARDWOLD.bin', 'CC_SMALL_FP8.bin', 'CC_SMALL_FP8_EXPERIMENTAL.bin', 'CC_SILVER_AARDWOLD_OPTIMIZED.bin', 'CC_SILVER_AARDWOLD_OPTIMIZED_INT4.bin', 'dlssnr.bin', 'dlssnr-small.bin', 'dlssnr_on_amd_weights.bin', 'nvngx_dlssnr.dll') -or
                     @($relative.Split('\')) -contains 'native-game-tiled-assets') {
                     $kept.Add("model inside backup: $($file.FullName)")
                     continue

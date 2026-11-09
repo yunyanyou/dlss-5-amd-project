@@ -459,6 +459,21 @@ bool Config::Reload(std::filesystem::path iniPath)
 
         // XeSS
         {
+            OpenNrRrEnabled.set_from_config(readBool(CfgKey::kOpenNrRrSection, CfgKey::OnrRrEnabled));
+            OpenNrRrBackend.set_from_config(readString(CfgKey::kOpenNrRrSection, CfgKey::OnrRrBackend, true));
+            OpenNrRrMode.set_from_config(readString(CfgKey::kOpenNrRrSection, CfgKey::OnrRrMode, true));
+            OpenNrRrVkInputLayout.set_from_config(readString(CfgKey::kOpenNrRrSection, CfgKey::OnrRrVkInputLayout, true));
+            OpenNrRrUseDisocclusionMask.set_from_config(readBool(CfgKey::kOpenNrRrSection, CfgKey::OnrRrUseDisocclusionMask));
+            OpenNrRrUseSssGuide.set_from_config(readBool(CfgKey::kOpenNrRrSection, CfgKey::OnrRrUseSssGuide));
+            OpenNrRrInvertDisocclusionMask.set_from_config(readBool(CfgKey::kOpenNrRrSection, CfgKey::OnrRrInvertDisocclusionMask));
+            OpenNrRrClampDisocclusionMask.set_from_config(readBool(CfgKey::kOpenNrRrSection, CfgKey::OnrRrClampDisocclusionMask));
+            OpenNrRrDisocclusionMaskScale.set_from_config(readFloat(CfgKey::kOpenNrRrSection, CfgKey::OnrRrDisocclusionMaskScale));
+            OpenNrRrUseResponsivityMask.set_from_config(readBool(CfgKey::kOpenNrRrSection, CfgKey::OnrRrUseResponsivityMask));
+            OpenNrRrUseColorBeforeTransparency.set_from_config(readBool(CfgKey::kOpenNrRrSection, CfgKey::OnrRrUseColorBeforeTransparency));
+            OpenNrRrUseDepthOfFieldGuide.set_from_config(readBool(CfgKey::kOpenNrRrSection, CfgKey::OnrRrUseDepthOfFieldGuide));
+            OpenNrRrUseReflectionMotionVectors.set_from_config(readBool(CfgKey::kOpenNrRrSection, CfgKey::OnrRrUseReflectionMotionVectors));
+            OpenNrRrUseLayerOpacityAndMotion.set_from_config(readBool(CfgKey::kOpenNrRrSection, CfgKey::OnrRrUseLayerOpacityAndMotion));
+
             BuildPipelines.set_from_config(readBool("XeSS", "BuildPipelines"));
             NetworkModel.set_from_config(readInt("XeSS", "NetworkModel"));
             CreateHeaps.set_from_config(readBool("XeSS", "CreateHeaps"));
@@ -603,12 +618,6 @@ bool Config::Reload(std::filesystem::path iniPath)
             NrFlickerDiag.set_from_config(readBool(CfgKey::kSection, CfgKey::NrFlickerDiag));
             NrFrameDiag.set_from_config(readBool(CfgKey::kSection, CfgKey::NrFrameDiag));
             NrGameWaitDiag.set_from_config(readBool(CfgKey::kSection, CfgKey::NrGameWaitDiag));
-            NrPersonPartition.set_from_config(readBool(CfgKey::kSection, CfgKey::NrPersonPartition));
-            NrPersonModel.set_from_config(readInt(CfgKey::kSection, CfgKey::NrPersonModel));
-            NrFaceInputSize.set_from_config(readInt(CfgKey::kSection, CfgKey::NrFaceInputSize));
-            NrPersonDetailGain.set_from_config(readFloat(CfgKey::kSection, CfgKey::NrPersonDetailGain));
-            NrPersonStrength.set_from_config(readFloat(CfgKey::kSection, CfgKey::NrPersonStrength));
-            NrPersonDebugMask.set_from_config(readBool(CfgKey::kSection, CfgKey::NrPersonDebugMask));
             NrStabilizerEnabled.set_from_config(readBool(CfgKey::kSection, CfgKey::NrStabilizerEnabled));
             NrStabilizerAlpha.set_from_config(readFloat(CfgKey::kSection, CfgKey::NrStabilizerAlpha));
             NrStabilizerThreshold.set_from_config(readFloat(CfgKey::kSection, CfgKey::NrStabilizerThreshold));
@@ -2065,6 +2074,34 @@ bool Config::SaveIni()
         retire("FloorGrazingSharpness");
         retire("FloorEnvelopeBias");
         retire("FloorSoftMin");
+        ini.SetValue(CfgKey::kOpenNrRrSection, CfgKey::OnrRrEnabled,
+                     GetBoolValue(Instance()->OpenNrRrEnabled.value_for_config()).c_str());
+        ini.SetValue(CfgKey::kOpenNrRrSection, CfgKey::OnrRrBackend,
+                     Instance()->OpenNrRrBackend.value_for_config_or("auto").c_str());
+        ini.SetValue(CfgKey::kOpenNrRrSection, CfgKey::OnrRrMode,
+                     Instance()->OpenNrRrMode.value_for_config_or("new").c_str());
+        ini.SetValue(CfgKey::kOpenNrRrSection, CfgKey::OnrRrVkInputLayout,
+                     Instance()->OpenNrRrVkInputLayout.value_for_config_or("auto").c_str());
+        ini.SetValue(CfgKey::kOpenNrRrSection, CfgKey::OnrRrUseDisocclusionMask,
+                     GetBoolValue(Instance()->OpenNrRrUseDisocclusionMask.value_for_config()).c_str());
+        ini.SetValue(CfgKey::kOpenNrRrSection, CfgKey::OnrRrUseSssGuide,
+                     GetBoolValue(Instance()->OpenNrRrUseSssGuide.value_for_config()).c_str());
+        ini.SetValue(CfgKey::kOpenNrRrSection, CfgKey::OnrRrInvertDisocclusionMask,
+                     GetBoolValue(Instance()->OpenNrRrInvertDisocclusionMask.value_for_config()).c_str());
+        ini.SetValue(CfgKey::kOpenNrRrSection, CfgKey::OnrRrClampDisocclusionMask,
+                     GetBoolValue(Instance()->OpenNrRrClampDisocclusionMask.value_for_config()).c_str());
+        ini.SetValue(CfgKey::kOpenNrRrSection, CfgKey::OnrRrDisocclusionMaskScale,
+                     GetFloatValue(Instance()->OpenNrRrDisocclusionMaskScale.value_for_config()).c_str());
+        ini.SetValue(CfgKey::kOpenNrRrSection, CfgKey::OnrRrUseResponsivityMask,
+                     GetBoolValue(Instance()->OpenNrRrUseResponsivityMask.value_for_config()).c_str());
+        ini.SetValue(CfgKey::kOpenNrRrSection, CfgKey::OnrRrUseColorBeforeTransparency,
+                     GetBoolValue(Instance()->OpenNrRrUseColorBeforeTransparency.value_for_config()).c_str());
+        ini.SetValue(CfgKey::kOpenNrRrSection, CfgKey::OnrRrUseDepthOfFieldGuide,
+                     GetBoolValue(Instance()->OpenNrRrUseDepthOfFieldGuide.value_for_config()).c_str());
+        ini.SetValue(CfgKey::kOpenNrRrSection, CfgKey::OnrRrUseReflectionMotionVectors,
+                     GetBoolValue(Instance()->OpenNrRrUseReflectionMotionVectors.value_for_config()).c_str());
+        ini.SetValue(CfgKey::kOpenNrRrSection, CfgKey::OnrRrUseLayerOpacityAndMotion,
+                     GetBoolValue(Instance()->OpenNrRrUseLayerOpacityAndMotion.value_for_config()).c_str());
     }
 
     // XeSS
@@ -2174,12 +2211,6 @@ bool Config::SaveIni()
     ini.SetValue(CfgKey::kSection, CfgKey::NrFlickerDiag, GetBoolValue(Instance()->NrFlickerDiag.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::NrFrameDiag, GetBoolValue(Instance()->NrFrameDiag.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::NrGameWaitDiag, GetBoolValue(Instance()->NrGameWaitDiag.value_for_config()).c_str());
-    ini.SetValue(CfgKey::kSection, CfgKey::NrPersonPartition, GetBoolValue(Instance()->NrPersonPartition.value_for_config()).c_str());
-    ini.SetValue(CfgKey::kSection, CfgKey::NrPersonModel, GetIntValue(Instance()->NrPersonModel.value_for_config()).c_str());
-    ini.SetValue(CfgKey::kSection, CfgKey::NrFaceInputSize, GetIntValue(Instance()->NrFaceInputSize.value_for_config()).c_str());
-    ini.SetValue(CfgKey::kSection, CfgKey::NrPersonDetailGain, GetFloatValue(Instance()->NrPersonDetailGain.value_for_config()).c_str());
-    ini.SetValue(CfgKey::kSection, CfgKey::NrPersonStrength, GetFloatValue(Instance()->NrPersonStrength.value_for_config()).c_str());
-    ini.SetValue(CfgKey::kSection, CfgKey::NrPersonDebugMask, GetBoolValue(Instance()->NrPersonDebugMask.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::NrStabilizerEnabled, GetBoolValue(Instance()->NrStabilizerEnabled.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::NrStabilizerAlpha, GetFloatValue(Instance()->NrStabilizerAlpha.value_for_config()).c_str());
     ini.SetValue(CfgKey::kSection, CfgKey::NrStabilizerThreshold, GetFloatValue(Instance()->NrStabilizerThreshold.value_for_config()).c_str());

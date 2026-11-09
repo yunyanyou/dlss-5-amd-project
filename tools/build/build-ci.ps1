@@ -1,4 +1,4 @@
-# Run independent host compilation and CI suites concurrently on one runner.
+﻿# Run independent host compilation and CI suites concurrently on one runner.
 # The parent returns success only after both workers have completed successfully.
 [CmdletBinding()]
 param([ValidateSet('all', 'host', 'tests')][string]$Worker = 'all', [switch]$FullRegression)
@@ -18,21 +18,16 @@ if ($Worker -eq 'host') {
         /p:OutDir="$out/" /p:IntDir="$out/obj/" /v:minimal /nologo
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     if (!(Test-Path -LiteralPath "$out/OptiScaler.dll")) { throw 'Host DLL was not produced' }
-    cmd /d /c tools\build\build-person-worker.cmd "$out/person-model"
+    cmd /d /c tools\build\build-openrr-runtime.cmd
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     exit 0
 }
 if ($Worker -eq 'tests') {
     # Let Windows PowerShell 5.1 children discover their own modules instead of inheriting pwsh's modules.
     $env:PSModulePath = $null
-    # This entrypoint always tests its own newly built lmxxf DLL.
-    $env:LMXXF_TEST_RUNTIME = $null
     $tier = if ($FullRegression) { 'ci' } else { 'release' }
     cmd /d /c tests\run-all.cmd --tier $tier --out exports\release-ci\tests
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    New-Item -ItemType Directory -Force exports/lmxxf-runtime | Out-Null
-    Copy-Item -LiteralPath "$out/tests/runtime/LmxxfNrRuntime.dll" -Destination exports/lmxxf-runtime/LmxxfNrRuntime.dll
-    Copy-Item -LiteralPath "$out/tests/runtime-ci.sha256" -Destination exports/lmxxf-runtime/runtime-ci.sha256
     exit 0
 }
 

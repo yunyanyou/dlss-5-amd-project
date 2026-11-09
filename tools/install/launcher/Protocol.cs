@@ -37,6 +37,7 @@ namespace OptScalerNR.Launcher
         [DataMember(Name = "lmxxfModels")] public string LmxxfModels;
         [DataMember(Name = "shortFileContinue")] public string ShortFileContinue;
         [DataMember(Name = "optiPatcher")] public string OptiPatcher;
+        [DataMember(Name = "openRr")] public string OpenRr;
         [DataMember(Name = "foreignProxy")] public Dictionary<string, string> ForeignProxy;
         [DataMember(Name = "xessGroups")] public string[] XessGroups;
         [DataMember(Name = "modelSourceDll")] public string ModelSourceDll;
@@ -172,12 +173,24 @@ namespace OptScalerNR.Launcher
 
     public static class JsonUtil
     {
+        static readonly object SerializerGate = new object();
+        static readonly Dictionary<Type, DataContractJsonSerializer> Serializers = new Dictionary<Type, DataContractJsonSerializer>();
+
         static DataContractJsonSerializer Serializer(Type type)
         {
-            return new DataContractJsonSerializer(type, new DataContractJsonSerializerSettings
+            lock (SerializerGate)
             {
-                UseSimpleDictionaryFormat = true
-            });
+                DataContractJsonSerializer ser;
+                if (!Serializers.TryGetValue(type, out ser))
+                {
+                    ser = new DataContractJsonSerializer(type, new DataContractJsonSerializerSettings
+                    {
+                        UseSimpleDictionaryFormat = true
+                    });
+                    Serializers[type] = ser;
+                }
+                return ser;
+            }
         }
 
         public static string Write<T>(T value)

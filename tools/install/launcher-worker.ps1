@@ -1,4 +1,4 @@
-﻿# Schema 1 worker. Inspect is read-only. Install/uninstall call the existing scripts.
+# Schema 1 worker. Inspect is read-only. Install/uninstall call the existing scripts.
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$RequestJson,
@@ -16,6 +16,16 @@ function Write-Event([string]$stage, [string]$message) {
     if ($null -ne $message) { $message = [string]::new($message.ToCharArray()) }
     $line = (@{ schema = 1; requestId = $script:rid; stage = $stage; message = $message } | ConvertTo-Json -Compress)
     [IO.File]::AppendAllText($EventsJsonl, $line + [Environment]::NewLine)
+}
+function Write-EventBatch([string]$stage, [string[]]$messages) {
+    if (-not $messages -or $messages.Count -eq 0) { return }
+    $sb = New-Object System.Text.StringBuilder
+    foreach ($m in $messages) {
+        $msg = if ($null -ne $m) { [string]::new($m.ToCharArray()) } else { '' }
+        $line = (@{ schema = 1; requestId = $script:rid; stage = $stage; message = $msg } | ConvertTo-Json -Compress)
+        [void]$sb.AppendLine($line)
+    }
+    if ($sb.Length -gt 0) { [IO.File]::AppendAllText($EventsJsonl, $sb.ToString()) }
 }
 function Write-Result($obj) {
     $tmp = $ResultJson + '.tmp'
@@ -95,7 +105,7 @@ if ($req.action -in @('install','update')) {
         }
         $seenRequestedBackends = @{}
         foreach ($id in @($req.backends)) {
-            if ($id -notin @('lmxxf','daniel','mochizuki')) { Fail-Result 'failed' "Unknown backend id: $id" 1 }
+            if ($id -notin @('lmxxf','daniel','mochizuki','none')) { Fail-Result 'failed' "Unknown backend id: $id" 1 }
             if ($seenRequestedBackends.ContainsKey($id)) { Fail-Result 'failed' "Duplicate backend id: $id" 1 }
             $seenRequestedBackends[$id] = $true
         }
@@ -330,8 +340,8 @@ if ($req.action -in @('repairXess','restoreXess','keepXess')) {
 if ($pkg) {
     $hasAsi = Test-Path -LiteralPath (Join-Path $pkg 'OptiScaler/plugins/dlssnr-amd.asi')
     $hasExtract = Test-Path -LiteralPath (Join-Path $pkg 'model-tools/dlssnr_extract_model.exe')
-    $hasModel = (Test-Path -LiteralPath (Join-Path $pkg 'dlssnr-amd/dlssnr.bin')) -or
-        (Test-Path -LiteralPath (Join-Path $pkg 'dlssnr-amd/dlssnr-small.bin'))
+    $hasModel = (Test-Path -LiteralPath (Join-Path $pkg 'dlssnr-amd/CC_SILVER_AARDWOLD.bin')) -or
+        (Test-Path -LiteralPath (Join-Path $pkg 'dlssnr-amd/CC_SMALL_FP8.bin'))
     $hasNv = Test-Path -LiteralPath (Join-Path $pkg 'nvngx_dlssnr.dll')
     $script:notes += ('Mochizuki NR ASI present: {0}; extractor present: {1}.' -f $hasAsi, $hasExtract)
     $script:notes += ('Package model file present: {0}. That is not a GPU compatibility test.' -f $hasModel)
@@ -435,7 +445,7 @@ if ($req.action -ne 'uninstall') {
         $modelChoice = if ($dec) { [string]$dec.mochizukiModels } else { '' }
         $networkChoice = if ($dec -and $dec.mochizukiNetworks) { @($dec.mochizukiNetworks | ForEach-Object { [string]$_ }) } else { @() }
         $activeChoice = if ($dec) { [string]$dec.mochizukiActiveModel } else { '' }
-        if (@($networkChoice | Where-Object { $_ -notin @('small','experimental','original','int4') }).Count -gt 0) {
+        if (@($networkChoice | Where-Object { $_ -notin @('small','experimental','original','int4','optimized') }).Count -gt 0) {
             Fail-Result 'failed' 'Invalid Mochizuki network selection.' 1
         }
         if (-not $networkChoice -and -not $modelChoice) {
@@ -444,10 +454,10 @@ if ($req.action -ne 'uninstall') {
                 prompt = 'Select the Mochizuki networks to install: small, experimental, original, int4 (or all).'
                 options = @('small','experimental','original','int4')
             }
-        } elseif ($modelChoice -and $modelChoice -notin @('both','all','small','experimental','original','int4')) {
+        } elseif ($modelChoice -and $modelChoice -notin @('both','all','small','experimental','original','int4','optimized')) {
             Fail-Result 'failed' 'Invalid Mochizuki models choice.' 1
         }
-        if ($activeChoice -and $activeChoice -notin @('small','experimental','original','int4')) {
+        if ($activeChoice -and $activeChoice -notin @('small','experimental','original','int4','optimized')) {
             Fail-Result 'failed' 'Invalid Mochizuki active network.' 1
         }
     }
@@ -490,7 +500,7 @@ if ($req.action -eq 'uninstall') {
         language = if ($req.language -eq 'zh') { 'zh' } else { 'en' }
     }
     if ($dec) {
-        foreach ($name in @('existingInstall','existingIni','mochizukiModels','mochizukiNetworks','mochizukiActiveModel','lmxxfModels','shortFileContinue','optiPatcher','foreignProxy','modelSourceDll')) {
+        foreach ($name in @('existingInstall','existingIni','mochizukiModels','mochizukiNetworks','mochizukiActiveModel','lmxxfModels','shortFileContinue','optiPatcher','openRr','foreignProxy','modelSourceDll')) {
             if ($dec.PSObject.Properties[$name] -and $null -ne $dec.$name) {
                 if ($name -eq 'foreignProxy') { $payload[$name] = ConvertTo-ForeignProxyMap $dec.$name }
                 else { $payload[$name] = $dec.$name }
@@ -504,7 +514,28 @@ if ($req.action -eq 'uninstall') {
 $prevEap = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
 if ($req.action -eq 'uninstall') {
-    & $ps51 -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $install -GameDir $script:gameDir -NonInteractive -NoPause 1>$stdoutLog 2>$stderrLog
+    & $ps51 -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $install -GameDir $script:gameDir -NonInteractive -NoPause -RemoveBackups 1>$stdoutLog 2>$stderrLog
+    try {
+        $storeDir = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'OptScalerNR\ModelStore'
+        $dlssnrAmdDir = Join-Path $script:gameDir 'dlssnr-amd'
+        if (Test-Path -LiteralPath $dlssnrAmdDir -PathType Container) {
+            foreach ($modelFile in @(Get-ChildItem -LiteralPath $dlssnrAmdDir -Filter 'CC_*.bin' -File -ErrorAction SilentlyContinue)) {
+                [void][IO.Directory]::CreateDirectory($storeDir)
+                $dest = Join-Path $storeDir $modelFile.Name
+                if (-not (Test-Path -LiteralPath $dest -PathType Leaf)) {
+                    Copy-Item -LiteralPath $modelFile.FullName -Destination $dest -Force
+                }
+                Remove-Item -LiteralPath $modelFile.FullName -Force -ErrorAction SilentlyContinue
+            }
+            if (@(Get-ChildItem -LiteralPath $dlssnrAmdDir -Force -ErrorAction SilentlyContinue).Count -eq 0) {
+                [IO.Directory]::Delete($dlssnrAmdDir, $false)
+            }
+        }
+        $compatBackup = Join-Path $script:gameDir 'OptiScaler-compat-backup'
+        if (Test-Path -LiteralPath $compatBackup -PathType Container) {
+            Remove-Item -LiteralPath $compatBackup -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    } catch { }
 } elseif ($hasRequestedBackends) {
     $activeArguments = @()
     if ($req.activeBackend) { $activeArguments = @('-ActiveBackend', [string]$req.activeBackend) }
@@ -517,10 +548,10 @@ if ($req.action -eq 'uninstall') {
 $code = $LASTEXITCODE
 $ErrorActionPreference = $prevEap
 if (Test-Path -LiteralPath $stdoutLog) {
-    Get-Content -LiteralPath $stdoutLog -ErrorAction SilentlyContinue | ForEach-Object { Write-Event 'log' $_ }
+    Write-EventBatch 'log' @(Get-Content -LiteralPath $stdoutLog -ErrorAction SilentlyContinue)
 }
 if (Test-Path -LiteralPath $stderrLog) {
-    Get-Content -LiteralPath $stderrLog -ErrorAction SilentlyContinue | ForEach-Object { Write-Event 'error' $_ }
+    Write-EventBatch 'error' @(Get-Content -LiteralPath $stderrLog -ErrorAction SilentlyContinue)
 }
 if ($code -eq 0) {
     Write-Event 'verify' 'setup process exit 0'

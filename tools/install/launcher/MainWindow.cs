@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -97,7 +97,7 @@ namespace OptScalerNR.Launcher
         MenuItem _removeGameMenuItem;
         TextBlock _compatSummary;
         TextBlock _lmxxfActiveLabel, _danielActiveLabel, _mochiActiveLabel;
-        CheckBox _lmxxfCheck, _danielCheck, _mochiCheck, _replaceIni, _optiPatcherToggle, _scanOnStartup;
+        CheckBox _lmxxfCheck, _danielCheck, _mochiCheck, _replaceIni, _optiPatcherToggle, _openRrToggle, _scanOnStartup;
         ProgressBar _progress;
         Image _heroPosterImage, _heroBgImage;
         Ellipse _statusLed;
@@ -239,6 +239,12 @@ namespace OptScalerNR.Launcher
             _activeCombo = (ComboBox)window.FindName("ActiveCombo");
             _replaceIni = (CheckBox)window.FindName("ReplaceIni");
             _optiPatcherToggle = (CheckBox)window.FindName("OptiPatcherToggle");
+            _openRrToggle = (CheckBox)window.FindName("OpenRrToggle");
+            if (_openRrToggle != null)
+            {
+                _openRrToggle.Checked += (s, e) => { RememberOpenRrChoice(); RefreshModelImportBar(); };
+                _openRrToggle.Unchecked += (s, e) => { RememberOpenRrChoice(); RefreshModelImportBar(); };
+            }
             if (_optiPatcherToggle != null)
             {
                 _optiPatcherToggle.Checked += (s, e) => { RememberOptiPatcherChoice(); };
@@ -260,7 +266,7 @@ namespace OptScalerNR.Launcher
             if (githubBtn != null) githubBtn.Click += (s, e) => OpenUrl("https://github.com/TheAutomatic/dlss-5-amd-project");
             var bilibiliBtn = window.FindName("BilibiliButton") as Button;
             if (bilibiliBtn != null) bilibiliBtn.Click += (s, e) => OpenUrl("https://space.bilibili.com/291088");
-            foreach (var name in new[] { "MochizukiAuthorButton", "LmxxfAuthorButton", "DanielAuthorButton" }) {
+            foreach (var name in new[] { "MochizukiAuthorButton", "OpenRrAuthorButton" }) {
                 var author = window.FindName(name) as Button;
                 if (author != null) author.Click += (s, e) => OpenUrl((string)((Button)s).ToolTip);
             }
@@ -551,14 +557,15 @@ namespace OptScalerNR.Launcher
                 _danielActiveBtn.IsEnabled = _danielCheck != null && _danielCheck.IsChecked == true;
             }
 
+            bool multiBackendMode = FindBackend("lmxxf") != null || FindBackend("daniel") != null;
             if (_mochiActiveLabel != null)
             {
-                _mochiActiveLabel.Visibility = isMochi ? Visibility.Visible : Visibility.Collapsed;
+                _mochiActiveLabel.Visibility = (multiBackendMode && isMochi) ? Visibility.Visible : Visibility.Collapsed;
                 _mochiActiveLabel.Text = L("主后端", "Primary");
             }
             if (_mochiActiveBtn != null)
             {
-                _mochiActiveBtn.Visibility = isMochi ? Visibility.Collapsed : Visibility.Visible;
+                _mochiActiveBtn.Visibility = (multiBackendMode && !isMochi) ? Visibility.Visible : Visibility.Collapsed;
                 _mochiActiveBtn.Content = L("设为主后端", "Set primary");
                 _mochiActiveBtn.IsEnabled = _mochiCheck != null && _mochiCheck.IsChecked == true;
             }
@@ -619,9 +626,26 @@ namespace OptScalerNR.Launcher
 
             StartHardwareDetection();
             RefreshProfiles();
+            if (_selectedGame == null && _allGames.Count > 0 && _gameList != null && _gameList.Items.Count > 0)
+            {
+                int targetIdx = 0;
+                if (!string.IsNullOrEmpty(_recentGameId))
+                {
+                    for (int i = 0; i < _gameList.Items.Count; i++)
+                    {
+                        var vm = _gameList.Items[i] as GameItemViewModel;
+                        if (vm != null && vm.Info != null && string.Equals(vm.Info.Id, _recentGameId, StringComparison.OrdinalIgnoreCase))
+                        {
+                            targetIdx = i;
+                            break;
+                        }
+                    }
+                }
+                _gameList.SelectedIndex = targetIdx;
+            }
             if (_isScanOnStartup)
             {
-                RunScan();
+                RunScan(_allGames.Count > 0);
             }
         }
 
@@ -745,17 +769,22 @@ namespace OptScalerNR.Launcher
                 if (_replaceIni != null) _replaceIni.Content = isZh ? "覆盖现有 OptiScaler.ini 配置文件 (推荐)" : "Replace existing OptiScaler.ini (recommended)";
                 SetLabel("OptiPatcherToggle", "安装 OptiPatcher（DLSS 伪装增强，按 Wiki 推荐预选）", "Install OptiPatcher (DLSS spoofing enhancement, preselected by Wiki recommendation)");
                 if (_optiPatcherToggle != null) _optiPatcherToggle.ToolTip = L("优先下载最新版本（30 秒时限），失败时回退包内离线副本，并启用 LoadAsiPlugins。", "Downloads the latest version with a 30-second limit, falls back to the bundled offline copy, and enables LoadAsiPlugins.");
+                SetLabel("OpenRrToggle", "OpenRR 光线重建 (DLSS-RR 0.1.1 · RX 9000 专属)", "OpenRR Ray Reconstruction (DLSS-RR 0.1.1 · RX 9000)");
+                SetLabel("OpenRrDescription",
+                    "在 RX 9000 (RDNA4) 显卡上原生运行 NVIDIA DLSS 光线重建网络（支持 D3D12 直录与 Vulkan）。需导入一次 310.9.1.0 版 nvngx_dlssd.dll；取消勾选或非 RX 9000 显卡将自动使用内置 FSR 光线再生 (FSR-RR)。",
+                    "Runs NVIDIA's DLSS Ray Reconstruction network natively on RX 9000 (RDNA4) GPUs (D3D12 & Vulkan). Import nvngx_dlssd.dll (310.9.1.0) once; unchecking or non-RX 9000 GPUs automatically use built-in FSR Ray Regeneration (FSR-RR).");
+                if (_openRrToggle != null) _openRrToggle.ToolTip = L("勾选时部署 OpenNrRrRuntime.dll 与 opennr-rr/shaders/，并在检测到您自备或导入的 nvngx_dlssd.dll (310.9.1.0) 时放入 opennr-rr/。取消勾选时在 OptiScaler.ini 中将 [OpenNR-RR] Enabled 设为 false（使用 FSR-RR）。", "Installs OpenNrRrRuntime.dll and opennr-rr/shaders/, and places your supplied/imported nvngx_dlssd.dll (310.9.1.0) into opennr-rr/. When unchecked, sets [OpenNR-RR] Enabled=false in OptiScaler.ini (uses FSR-RR).");
                 if (_scanOnStartup != null) _scanOnStartup.Content = isZh ? "启动时自动扫描游戏库" : "Scan game library on startup";
 
                 SetLabel("LocalGamesHeading", "游戏库", "Library");
                 SetLabel("ProxyHeading", "注入代理", "Injection proxy");
-                SetLabel("BackendsHeading", "神经渲染后端", "Neural rendering backends");
+                SetLabel("BackendsHeading", "神经渲染后端", "Neural rendering backend");
                 SetLabel("LmxxfCheck", "lmxxf 0.4.4", "lmxxf 0.4.4");
                 SetLabel("DanielCheck", "daniel 0.6.0", "daniel 0.6.0");
-                SetLabel("MochiCheck", "mochizuki 0.0.8.2", "mochizuki 0.0.8.2");
+                SetLabel("MochiCheck", "mochizuki 0.0.8.3", "mochizuki 0.0.8.3");
                 SetLabel("LmxxfDescription", "适合 RX 9000 系列", "For RX 9000 series");
                 SetLabel("DanielDescription", "适合 RX 6000/7000/9000 系列", "For RX 6000/7000/9000 series");
-                SetLabel("MochiDescription", "适合 RX 7000/9000 系列", "For RX 7000/9000 series");
+                SetLabel("MochiDescription", "适合 RX 7000/9000 系列（Direct ELF D3D12 / Vulkan）", "For RX 7000/9000 series (Direct ELF D3D12 / Vulkan)");
                 SetLabel("DiagnosticsHeading", "配置与运行库兼容诊断", "Configuration & Runtime Compatibility");
                 SetLabel("LogHeading", "运行诊断日志", "Diagnostic Log");
                 SetLabel("SettingsHeading", "设置", "Settings");
@@ -812,8 +841,17 @@ namespace OptScalerNR.Launcher
             if (content != null) content.Content = L(zh, en);
         }
 
+        bool IsBackendVisible(string id)
+        {
+            if (id == "mochizuki") return true;
+            var check = id == "lmxxf" ? _lmxxfCheck : id == "daniel" ? _danielCheck : null;
+            if (check != null && check.IsVisible) return true;
+            return FindBackend(id) != null;
+        }
+
         bool IsBackendSelected(string id)
         {
+            if (!IsBackendVisible(id)) return false;
             var check = id == "lmxxf" ? _lmxxfCheck : id == "daniel" ? _danielCheck : id == "mochizuki" ? _mochiCheck : null;
             return check != null && check.IsChecked == true;
         }
@@ -1044,6 +1082,8 @@ namespace OptScalerNR.Launcher
                     foreach (var pair in rec.ProxyChoices) if (ProxyRecommendations.Supports(pair.Value)) _proxyChoices[pair.Key] = pair.Value;
                 if (rec.OptiPatcherByGame != null)
                     foreach (var pair in rec.OptiPatcherByGame) _optiPatcherByGame[pair.Key] = pair.Value;
+                if (rec.OpenRrByGame != null)
+                    foreach (var pair in rec.OpenRrByGame) _openRrByGame[pair.Key] = pair.Value;
                 if (rec.HiddenGames != null)
                     foreach (var pair in rec.HiddenGames) _hiddenGames[pair.Key] = pair.Value;
                 if (rec.BackendChoices != null)
@@ -1076,7 +1116,8 @@ namespace OptScalerNR.Launcher
                     BackendChoices = _backendChoices,
                     HiddenGames = _hiddenGames,
                     ProxyChoices = _proxyChoices,
-                    OptiPatcherByGame = _optiPatcherByGame
+                    OptiPatcherByGame = _optiPatcherByGame,
+                    OpenRrByGame = _openRrByGame
                 };
                 JsonUtil.WriteFile(_settingsPath, set);
             }
@@ -1131,6 +1172,7 @@ namespace OptScalerNR.Launcher
         {
             [System.Runtime.Serialization.DataMember] public Dictionary<string, string> ProxyChoices;
             [System.Runtime.Serialization.DataMember(Name = "optiPatcherByGame")] public Dictionary<string, bool> OptiPatcherByGame;
+            [System.Runtime.Serialization.DataMember(Name = "openRrByGame")] public Dictionary<string, bool> OpenRrByGame;
             [System.Runtime.Serialization.DataMember] public Dictionary<string, string> HiddenGames;
             [System.Runtime.Serialization.DataMember] public string Language;
             [System.Runtime.Serialization.DataMember] public string Theme;
@@ -1180,14 +1222,14 @@ namespace OptScalerNR.Launcher
         void RestoreBackendChoice()
         {
             var choice = CurrentBackendChoice();
-            var list = new List<string>(choice != null ? choice.Backends : new string[0]);
+            var list = new List<string>(choice != null ? choice.Backends : new[] { "mochizuki" });
             _updatingBackends = true;
             try
             {
-                if (_mochiCheck != null) _mochiCheck.IsChecked = list.Contains("mochizuki");
+                if (_mochiCheck != null) _mochiCheck.IsChecked = list.Contains("mochizuki") || choice == null;
                 if (_lmxxfCheck != null) _lmxxfCheck.IsChecked = list.Contains("lmxxf");
                 if (_danielCheck != null) _danielCheck.IsChecked = list.Contains("daniel");
-                _activeBackend = choice != null ? choice.ActiveBackend : "mochizuki";
+                _activeBackend = choice != null && !string.IsNullOrEmpty(choice.ActiveBackend) ? choice.ActiveBackend : "mochizuki";
                 UpdateActiveCombo();
             }
             finally { _updatingBackends = false; }
@@ -1601,12 +1643,14 @@ namespace OptScalerNR.Launcher
                 return;
             }
 
-            var hasBackend = (_lmxxfCheck != null && _lmxxfCheck.IsChecked == true)
+            bool multiBackendMode = FindBackend("lmxxf") != null || FindBackend("daniel") != null;
+            var hasBackend = !multiBackendMode
+                || (_lmxxfCheck != null && _lmxxfCheck.IsChecked == true)
                 || (_danielCheck != null && _danielCheck.IsChecked == true)
                 || (_mochiCheck != null && _mochiCheck.IsChecked == true);
 
             var proxyChosen = !string.IsNullOrEmpty(CurrentSelectedProxy);
-            var isBusy = _session != null && _session.IsRunning;
+            var isBusy = _session != null && _session.IsRunning && (_presentationBusy || !_session.CanKill);
             if (!_selectedGame.HasExecutable) {
                 _primaryButton.IsEnabled = !isBusy && !_writeBusy && _folderScan == null;
                 if (_launchGameButton != null) _launchGameButton.IsEnabled = false;
@@ -1652,13 +1696,13 @@ namespace OptScalerNR.Launcher
             UpdateActiveUI();
         }
 
-        void RunScan()
+        void RunScan(bool background = false)
         {
             if (_session != null && _session.IsRunning) return;
-            SetBusy(true, "scan");
+            if (!background) SetBusy(true, "scan");
             if (_statusText != null) _statusText.Text = _language == "zh" ? "正在扫描游戏库…" : "Scanning library…";
             if (_statusLed != null) _statusLed.Fill = WarningBrush;
-            if (_progress != null) _progress.IsIndeterminate = true;
+            if (_progress != null && !background) _progress.IsIndeterminate = true;
 
             var req = new LauncherRequest
             {
@@ -1821,16 +1865,20 @@ namespace OptScalerNR.Launcher
         void InspectGame(GameInfo game)
         {
             if (_writeBusy) return;
-            if (_session != null)
-            {
-                if (_session.CanKill) CancelReadSession();
-                else return;
-            }
             if (game == null || !game.HasExecutable) { RefreshInspectionText(); return; }
 
             _lastInspectResult = null;
             var fastProxy = PeProbe.QuickRecommend(game.Exe);
             UpdateProxyRecommendation(fastProxy);
+            _decisions.OptiPatcher = (_optiPatcherToggle != null && _optiPatcherToggle.IsChecked == true) ? "install" : "skip";
+            _decisions.OpenRr = (_openRrToggle != null && _openRrToggle.IsChecked == true) ? "install" : "skip";
+            if (TryFastInspect(game, fastProxy)) return;
+
+            if (_session != null)
+            {
+                if (_session.CanKill) CancelReadSession();
+                else return;
+            }
 
             SetBusy(true, "inspect");
             _pendingAction = "inspect";
@@ -1838,7 +1886,6 @@ namespace OptScalerNR.Launcher
             if (_statusLed != null) _statusLed.Fill = WarningBrush;
             if (_progress != null) _progress.IsIndeterminate = true;
             UpdatePrimaryButtonState();
-            _decisions.OptiPatcher = (_optiPatcherToggle != null && _optiPatcherToggle.IsChecked == true) ? "install" : "skip";
 
             var req = new LauncherRequest
             {
@@ -1990,7 +2037,7 @@ namespace OptScalerNR.Launcher
 
         void UpdateCompatibilitySummary()
         {
-            var busy = _writeBusy || (_session != null && _session.IsRunning);
+            var busy = _writeBusy || (_session != null && _session.IsRunning && (_presentationBusy || !_session.CanKill));
             var report = _lastInspectResult == null ? null : _lastInspectResult.Compatibility;
             var available = _selectedGame != null && report != null && !busy;
             if (_compatButton != null) _compatButton.IsEnabled = available;
@@ -2150,7 +2197,7 @@ namespace OptScalerNR.Launcher
                     State = capability == null ? null : capability.ExperimentalState },
                 new { Value = "original", Label = L("Original — CC_SILVER_AARDWOLD（通用）", "Original — CC_SILVER_AARDWOLD (General)"),
                     State = capability == null ? null : capability.OriginalState },
-                new { Value = "int4", Label = L("INT4 Mixed — CC_SILVER_AARDWOLD_INT4_MIXED（暂仅限 RX 9000）", "INT4 Mixed — CC_SILVER_AARDWOLD_INT4_MIXED (Currently RX 9000 only)"),
+                new { Value = "int4", Label = L("Optimized — CC_SILVER_AARDWOLD_OPTIMIZED（暂仅限 RX 9000）", "Optimized — CC_SILVER_AARDWOLD_OPTIMIZED (Currently RX 9000 only)"),
                     State = capability == null ? null : capability.Int4State }
             };
             var ready = new bool[4];
@@ -2173,8 +2220,8 @@ namespace OptScalerNR.Launcher
             var panel = new StackPanel { Margin = new Thickness(24) };
             panel.Children.Add(new TextBlock
             {
-                Text = L("选择要安装的网络，再选择游戏启动时使用的网络。Experimental 依赖 Small，INT4 Mixed 依赖 Original；父模型会自动安装或提取。",
-                    "Choose the networks to install, then the one the game starts with. Experimental needs Small and INT4 Mixed needs Original; parent models are installed or extracted automatically."),
+                Text = L("选择要安装的网络，再选择游戏启动时使用的网络。Experimental 依赖 Small，Optimized 依赖 Original；父模型会自动安装或提取。",
+                    "Choose the networks to install, then the one the game starts with. Experimental needs Small and Optimized needs Original; parent models are installed or extracted automatically."),
                 TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12)
             });
             var checks = new CheckBox[4];
@@ -2222,7 +2269,7 @@ namespace OptScalerNR.Launcher
                 checks[2].IsEnabled = canInstall[2];
                 checks[2].Tag = !canInstall[2] ? "unavailable" : int4LocksOriginal ? ModelDependencyLock.TagValue : null;
                 checks[2].ToolTip = int4LocksOriginal && canInstall[2]
-                    ? L("INT4 Mixed 已选择，Original 是必需依赖，不能取消。", "INT4 Mixed is selected, so Original is a required dependency and cannot be cleared.")
+                    ? L("Optimized 已选择，Original 是必需依赖，不能取消。", "Optimized is selected, so Original is a required dependency and cannot be cleared.")
                     : null;
             };
             Action syncParents = delegate {
@@ -2373,10 +2420,45 @@ namespace OptScalerNR.Launcher
             InspectGame(_selectedGame);
         }
 
+        bool ChooseOpenRrDlssd()
+        {
+            var directory = _selectedGame != null && !string.IsNullOrEmpty(_selectedGame.Exe) ? Path.GetDirectoryName(_selectedGame.Exe) : null;
+            var picker = new OpenFileDialog {
+                Title = L("缺少 OpenRR 模型源：选择 nvngx_dlssd.dll（需 310.9.1.0）", "OpenRR model source missing: select nvngx_dlssd.dll (310.9.1.0)"),
+                Filter = "nvngx_dlssd.dll (310.9.1.0)|nvngx_dlssd.dll|DLL (*.dll)|*.dll", CheckFileExists = true,
+                FileName = "nvngx_dlssd.dll", RestoreDirectory = true
+            };
+            if (!string.IsNullOrEmpty(directory)) picker.InitialDirectory = directory;
+            if (picker.ShowDialog(_window) != true) return false;
+            try
+            {
+                var source = picker.FileName;
+                ValidateModelSourcePe(source);
+                if (!IsDlssd310_9_1(source))
+                    throw new IOException(L("所选文件不是 310.9.1.0 版本的 nvngx_dlssd.dll。OpenRR 仅支持 310.9.1.0。", "The selected file is not nvngx_dlssd.dll version 310.9.1.0. OpenRR requires 310.9.1.0."));
+                var root = ResolveImportRoot();
+                Directory.CreateDirectory(root);
+                var destination = Path.Combine(root, "nvngx_dlssd.dll");
+                if (!string.Equals(Path.GetFullPath(source), Path.GetFullPath(destination), StringComparison.OrdinalIgnoreCase))
+                    File.Copy(source, destination, true);
+                RefreshModelImportBar();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DialogTheme.Show(_window, L("导入 nvngx_dlssd.dll 失败：", "Failed to import nvngx_dlssd.dll: ") + ex.Message, _window.Title);
+                return false;
+            }
+        }
+
         void ExecuteAction(string action, bool keepModelChoice = false, string compatibilityFingerprint = null)
         {
             var installing = action == "install" || action == "update";
             if (_selectedGame == null || !_selectedGame.HasExecutable) return;
+            if (!_writeBusy && _session != null && _session.IsRunning && _session.CanKill)
+            {
+                CancelReadSession();
+            }
             if (_writeBusy || _folderScan != null || (_session != null && _session.IsRunning))
             {
                 DialogTheme.Show(_window, _language == "zh" ? "操作正在进行中…" : "An operation is already in progress.", _window.Title);
@@ -2406,15 +2488,40 @@ namespace OptScalerNR.Launcher
             }
 
             var checkedBackends = new List<string>();
-            if (_lmxxfCheck != null && _lmxxfCheck.IsChecked == true) checkedBackends.Add("lmxxf");
-            if (_danielCheck != null && _danielCheck.IsChecked == true) checkedBackends.Add("daniel");
+            if (_lmxxfCheck != null && _lmxxfCheck.IsChecked == true && FindBackend("lmxxf") != null) checkedBackends.Add("lmxxf");
+            if (_danielCheck != null && _danielCheck.IsChecked == true && FindBackend("daniel") != null) checkedBackends.Add("daniel");
             if (_mochiCheck != null && _mochiCheck.IsChecked == true) checkedBackends.Add("mochizuki");
 
-            if (installing && checkedBackends.Count == 0)
+            bool multiBackendMode = FindBackend("lmxxf") != null || FindBackend("daniel") != null;
+            if (installing && checkedBackends.Count == 0 && multiBackendMode)
             {
                 DialogTheme.Show(_window, _language == "zh" ? "请至少勾选一个可安装的后端。" : "Please select at least one backend to install.", _window.Title);
                 ReleaseLock();
                 return;
+            }
+            if (installing && !multiBackendMode)
+            {
+                bool nrOn = checkedBackends.Contains("mochizuki");
+                bool rrOn = _openRrToggle != null && _openRrToggle.IsChecked == true;
+                if (!nrOn)
+                {
+                    if (!keepModelChoice)
+                    {
+                        string warnMsg = !rrOn
+                            ? L(
+                                "当前未启用神经渲染（Mochizuki）与 DLSS 光线重建（OpenRR），本次将仅安装基础版 OptiScaler（支持超分、帧生成与内置 FSR-RR），无法获得神经渲染光影重塑与原生 DLSS 光线重建效果。\n\n是否继续？",
+                                "Neither Mochizuki Neural Rendering nor OpenRR (DLSS Ray Reconstruction) is enabled. Only base OptiScaler will be installed (supporting upscaling, frame generation, and built-in FSR-RR, without Neural Rendering or native DLSS Ray Reconstruction).\n\nContinue anyway?")
+                            : L(
+                                "当前未启用神经渲染（Mochizuki），将无法获得神经渲染光影重塑效果。\n\n是否继续？",
+                                "Mochizuki Neural Rendering is not enabled; Neural Rendering lighting effects will not be available.\n\nContinue anyway?");
+                        if (DialogTheme.Show(_window, warnMsg, _window.Title, MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+                        {
+                            ReleaseLock();
+                            return;
+                        }
+                    }
+                    checkedBackends.Add("none");
+                }
             }
             if (installing && !PrepareMissingModelSource(action, checkedBackends)) { ReleaseLock(); return; }
 
@@ -2432,6 +2539,7 @@ namespace OptScalerNR.Launcher
             }
 
             SetBusy(true, action);
+            _pendingLog.Length = 0;
             if (_logView != null) _logView.Clear();
             if (_statusLed != null) _statusLed.Fill = WarningBrush;
             if (_progress != null) _progress.IsIndeterminate = true;
@@ -2439,6 +2547,7 @@ namespace OptScalerNR.Launcher
 
             _decisions.ExistingIni = (_replaceIni != null && _replaceIni.IsChecked == true) ? "overwrite" : "keep";
             _decisions.OptiPatcher = (_optiPatcherToggle != null && _optiPatcherToggle.IsChecked == true) ? "install" : "skip";
+            _decisions.OpenRr = (_openRrToggle != null && _openRrToggle.IsChecked == true) ? "install" : "skip";
 
             var req = new LauncherRequest
             {
@@ -2448,7 +2557,7 @@ namespace OptScalerNR.Launcher
                 GameExe = _selectedGame.Exe,
                 ProxyChoice = proxy,
                 Backends = installing ? checkedBackends.ToArray() : null,
-                ActiveBackend = installing ? _activeBackend : null,
+                ActiveBackend = (installing && !checkedBackends.Contains("none")) ? _activeBackend : null,
                 PackageRoot = _packageRoot,
                 ExplicitDecisions = _decisions,
                 Fingerprint = (action != "inspect" && _lastInspectResult != null) ? _lastInspectResult.Fingerprint : null,
@@ -2614,6 +2723,25 @@ namespace OptScalerNR.Launcher
             {
                 if (result.Backends != null)
                 {
+                    bool hasLmxxf = FindBackend("lmxxf") != null;
+                    bool hasDaniel = FindBackend("daniel") != null;
+                    if (!hasLmxxf && _lmxxfCheck != null)
+                    {
+                        _lmxxfCheck.IsChecked = false;
+                        _lmxxfCheck.IsEnabled = false;
+                        if (preferredActiveBackend == "lmxxf") preferredActiveBackend = "mochizuki";
+                    }
+                    if (!hasDaniel && _danielCheck != null)
+                    {
+                        _danielCheck.IsChecked = false;
+                        _danielCheck.IsEnabled = false;
+                        if (preferredActiveBackend == "daniel") preferredActiveBackend = "mochizuki";
+                    }
+                    var savedChoice = CurrentBackendChoice();
+                    bool onlyRetiredSaved = savedChoice != null && savedChoice.Backends != null &&
+                        savedChoice.Backends.Length > 0 && Array.IndexOf(savedChoice.Backends, "mochizuki") < 0;
+                    if (!hasLmxxf && !hasDaniel && (!hasUserChoice || onlyRetiredSaved) && _mochiCheck != null && _mochiCheck.IsChecked != true)
+                        _mochiCheck.IsChecked = true;
                     foreach (var b in result.Backends)
                     {
                         if (b == null) continue;
@@ -2638,7 +2766,7 @@ namespace OptScalerNR.Launcher
                             if (_mochiCheck != null)
                             {
                                 _mochiCheck.IsEnabled = true;
-                                if (!hasUserChoice) _mochiCheck.IsChecked = b.Enabled;
+                                if (!hasUserChoice) _mochiCheck.IsChecked = b.Enabled || b.RuntimeState == "ready";
                             }
                         }
                     }
@@ -2801,11 +2929,24 @@ namespace OptScalerNR.Launcher
             session.Dispose();
         }
 
+        readonly StringBuilder _pendingLog = new StringBuilder();
+        bool _logFlushScheduled;
+
         void AppendLog(string line)
         {
             if (_logView == null || string.IsNullOrEmpty(line)) return;
-            _logView.AppendText(line + Environment.NewLine);
-            _logView.ScrollToEnd();
+            _pendingLog.Append(line).Append(Environment.NewLine);
+            if (_logFlushScheduled) return;
+            _logFlushScheduled = true;
+            _window.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, new Action(() =>
+            {
+                _logFlushScheduled = false;
+                if (_logView == null || _pendingLog.Length == 0) return;
+                var batch = _pendingLog.ToString();
+                _pendingLog.Length = 0;
+                _logView.AppendText(batch);
+                if (_logView.IsVisible) _logView.ScrollToEnd();
+            }));
         }
 
         void OnClosing(object sender, System.ComponentModel.CancelEventArgs e)
