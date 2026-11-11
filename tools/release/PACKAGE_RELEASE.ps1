@@ -123,7 +123,10 @@ foreach ($required in @(
     'ini/dlssnr-amd-optiscaler-renodx.ini',
     'model-tools/dlssnr_extract_model.exe',
     'model-tools/dlssnr-int4-weights.exe',
-    'experimental/dlssnr-small-experimental.delta'
+    'experimental/dlssnr-small-experimental.delta',
+    # 0.0.8.3 derives its default OPTIMIZED network from this delta; without it the
+    # plugin has no model to run, so it is not optional like the experimental one.
+    'optimized/dlssnr-optimized.delta'
 )) {
     if (!(Test-Path -LiteralPath (Join-Path $asiPayload $required) -PathType Leaf)) {
         throw "Mochizuki ASI payload incomplete: $required"
@@ -668,11 +671,9 @@ Copy-Item -LiteralPath (Join-Path $asiPayload 'ini/dlssnr-amd-optiscaler-renodx.
 New-Item -ItemType Directory -Force (Join-Path $stage 'experimental') | Out-Null
 Get-ChildItem -LiteralPath (Join-Path $asiPayload 'experimental') -File |
     Copy-Item -Destination (Join-Path $stage 'experimental') -Force
-if (Test-Path -LiteralPath (Join-Path $asiPayload 'optimized') -PathType Container) {
-    New-Item -ItemType Directory -Force (Join-Path $stage 'optimized') | Out-Null
-    Get-ChildItem -LiteralPath (Join-Path $asiPayload 'optimized') -File |
-        Copy-Item -Destination (Join-Path $stage 'optimized') -Force
-}
+New-Item -ItemType Directory -Force (Join-Path $stage 'optimized') | Out-Null
+Get-ChildItem -LiteralPath (Join-Path $asiPayload 'optimized') -File |
+    Copy-Item -Destination (Join-Path $stage 'optimized') -Force
 foreach ($name in @('dlssnr_extract_model.exe', 'dlssnr-int4-weights.exe')) {
     Copy-Item -LiteralPath (Join-Path $asiPayload "model-tools/$name") -Destination (Join-Path $stage 'model-tools') -Force
 }
@@ -898,7 +899,7 @@ try {
             finally { $stream.Dispose(); $sha.Dispose() }
             if ($actual -ne $expectedEntries[$relative]) { throw "Archive checksum mismatch: $relative" }
         }
-        foreach ($required in @('OptiScaler.dll', 'OptiScaler.ini', 'Setup.ps1', 'Setup.bat', 'OptScalerNR.Launcher.exe', 'launcher-worker.ps1', 'proxy-probe.ps1', 'library-scan.ps1', 'install-capabilities.ps1', 'xess-compat.ps1', 'compat-repair.ps1', 'proxy-profiles.json', 'OptiScalerPanel.exe', 'Licenses/OptiScaler-wiki-profiles.md', 'OptiScaler/plugins/dlssnr-amd.asi', 'plugins/MFGUnlocker171.asi', 'Licenses/MFGUnlocker_MIT.txt', 'dlssnr-amd/nr_present_probe.exe', 'model-tools/dlssnr_extract_model.exe', 'experimental/dlssnr-small-experimental.delta', 'dlssnr-amd-optiscaler.ini', 'dlssnr-amd-optiscaler-renodx.ini', 'mochizuki-owned.txt') + @($expectedEntries.Keys)) {
+        foreach ($required in @('OptiScaler.dll', 'OptiScaler.ini', 'Setup.ps1', 'Setup.bat', 'OptScalerNR.Launcher.exe', 'launcher-worker.ps1', 'proxy-probe.ps1', 'library-scan.ps1', 'install-capabilities.ps1', 'xess-compat.ps1', 'compat-repair.ps1', 'proxy-profiles.json', 'OptiScalerPanel.exe', 'Licenses/OptiScaler-wiki-profiles.md', 'OptiScaler/plugins/dlssnr-amd.asi', 'plugins/MFGUnlocker171.asi', 'Licenses/MFGUnlocker_MIT.txt', 'dlssnr-amd/nr_present_probe.exe', 'model-tools/dlssnr_extract_model.exe', 'experimental/dlssnr-small-experimental.delta', 'optimized/dlssnr-optimized.delta', 'dlssnr-amd-optiscaler.ini', 'dlssnr-amd-optiscaler-renodx.ini', 'mochizuki-owned.txt') + @($expectedEntries.Keys)) {
             if (-not $seen.ContainsKey($required)) { throw "Package archive missing required component: $required" }
         }
     } finally {
