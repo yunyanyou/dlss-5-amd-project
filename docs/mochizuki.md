@@ -1,14 +1,16 @@
 ﻿# Mochizuki backend (local integration)
 
-> Status (2026-11-05): new installs ship the **official `dlssnr-amd.asi`** - the vendor's
-> `0.0.8.2-pre1` build, i.e. the payload upstream ships byte for byte (digests and the reason
-> for staying on it are in `third_party/mochizuki-asi/README.md`) - and no longer
-> build, install or require `MochizukiNrRuntime.dll`.
+> Status (2026-11-09): new installs ship **`dlssnr-amd.asi` from upstream's payload**, byte for
+> byte - a vendor development build stamped `0.0.8.3` with the Direct ELF D3D12 passthrough
+> route, not the vendor's published `v0.0.8.3` release (measured digests and markers are in
+> `third_party/mochizuki-asi/README.md`). The built-in `MochizukiNrRuntime.dll`,
+> `LmxxfNrRuntime.dll` and Daniel runtimes are retired: no implementation is compiled any
+> more, only a few headers survive, so nothing falls back to them when the ASI is absent.
 > When the plugin is loaded, it owns Neural Rendering: the host's NR page, NR
 > hotkey, Ctrl+F11 model switch, background model work and NR execution are
 > disabled; RR, Super Resolution and frame generation keep working. Open NR
-> Control with End. The built-in-runtime sections below describe existing legacy
-> installations and the code that still runs when no ASI is loaded.
+> Control with End. Without the ASI the Ins menu reports it as not loaded and NR
+> does not run. The built-in-runtime sections below are historical.
 
 The launcher labels the bundled ASI release. The Ins menu instead reads the loaded
 file's Windows VERSIONINFO: translated `ProductVersion` string first, then
