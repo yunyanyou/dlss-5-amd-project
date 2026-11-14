@@ -1,5 +1,5 @@
 # DLSSNR-AMD: the menus' texts in 한국어, for NR Control (OptiScaler route) and ReShade's Add-ons page,
-# Linux and Windows (0.0.8.2). Copy it with the fonts folder into dlssnr-amd\lang in the game's folder.
+# Linux and Windows (0.0.9). Copy it with the fonts folder into dlssnr-amd\lang in the game's folder.
 
 msgid "@language"
 msgstr "한국어"
@@ -202,9 +202,6 @@ msgstr "편집 강도"
 
 msgid "Method"
 msgstr "방식"
-
-msgid "No motion vectors: Feedback / Hybrid use Extrapolation."
-msgstr "모션 벡터 없음: Feedback / Hybrid는 Extrapolation을 사용합니다."
 
 msgid "RenoDX style is off in this run: check it above and restart the game."
 msgstr "이번 실행에서는 RenoDX 스타일이 꺼져 있습니다. 위에서 확인한 뒤 게임을 다시 시작하세요."
@@ -620,9 +617,6 @@ msgstr "일반적인 중첩에는 Passes를 사용하세요."
 msgid "Network model and options"
 msgstr "네트워크 모델 및 옵션"
 
-msgid "[Network] Model. CC_SMALL_FP8: 310.9.16's default network. CC_SMALL_FP8_EXPERIMENTAL: ours, CC_SMALL_FP8 made faster. CC_SILVER_AARDWOLD: 310.8.0's network (310.9.16's preset 1). CC_SILVER_AARDWOLD_INT4_MIXED: that network with part of its arithmetic in int4, faster, a slightly different picture. Switching builds the new network in the background; the running one serves until it is ready."
-msgstr "[Network] Model. CC_SMALL_FP8: 310.9.16의 기본 네트워크. CC_SMALL_FP8_EXPERIMENTAL: 자체 개발, CC_SMALL_FP8를 더 빠르게 만든 것. CC_SILVER_AARDWOLD: 310.8.0의 네트워크(310.9.16의 프리셋 1). CC_SILVER_AARDWOLD_INT4_MIXED: 연산 일부를 int4로 처리해 더 빠르지만 화면이 약간 다른 해당 네트워크. 전환하면 새 네트워크를 백그라운드에서 빌드하며, 준비될 때까지 실행 중인 네트워크가 계속 동작합니다."
-
 msgid "ACO Mode: on in this run (machine code for %s)"
 msgstr "ACO Mode: 이번 실행에서 켜짐 (%s용 머신 코드)"
 
@@ -650,8 +644,8 @@ msgstr "키 없음"
 msgid "Sound"
 msgstr "소리"
 
-msgid "[Network] Sound. A cue on every switch: one note CC_SMALL_FP8, a higher one CC_SMALL_FP8_EXPERIMENTAL, two going down CC_SILVER_AARDWOLD, two going up CC_SILVER_AARDWOLD_INT4_MIXED."
-msgstr "[Network] Sound. 전환할 때마다 알림음을 냅니다. CC_SMALL_FP8는 음 하나, CC_SMALL_FP8_EXPERIMENTAL은 더 높은 음 하나, CC_SILVER_AARDWOLD는 내려가는 두 음, CC_SILVER_AARDWOLD_INT4_MIXED는 올라가는 두 음입니다."
+msgid "[Network] Sound. A cue on every switch: one note CC_SMALL_FP8, a higher one CC_SMALL_FP8_EXPERIMENTAL, two going down CC_SILVER_AARDWOLD, two going up CC_SILVER_AARDWOLD_OPTIMIZED."
+msgstr "[Network] Sound. 전환할 때마다 알림음을 냅니다. CC_SMALL_FP8는 음 하나, CC_SMALL_FP8_EXPERIMENTAL은 더 높은 음 하나, CC_SILVER_AARDWOLD는 내려가는 두 음, CC_SILVER_AARDWOLD_OPTIMIZED는 올라가는 두 음입니다."
 
 msgid "auto"
 msgstr "auto"
@@ -703,9 +697,6 @@ msgstr "히스토리 크기 조정"
 
 msgid "Memory guard"
 msgstr "메모리 보호"
-
-msgid "[Network] Memory Guard. On (default): a network is built only while 1 GB of video memory stays free for the game, and the running one steps aside while video memory runs out. Off: no such check - NR builds and runs in whatever video memory is left; a game left short of it may stutter or fail to load its own data. Applied at once."
-msgstr "[Network] Memory Guard. 켜기(기본값): 게임을 위해 비디오 메모리 1 GB가 비어 있을 때만 네트워크를 빌드하며, 비디오 메모리가 부족해지면 실행 중인 네트워크가 물러납니다. 끄기: 이 검사를 하지 않고 남은 비디오 메모리에서 그대로 빌드하고 실행하므로, 메모리가 부족해진 게임이 끊기거나 자체 데이터를 불러오지 못할 수 있습니다. 즉시 적용됩니다."
 
 msgid "Side by side"
 msgstr "나란히"
@@ -817,9 +808,6 @@ msgstr "추정"
 
 msgid " (cannot run here)"
 msgstr " (여기서는 실행할 수 없음)"
-
-msgid "[HudFix] Mode. HUD FIX keeps the game's HUD (crosshair, bars, subtitles, menus) as the game drew it while NR changes the rest; for the layers placed at Present. Off (default): the HUD goes through NR like the rest. Auto: the best method that can run, each frame. Frame generation's HUD-less frame: the frame without its HUD that the game hands its frame generation (FSR 3.1, XeSS, DLSS-G through Streamline or NGX; D3D12 games); NR runs on it and the HUD is put back as it was; where the game keeps it until the present, frame generation is given NR's answer in its place. OptiScaler's own frame generation gets no such frame from the game: Captured serves those games. Captured before the HUD: the frame copied where the game starts drawing its HUD; NR runs on it and the HUD is put back as it was. Estimated: pixels that stay put while the picture moves are taken for the HUD and kept (NR still sees the HUD). A method that cannot run here is greyed out with its reason."
-msgstr "[HudFix] Mode. HUD FIX는 NR이 나머지를 바꾸는 동안 게임의 HUD(조준점, 바, 자막, 메뉴)를 게임이 그린 그대로 유지합니다. Present에 배치된 레이어에 적용됩니다. Off(기본값): HUD도 나머지와 같이 NR을 거칩니다. Auto: 매 프레임 실행 가능한 최선의 방식을 사용합니다. 프레임 생성의 HUD 없는 프레임: 게임이 프레임 생성(FSR 3.1, XeSS, Streamline 또는 NGX를 통한 DLSS-G, D3D12 게임)에 넘겨주는 HUD가 없는 프레임에 NR을 실행하고 HUD를 원래대로 되돌립니다. 게임이 그 프레임을 present 때까지 보관하는 경우에는 프레임 생성에 NR의 결과가 대신 전달됩니다. OptiScaler 자체 프레임 생성에는 게임이 이런 프레임을 주지 않으므로 해당 게임에는 Captured를 사용합니다. HUD 이전에 캡처: 게임이 HUD를 그리기 시작하는 지점에서 복사한 프레임에 NR을 실행하고 HUD를 원래대로 되돌립니다. 추정: 화면이 움직여도 제자리에 있는 픽셀을 HUD로 간주해 유지합니다(NR은 여전히 HUD를 봅니다). 여기서 실행할 수 없는 방식은 이유와 함께 회색으로 표시됩니다."
 
 msgid "%s cannot run here: %s"
 msgstr "%s을(를) 여기서 실행할 수 없음: %s"
@@ -1003,9 +991,6 @@ msgstr "색 변화 제한 (RenoDX 방식)"
 
 msgid "ColourLimit. On (default): the colour of the network's change is bounded each pass as RenoDX bounds it, and where the highlight guard brightens a pixel it keeps the pixel's own colour, so dark face edges do not turn red or orange (worse when stacking). Off: the original wilsjo2 composition."
 msgstr "ColourLimit. 켜기(기본값): RenoDX처럼 패스마다 네트워크가 바꾸는 색의 변화량을 제한하고, 하이라이트 가드가 픽셀을 밝게 할 때도 그 픽셀 고유의 색을 유지하여 어두운 얼굴 윤곽이 붉거나 주황색으로 변하지 않게 합니다(중첩 시 더 심해짐). 끄기: 원래의 wilsjo2 합성 방식."
-
-msgid "FastMethod. Extrapolation pushes this frame's one-pass edit further along its own direction; no motion vectors needed, works from the first frame. Feedback feeds the previous frame's edit, moved by the motion vectors, back into the network input; needs motion vectors and builds up over the first frames. Hybrid uses Feedback where history holds and Extrapolation on new surfaces, cuts and edges. Edit strength scales the network's edit in stops, as Adjust NR's look's Edit strength does. Each method keeps its own settings."
-msgstr "FastMethod. Extrapolation: 이번 프레임의 1패스 편집을 같은 방향으로 더 밀어 줍니다. 모션 벡터가 필요 없으며 첫 프레임부터 동작합니다. Feedback: 이전 프레임의 편집을 모션 벡터로 이동해 네트워크 입력에 다시 넣습니다. 모션 벡터가 필요하며 처음 몇 프레임에 걸쳐 쌓입니다. Hybrid: 히스토리가 유효한 곳에서는 Feedback, 새로운 표면, 장면 전환, 가장자리에서는 Extrapolation을 사용합니다. 편집 강도는 Adjust NR's look의 편집 강도처럼 네트워크의 편집량을 스톱 단위로 조절합니다. 각 방식은 자체 설정을 유지합니다."
 
 msgid "FastEditStrength. The network's edit in stops times this (1 as made, 0 none), as Adjust NR's look's Edit strength with a wider range."
 msgstr "FastEditStrength. 네트워크의 편집량(스톱 단위)에 이 값을 곱합니다(1은 그대로, 0은 없음). Adjust NR's look의 편집 강도와 같지만 범위가 더 넓습니다."
@@ -1439,9 +1424,6 @@ msgstr "NRLookStabilizeDetail."
 msgid "SDR black restore"
 msgstr "SDR 블랙 복원"
 
-msgid "NRSdrBlackRestore."
-msgstr "NRSdrBlackRestore."
-
 msgid "Every block"
 msgstr "모든 블록"
 
@@ -1450,9 +1432,6 @@ msgstr "부드럽게"
 
 msgid "HDR dark pedestal"
 msgstr "HDR 암부 페데스탈"
-
-msgid "NRDisplayPedestal."
-msgstr "NRDisplayPedestal."
 
 msgid "Codec"
 msgstr "코덱"
@@ -1756,9 +1735,6 @@ msgstr "fast"
 
 msgid "NRFastExtrapolationPasses. Extrapolation's strength, referred to legacy pass counts."
 msgstr "NRFastExtrapolationPasses. Extrapolation의 강도이며 legacy 패스 수로 환산한 값입니다."
-
-msgid "NRFastMethod. Extrapolation pushes this frame's one-pass edit further along its own direction; no motion vectors needed, works from the first frame. Feedback feeds the previous frame's edit, moved by the motion vectors, back into the network input; needs motion vectors and builds up over the first frames. Hybrid uses Feedback where history holds and Extrapolation on new surfaces, cuts and edges. Edit strength scales the network's edit in stops, as Adjust NR's look's Edit strength does. Each method keeps its own settings."
-msgstr "NRFastMethod. Extrapolation: 이번 프레임의 1패스 편집을 같은 방향으로 더 밀어 줍니다. 모션 벡터가 필요 없으며 첫 프레임부터 동작합니다. Feedback: 이전 프레임의 편집을 모션 벡터로 이동해 네트워크 입력에 다시 넣습니다. 모션 벡터가 필요하며 처음 몇 프레임에 걸쳐 쌓입니다. Hybrid: 히스토리가 유효한 곳에서는 Feedback, 새로운 표면, 장면 전환, 가장자리에서는 Extrapolation을 사용합니다. 편집 강도는 Adjust NR's look의 편집 강도처럼 네트워크의 편집량을 스톱 단위로 조절합니다. 각 방식은 자체 설정을 유지합니다."
 
 msgid "NRFastExtrapolationHaloLimit. Limits the halos Extrapolation adds."
 msgstr "NRFastExtrapolationHaloLimit. Extrapolation이 추가하는 헤일로를 제한합니다."
@@ -2138,9 +2114,6 @@ msgstr "이 게임에서 HUD 이전 프레임을 찾지 못했습니다"
 msgid "not run this frame"
 msgstr "이번 프레임에는 실행되지 않음"
 
-msgid "Extrapolation: no motion vectors"
-msgstr "Extrapolation: 모션 벡터 없음"
-
 msgid "Each layer is an NR run of its own on the frame, in layer order: its processing (RenoDX, or wilsjo2 - this route's own composition under OptiScaler DLSS-NR's settings), its network ([Network] Model, or one of its own) and its own settings below. On this route every layer runs at Present, on the picture ReShade hands over. Each layer costs a network run, and a layer with another network or size its own memory. Removing every layer goes back to [DlssNr] / [RenoDX]."
 msgstr "각 레이어는 프레임에 대한 독립된 NR 실행이며 레이어 번호 순서로 실행됩니다. 처리 방식(RenoDX 또는 wilsjo2 - OptiScaler DLSS-NR의 설정에 따른 이 경로 자체 합성), 네트워크([Network] Model 또는 레이어 자체 네트워크), 아래의 개별 설정을 가집니다. 이 경로에서는 모든 레이어가 Present에서 ReShade가 넘겨주는 화면에 대해 실행됩니다. 레이어마다 네트워크를 한 번 더 실행하며, 다른 네트워크나 크기를 쓰는 레이어는 자체 메모리를 사용합니다. 모든 레이어를 삭제하면 [DlssNr] / [RenoDX]로 돌아갑니다."
 
@@ -2465,9 +2438,6 @@ msgstr "모델 파일이 없습니다 (install.bat를 다시 실행하세요)"
 msgid "not installed (run install.bat again)"
 msgstr "설치되지 않음 (install.bat를 다시 실행하세요)"
 
-msgid "not on RDNA3 GPUs (RX 7000, Radeon 700M / 800M / 8000S)"
-msgstr "RDNA3 GPU에서는 지원되지 않음 (RX 7000, Radeon 700M / 800M / 8000S)"
-
 msgid "needs ACO Mode, which is off for this run"
 msgstr "ACO Mode가 필요하지만 이번 실행에서는 꺼져 있습니다"
 
@@ -2479,9 +2449,6 @@ msgstr "게임의 장치에 파이프라인 바이너리가 없습니다 (ACO Mo
 
 msgid "its weights were not made at install (run install.bat again)"
 msgstr "설치 시 가중치가 생성되지 않았습니다 (install.bat를 다시 실행하세요)"
-
-msgid "not in this build"
-msgstr "이 빌드에는 없음"
 
 msgid "could not allocate the render-resolution output"
 msgstr "렌더 해상도 출력을 할당하지 못했습니다"
@@ -3113,9 +3080,6 @@ msgstr "연속 커맨드 리스트를 리셋하지 못했습니다"
 msgid "could not create a continuation command list"
 msgstr "연속 커맨드 리스트를 만들지 못했습니다"
 
-msgid "[Network] Memory Guard. On (default): a network is built only while the video memory it needs is free. Off: no such check - NR builds in whatever video memory is left; a game left short of it may stutter or fail to load its own data. Applied at once."
-msgstr "[Network] Memory Guard. 켜기(기본값): 네트워크에 필요한 비디오 메모리가 비어 있을 때만 빌드합니다. 끄기: 이 검사를 하지 않고 남은 비디오 메모리에서 그대로 빌드하므로, 메모리가 부족해진 게임이 끊기거나 자체 데이터를 불러오지 못할 수 있습니다. 즉시 적용됩니다."
-
 msgid "LumeniteFX is not installed. install.sh --lumenite installs it from its author's GitHub."
 msgstr "LumeniteFX가 설치되어 있지 않습니다. install.sh --lumenite로 제작자의 GitHub에서 설치할 수 있습니다."
 
@@ -3137,11 +3101,7 @@ msgstr "설치되지 않음 (install.sh를 다시 실행하세요)"
 msgid "its weights were not made at install (run install.sh again)"
 msgstr "설치 시 가중치가 생성되지 않았습니다 (install.sh를 다시 실행하세요)"
 
-msgid "start the game with the INT4 launch option install.sh printed"
-msgstr "install.sh가 출력한 INT4 실행 옵션으로 게임을 시작하세요"
-
 # 0.0.8.2
-
 msgid "If the picture flickers with passes, turn on Detail stability (Composition > Detail stability: Auto or Always)."
 msgstr "Passes를 여러 번 쓸 때 화면이 깜박이면 디테일 안정성을 켜세요 (합성 > 디테일 안정성: Auto 또는 항상)."
 
@@ -3156,3 +3116,262 @@ msgstr "히스토리 정밀도"
 
 msgid "[Network] History Precision: the precision of the images NR keeps its previous result in. 16-bit (default): as NVIDIA's DLL keeps it, half the video memory. 32-bit: as up to 0.0.8.1; at 4K 133 MB more a network and 66 MB more each further pass. With several passes the two can differ in fine detail. Takes effect at once; the previous result starts afresh."
 msgstr "[Network] History Precision: NR이 이전 결과를 보관하는 이미지의 정밀도. 16비트(기본값): NVIDIA DLL과 같으며 비디오 메모리가 절반입니다. 32비트: 0.0.8.1까지와 같습니다. 4K에서 네트워크 하나당 133 MB, 패스가 하나 늘 때마다 66 MB를 더 씁니다. 여러 패스에서는 둘의 세부 묘사가 조금 다를 수 있습니다. 바로 적용되며 이전 결과는 처음부터 다시 시작합니다."
+
+msgid "CC_SMALL_FP8"
+msgstr "CC_SMALL_FP8 (최신)"
+
+msgid "CC_SMALL_FP8_EXPERIMENTAL"
+msgstr "CC_SMALL_FP8_EXPERIMENTAL (최신)"
+
+msgid "CC_SILVER_AARDWOLD"
+msgstr "CC_SILVER_AARDWOLD"
+
+msgid "CC_SILVER_AARDWOLD_OPTIMIZED"
+msgstr "CC_SILVER_AARDWOLD_OPTIMIZED"
+
+msgid "its int4 layers are not installed (run install.sh again)"
+msgstr "int4 레이어가 설치되지 않음 (install.sh를 다시 실행하세요)"
+
+msgid "its int4 layers are not installed (run install.bat again)"
+msgstr "int4 레이어가 설치되지 않음 (install.bat를 다시 실행하세요)"
+
+msgid "its int4 weights were not made at install (run install.sh again)"
+msgstr "설치 시 int4 가중치가 생성되지 않았습니다 (install.sh를 다시 실행하세요)"
+
+msgid "its int4 weights were not made at install (run install.bat again)"
+msgstr "설치 시 int4 가중치가 생성되지 않았습니다 (install.bat를 다시 실행하세요)"
+
+msgid "its int4 layers need the INT4 launch option install.sh printed"
+msgstr "int4 레이어에는 install.sh가 출력한 INT4 실행 옵션이 필요합니다"
+
+msgid "its int4 layers are not in this build"
+msgstr "이 빌드에는 int4 레이어가 없음"
+
+msgid "Optimized layers"
+msgstr "최적화 레이어"
+
+msgid "Quality"
+msgstr "품질"
+
+msgid "Balanced"
+msgstr "균형"
+
+msgid "Performance"
+msgstr "성능"
+
+msgid "CC_SILVER_AARDWOLD_OPTIMIZED (layers: quality)"
+msgstr "CC_SILVER_AARDWOLD_OPTIMIZED (최적화 레이어: 품질)"
+
+msgid "CC_SILVER_AARDWOLD_OPTIMIZED (layers: balanced)"
+msgstr "CC_SILVER_AARDWOLD_OPTIMIZED (최적화 레이어: 균형)"
+
+msgid "CC_SILVER_AARDWOLD_OPTIMIZED (layers: performance)"
+msgstr "CC_SILVER_AARDWOLD_OPTIMIZED (최적화 레이어: 성능)"
+
+msgid "Ultra Performance"
+msgstr "울트라 성능"
+
+msgid "CC_SILVER_AARDWOLD_OPTIMIZED (layers: ultra performance)"
+msgstr "CC_SILVER_AARDWOLD_OPTIMIZED (최적화 레이어: 울트라 성능)"
+
+msgid "[Network] OptimizedLayers, CC_SILVER_AARDWOLD_OPTIMIZED only: how many of its layers run in a faster form. It changes only how the network computes, not the resolution; every level's picture stays very close to CC_SILVER_AARDWOLD's. Quality: none of them in int4. Balanced: some of them in int4. Performance: also fixed attention on the first full-resolution layers. Ultra Performance (default): also more int4 layers, the fastest. Switching builds the network again in the background."
+msgstr "[Network] OptimizedLayers, CC_SILVER_AARDWOLD_OPTIMIZED 전용: 더 빠른 방식으로 실행하는 레이어의 양. 네트워크의 계산 방식만 바뀌고 해상도는 바뀌지 않으며, 어느 단계든 화면은 CC_SILVER_AARDWOLD와 매우 가깝습니다. 품질: int4를 쓰지 않음. 균형: 일부 레이어를 int4로 실행. 성능: 추가로 첫 전체 해상도 레이어에 고정 어텐션을 사용. 울트라 성능(기본값): 추가로 더 많은 레이어를 int4로 실행, 가장 빠름. 전환하면 네트워크를 백그라운드에서 다시 빌드합니다."
+
+msgid "[Network] Model. CC_SMALL_FP8: 310.9.16's default network. CC_SMALL_FP8_EXPERIMENTAL: ours, CC_SMALL_FP8 made faster. CC_SILVER_AARDWOLD: 310.8.0's network (310.9.16's preset 1). CC_SILVER_AARDWOLD_OPTIMIZED: ours, CC_SILVER_AARDWOLD made faster, its picture very close to it. Switching builds the new network in the background; the running one serves until it is ready."
+msgstr "[Network] Model. CC_SMALL_FP8: 310.9.16의 기본 네트워크. CC_SMALL_FP8_EXPERIMENTAL: 자체 개발, CC_SMALL_FP8를 더 빠르게 만든 것. CC_SILVER_AARDWOLD: 310.8.0의 네트워크(310.9.16의 프리셋 1). CC_SILVER_AARDWOLD_OPTIMIZED: 자체 개발, CC_SILVER_AARDWOLD를 더 빠르게 만든 것으로 화면이 그와 매우 가까움. 전환하면 새 네트워크를 백그라운드에서 빌드하며, 준비될 때까지 실행 중인 네트워크가 계속 동작합니다."
+
+msgid " (still going)"
+msgstr " (계속되는 중)"
+
+msgid "%8llu x  %s (last %.0f s ago)"
+msgstr "%8llu회  %s (마지막 %.0f초 전)"
+
+msgid "How often each layer was asked to run and ran, and why frames passed through without NR: in red what went wrong, in yellow what video memory stopped, dimmed what is part of normal running (a network being built, a frame size settling). The longest stretch without NR and how it began. Kept since the game started or the reset; also in the report and the diagnostic package."
+msgstr "각 레이어가 실행을 요청받은 횟수와 실제 실행한 횟수, 그리고 프레임이 NR 없이 통과한 이유: 빨간색은 문제가 생긴 것, 노란색은 비디오 메모리 때문에 막힌 것, 흐린 색은 정상 동작의 일부(네트워크 빌드 중, 프레임 크기 안정화 중)입니다. NR 없이 가장 오래 이어진 구간과 그 시작 원인도 표시합니다. 게임 시작 또는 초기화 이후 누적되며, 보고서와 진단 패키지에도 들어갑니다."
+
+msgid "Layer %d: ran %.1f %% (%llu of %llu)"
+msgstr "레이어 %d: 실행 %.1f %% (%llu / %llu)"
+
+msgid "Longest without NR: %.1f s%s, began with: %s"
+msgstr "NR 없이 가장 길었던 구간: %.1f초%s, 시작 원인: %s"
+
+msgid "NR: ran %.1f %% (%llu of %llu)"
+msgstr "NR: 실행 %.1f %% (%llu / %llu)"
+
+msgid "NRDisplayPedestal. Off (default): the dark pedestal is never removed (any codec). Before 0.0.8.3 0 was Auto."
+msgstr "NRDisplayPedestal. 끄기(기본값): 어떤 코덱에서도 암부 페데스탈을 제거하지 않습니다. 0.0.8.3 이전에는 0이 자동이었습니다."
+
+msgid "NRSdrBlackRestore. Off (default): no black-level restore (dark scenes keep NR's own black level). Before 0.0.8.3 0 was Auto."
+msgstr "NRSdrBlackRestore. 끄기(기본값): 블랙 복원을 하지 않습니다(어두운 장면은 NR 자체의 블랙 레벨 유지). 0.0.8.3 이전에는 0이 자동이었습니다."
+
+msgid "No layer was asked to run yet."
+msgstr "아직 실행을 요청받은 레이어가 없습니다."
+
+msgid "One zip in the game's folder (dlssnr-amd-diag-<date>-<time>.zip) to attach to a bug report: the report below with this session's run statistics, the versions and checksums of the installed programs, the system (Windows or Wine, the GPU and its driver), every log and settings file in the game's folder and a crash dump if there is one. Ticked: also the before / after screenshot pair of the current frame. It holds the game's folder path and the system's description; it stays on this computer, nothing is sent anywhere."
+msgstr "게임 폴더에 zip 하나를 만듭니다(dlssnr-amd-diag-<날짜>-<시간>.zip). 버그 보고에 첨부할 수 있습니다: 아래 보고서와 이번 세션의 실행 통계, 설치된 프로그램의 버전과 체크섬, 시스템 정보(Windows 또는 Wine, GPU와 드라이버), 게임 폴더의 모든 로그와 설정 파일, 크래시 덤프(있는 경우). 체크하면 현재 프레임의 전 / 후 스크린샷 쌍도 포함합니다. 게임 폴더 경로와 시스템 설명이 들어 있으며, 이 컴퓨터에만 남고 어디로도 전송되지 않습니다."
+
+msgid "Presents: %llu of the game's own, %llu frames shown (frame generation's too), %llu game frames run at DLSS-G's evaluate"
+msgstr "Present: 게임 자체 %llu회, 표시된 프레임 %llu(프레임 생성 포함), DLSS-G의 evaluate에서 실행된 게임 프레임 %llu"
+
+msgid "Save a diagnostic package"
+msgstr "진단 패키지 저장"
+
+msgid "This session:"
+msgstr "이번 세션:"
+
+msgid "[Network] Memory Guard. On: a network is built only while the video memory it needs is free (measured on your GPU when the network is first built), and the running one steps aside once video memory has run out. Off (default): no such check - NR builds and runs in whatever video memory is left; a game left short of it may stutter or fail to load its own data. Applied at once."
+msgstr "[Network] Memory Guard. 켜기: 네트워크에 필요한 비디오 메모리가 비어 있을 때만 빌드하며(필요량은 네트워크를 처음 빌드할 때 사용 중인 GPU에서 측정), 비디오 메모리가 바닥나면 실행 중인 네트워크가 물러납니다. 끄기(기본값): 이 검사를 하지 않고 남은 비디오 메모리에서 그대로 빌드하고 실행하므로, 메모리가 부족해진 게임이 끊기거나 자체 데이터를 불러오지 못할 수 있습니다. 즉시 적용됩니다."
+
+msgid "[Network] Memory Guard. On: a network is built only while the video memory it needs is free (measured on your GPU when the network is first built). Off (default): no such check - NR builds in whatever video memory is left; a game left short of it may stutter or fail to load its own data. Applied at once."
+msgstr "[Network] Memory Guard. 켜기: 네트워크에 필요한 비디오 메모리가 비어 있을 때만 빌드합니다(필요량은 네트워크를 처음 빌드할 때 사용 중인 GPU에서 측정). 끄기(기본값): 이 검사를 하지 않고 남은 비디오 메모리에서 그대로 빌드하므로, 메모리가 부족해진 게임이 끊기거나 자체 데이터를 불러오지 못할 수 있습니다. 즉시 적용됩니다."
+
+msgid "never passed a frame through"
+msgstr "프레임을 그대로 통과시킨 적 없음"
+
+msgid "with a screenshot pair"
+msgstr "스크린샷 쌍 포함"
+
+msgid "Layer %d runs a network of its own (%s); the model here is for the layers set to [Global]."
+msgstr "레이어 %d는 자체 네트워크(%s)를 사용 중입니다. 여기의 모델은 [Global]로 설정된 레이어에만 적용됩니다."
+
+msgid "NR settings runs a network of its own (%s); the model here is for NR set to [Global]."
+msgstr "NR settings는 자체 네트워크(%s)를 사용 중입니다. 여기의 모델은 [Global]로 설정된 NR에만 적용됩니다."
+
+msgid "Running: %s"
+msgstr "실행 중: %s"
+
+msgid "D3D12 passthrough (experimental)"
+msgstr "D3D12 패스스루 (실험적)"
+
+msgid "%s at launch (dlssnr-amd.ini [D3D12Passthrough] Enabled)"
+msgstr "시작 시 %s (dlssnr-amd.ini [D3D12Passthrough] Enabled)"
+
+msgid "GPU: %s"
+msgstr "GPU: %s"
+
+msgid "Check: %s"
+msgstr "검사: %s"
+
+msgid "Backend: %s"
+msgstr "백엔드: %s"
+
+msgid "D3D12 passthrough (next launch)"
+msgstr "D3D12 패스스루 (다음 실행부터)"
+
+msgid "D3D12 passthrough: the network runs as ACO machine code on the game's D3D12 device"
+msgstr "D3D12 패스스루: 네트워크가 ACO 기계어로 게임의 D3D12 장치에서 실행됩니다"
+
+msgid "its RDNA3 int4 layers are not installed (run install.bat again)"
+msgstr "RDNA3용 int4 레이어가 설치되어 있지 않습니다 (install.bat을 다시 실행하세요)"
+
+msgid "the game hands its frame generation no HUD-less frame (it is dispatched from a frame of its own)"
+msgstr "게임이 프레임 생성에 HUD 없는 프레임을 주지 않습니다 (프레임 생성이 자체 프레임에서 디스패치됩니다)"
+
+msgid "the game's frame generation is dispatched from the back buffer itself"
+msgstr "게임의 프레임 생성이 백 버퍼 자체에서 디스패치됩니다"
+
+msgid "Pass OptiScaler's menu key through"
+msgstr "OptiScaler 메뉴 키 통과"
+
+msgid "[NRControl] PassOptiScalerKey. On: while NR Control is open, OptiScaler's menu key (Insert, or the key its OptiScaler.ini sets) still reaches OptiScaler, so its menu opens and closes without closing this one first. Off (default): NR Control keeps every key from the game while it is open. Applied within a second."
+msgstr "[NRControl] PassOptiScalerKey. 켜기: NR Control이 열려 있어도 OptiScaler의 메뉴 키(Insert 또는 OptiScaler.ini에서 정한 키)가 OptiScaler에 전달되어, 이 메뉴를 닫지 않고도 OptiScaler 메뉴를 열고 닫을 수 있습니다. 끄기(기본값): NR Control이 열려 있는 동안 모든 키를 게임에서 가로챕니다. 1초 안에 적용됩니다."
+
+msgid "Passthrough"
+msgstr "패스스루"
+
+msgid "On the OptiScaler route in D3D12 games on an RX 9000 or RX 7000: NR's network runs on the game's own D3D12 device instead of through the Vulkan bridge. A game it cannot serve uses the bridge."
+msgstr "OptiScaler 경로의 D3D12 게임과 RX 9000 / RX 7000에서: NR 네트워크를 Vulkan 브리지 대신 게임 자체의 D3D12 장치에서 실행합니다. 지원할 수 없는 게임은 브리지를 사용합니다."
+
+msgid "Frames: %llu on the game's D3D12 device, %llu through the Vulkan bridge, %llu waiting (no NR)"
+msgstr "프레임: 게임의 D3D12 장치에서 %llu, Vulkan 브리지를 통해 %llu, 대기 중(NR 없음) %llu"
+
+msgid "Interleaved"
+msgstr "Interleaved"
+
+msgid "NRFastMethod. Extrapolation pushes this frame's one-pass edit further along its own direction; no motion vectors needed, works from the first frame. Feedback feeds the previous frame's edit, moved by the motion vectors, back into the network input; needs motion vectors and builds up over the first frames. Hybrid uses Feedback where history holds and Extrapolation on new surfaces, cuts and edges. Edit strength scales the network's edit in stops, as Adjust NR's look's Edit strength does. Interleaved runs the legacy passes one per frame in turn, each with its own history; a still picture looks as legacy's, moving pictures follow the motion vectors (needed: without them it does not run, one network pass). Each method keeps its own settings."
+msgstr "NRFastMethod. Extrapolation: 이번 프레임의 1패스 편집을 같은 방향으로 더 밀어 줍니다. 모션 벡터가 필요 없으며 첫 프레임부터 동작합니다. Feedback: 이전 프레임의 편집을 모션 벡터로 이동해 네트워크 입력에 다시 넣습니다. 모션 벡터가 필요하며 처음 몇 프레임에 걸쳐 쌓입니다. Hybrid: 히스토리가 유효한 곳에서는 Feedback, 새로운 표면, 장면 전환, 가장자리에서는 Extrapolation을 사용합니다. 편집 강도는 Adjust NR's look의 편집 강도처럼 네트워크의 편집량을 스톱 단위로 조절합니다. Interleaved: legacy 패스들을 프레임마다 하나씩 번갈아 실행하며 패스마다 자체 히스토리를 가집니다. 정지 화면은 legacy와 같게 보이고, 움직이는 화면은 모션 벡터를 따릅니다(필요: 없으면 실행되지 않고 네트워크를 한 번만 실행). 각 방식은 자체 설정을 유지합니다."
+
+msgid "NRFastInterleavedPasses. Interleaved: how many legacy passes (2 to 8) take turns, one each frame. Each pass more needs more video memory."
+msgstr "NRFastInterleavedPasses. Interleaved: 번갈아 실행할 legacy 패스 수(2~8), 프레임마다 하나씩. 패스가 늘수록 비디오 메모리를 더 사용합니다."
+
+msgid "No motion vectors: Interleaved cannot run (one network pass)."
+msgstr "모션 벡터 없음: Interleaved를 실행할 수 없습니다(네트워크 1회만 실행)."
+
+msgid "Interleaved / Feedback / Hybrid cannot run with peripheral compression (one network pass)."
+msgstr "주변부 압축이 켜져 있으면 Interleaved / Feedback / Hybrid를 실행할 수 없습니다(네트워크 1회만 실행)."
+
+msgid "Interleaved cannot run: no motion vectors"
+msgstr "Interleaved를 실행할 수 없음: 모션 벡터 없음"
+
+msgid "Interleaved cannot run: peripheral compression is on"
+msgstr "Interleaved를 실행할 수 없음: 주변부 압축이 켜져 있음"
+
+msgid "Interleaved cannot run: its shaders are missing"
+msgstr "Interleaved를 실행할 수 없음: 셰이더가 없음"
+
+msgid "Feedback / Hybrid cannot run: peripheral compression is on"
+msgstr "Feedback / Hybrid를 실행할 수 없음: 주변부 압축이 켜져 있음"
+
+msgid "Feedback / Hybrid cannot run: no motion vectors"
+msgstr "Feedback / Hybrid를 실행할 수 없음: 모션 벡터 없음"
+
+msgid "No motion vectors: Feedback / Hybrid cannot run (one network pass)."
+msgstr "모션 벡터 없음: Feedback / Hybrid를 실행할 수 없습니다(네트워크 1회만 실행)."
+
+msgid "present"
+msgstr "Present"
+
+msgid "FastInterleavedPasses. Interleaved: how many legacy passes (2 to 8) take turns, one each frame. Each pass more needs more video memory."
+msgstr "FastInterleavedPasses. Interleaved: 번갈아 실행할 legacy 패스 수(2~8), 프레임마다 하나씩. 패스가 늘수록 비디오 메모리를 더 사용합니다."
+
+msgid "FastMethod. Interleaved runs the legacy passes one a frame in turn, each with its own history, and keeps each pass's change moved along the motion vectors: close to Passes (legacy) at one pass's cost; needs motion vectors and does not run with peripheral compression (then one network pass). Extrapolation pushes this frame's one-pass edit further along its own direction; no motion vectors needed, works from the first frame. Feedback feeds the previous frame's edit, moved by the motion vectors, back into the network input; needs motion vectors and builds up over the first frames. Hybrid uses Feedback where history holds and Extrapolation on new surfaces, cuts and edges. Edit strength scales the network's edit in stops, as Adjust NR's look's Edit strength does. Each method keeps its own settings."
+msgstr "FastMethod. Interleaved: legacy 패스들을 프레임마다 하나씩 번갈아 실행하며 패스마다 자체 히스토리를 가지고, 각 패스의 변화를 모션 벡터를 따라 이동해 유지합니다: 1패스 비용으로 Passes (legacy)에 가깝습니다. 모션 벡터가 필요하며 주변부 압축이 켜져 있으면 실행되지 않습니다(그때는 네트워크 1회만 실행). Extrapolation: 이번 프레임의 1패스 편집을 같은 방향으로 더 밀어 줍니다. 모션 벡터가 필요 없으며 첫 프레임부터 동작합니다. Feedback: 이전 프레임의 편집을 모션 벡터로 이동해 네트워크 입력에 다시 넣습니다. 모션 벡터가 필요하며 처음 몇 프레임에 걸쳐 쌓입니다. Hybrid: 히스토리가 유효한 곳에서는 Feedback, 새로운 표면, 장면 전환, 가장자리에서는 Extrapolation을 사용합니다. 편집 강도는 Adjust NR's look의 편집 강도처럼 네트워크의 편집량을 스톱 단위로 조절합니다. 각 방식은 자체 설정을 유지합니다."
+
+msgid "[HudFix] Mode. HUD FIX keeps the game's HUD (crosshair, bars, subtitles, menus) as the game drew it while NR changes the rest; for the layers placed at Present. Off (default): the HUD goes through NR like the rest. Auto: the best method that can run, each frame. Frame generation's HUD-less frame: the frame without its HUD that the game hands its frame generation (FSR 3.1, XeSS, DLSS-G through Streamline or NGX; D3D12 games); NR runs on it and the HUD is put back as it was; where the game keeps it until the present, frame generation is given NR's answer in its place. OptiScaler's own frame generation gets no such frame from the game: Captured serves those games. Captured before the HUD: the frame copied where the game starts drawing its HUD; NR runs on it and the HUD is put back as it was. Where the game composes its HUD in its final pass, the picture that pass reads is taken instead, once it is checked against the presented frame. A method that cannot run here is greyed out with its reason."
+msgstr "[HudFix] Mode. HUD FIX는 NR이 나머지를 바꾸는 동안 게임의 HUD(조준점, 바, 자막, 메뉴)를 게임이 그린 그대로 유지합니다. Present에 배치된 레이어에 적용됩니다. Off(기본값): HUD도 나머지와 같이 NR을 거칩니다. Auto: 매 프레임 실행 가능한 최선의 방식을 사용합니다. 프레임 생성의 HUD 없는 프레임: 게임이 프레임 생성(FSR 3.1, XeSS, Streamline 또는 NGX를 통한 DLSS-G, D3D12 게임)에 넘겨주는 HUD가 없는 프레임에 NR을 실행하고 HUD를 원래대로 되돌립니다. 게임이 그 프레임을 present 때까지 보관하는 경우에는 프레임 생성에 NR의 결과가 대신 전달됩니다. OptiScaler 자체 프레임 생성에는 게임이 이런 프레임을 주지 않으므로 해당 게임에는 Captured를 사용합니다. HUD 이전에 캡처: 게임이 HUD를 그리기 시작하는 지점에서 복사한 프레임에 NR을 실행하고 HUD를 원래대로 되돌립니다. 게임이 최종 패스에서 HUD를 합성하는 경우에는 그 패스가 읽는 화면을 대신 사용합니다(표시되는 프레임과 대조한 뒤에). 여기서 실행할 수 없는 방식은 이유와 함께 회색으로 표시됩니다."
+
+msgid "off: Estimated is switched off in this version"
+msgstr "끔: 이 버전에서는 추정(Estimated)이 비활성화되어 있습니다"
+
+msgid " (switched off in this version)"
+msgstr " (이 버전에서 비활성화됨)"
+
+msgid "Estimated is switched off in this version: HUD FIX is off."
+msgstr "이 버전에서는 추정(Estimated)이 비활성화되어 있습니다: HUD FIX 꺼짐."
+
+msgid "captured: the final pass's input"
+msgstr "HUD 이전에 캡처: 최종 패스의 입력"
+msgid "the final pass's input: "
+msgstr "최종 패스의 입력: "
+msgid "on the ReShade route the capture is set up as the game starts: start it with HUD FIX on"
+msgstr "ReShade 경로에서는 캡처가 게임 시작 시 준비됩니다: HUD FIX를 켠 상태로 게임을 시작하세요"
+
+msgid "NR has no network for this GPU ("
+msgstr "NR에 이 GPU용 네트워크가 없습니다 ("
+
+msgid ": NR has no network for this GPU ("
+msgstr ": NR에 이 GPU용 네트워크가 없습니다 ("
+
+msgid "GPU architecture (restart the game)"
+msgstr "GPU 아키텍처 (게임 재시작 시 적용)"
+
+msgid "Auto (AMD's driver tells)"
+msgstr "자동 (AMD 드라이버가 판단)"
+
+msgid "[GPU] Architecture. Auto (default): AMD's driver names the GPU NR's code is for - a renamed or spoofed GPU (OptiScaler's GPU spoofing) does not change that. Set it by hand only where NR says it cannot tell this GPU: it is then used as set, whatever the driver or the GPU's IDs say (a wrong one runs another GPU's machine code and the game may stop - set it back to Auto). Takes effect when the game restarts."
+msgstr "[GPU] Architecture. 자동(기본값): NR 코드가 어떤 GPU용인지 AMD 드라이버가 알려 줍니다. GPU 이름 변경이나 위장(OptiScaler의 GPU 위장)은 판단에 영향을 주지 않습니다. NR이 이 GPU를 식별할 수 없다고 할 때만 직접 선택하세요. 직접 선택하면 드라이버나 GPU ID와 관계없이 선택한 대로 사용됩니다(잘못 선택하면 다른 GPU용 기계어가 실행되어 게임이 멈출 수 있으니 자동으로 되돌리세요). 게임을 다시 시작하면 적용됩니다."
+
+msgid "Interleaved preset"
+msgstr "Interleaved 프리셋"
+
+msgid "NRFastInterleavedPreset. Interleaved's processing method."
+msgstr "NRFastInterleavedPreset. Interleaved의 처리 방식."
+
+msgid "FastInterleavedPreset. Interleaved's processing method."
+msgstr "FastInterleavedPreset. Interleaved의 처리 방식."
+
+msgid "Preset 1"
+msgstr "프리셋 1"
+
+msgid "Preset 2"
+msgstr "프리셋 2"

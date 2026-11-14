@@ -1950,3 +1950,21 @@ ColourStrength 0.50 / ReplaceDetailStrength 2.00 / Theme 4 / ExposureBias 1.00�
 `:2663-2668`（NRPresentFrames 缺失或 0 → 1，用户自选值不动）。
 AGENTS.md 的 push 前门禁 `check-module-contract.ps1` 已被上游删除，本轮以
 `check-release-freshness.ps1`（0 warning）+ host ci 替代。未打 tag、未发布。
+
+## 2026-11-14: 载荷正式切到 vendor 0.0.9；默认值 = NTE 实测调优
+
+**A/B 结果**：`OptScaler-NR-1.15.1-alpha-asi09` 在 NTE 上 passthrough 生效（用户确认），vendor 0.0.9 胜出。
+`third_party/mochizuki-asi/payload/` 已整体替换为 vendor 0.0.9 树（2,307 文件，ASI 9,611,520 B），
+TheAutomatic 的 0.0.8.3 私编变体留在 git 历史（`8b425e95^`~`d18590e7` 区间）可回退；候选导入树
+`payload-0.0.9/` 与 manifest 保留作溯源。导入工具 `tools/release/import-asi-payload.py`。
+
+**默认值跟随实机调优**（源：NTE `dlssnr-amd.ini`，2026-11-14）：
+- 宿主 `[Sharpness] Sharpness` 0.4 → **0.6**（`OverrideSharpness=true` 保留）。
+- 两个 ini 模板（optiscaler / renodx）写入 0.0.9 运行时回写的全部参数：`[Preprocess]
+  ExposureBias=1.00`、`[RenoDX] NRPresentFrames=1`（与安装器兜底一致）、`[RenoDX] Enabled=1`
+  （optiscaler 模板）、`[NRControl] Language=zh-CN, Theme=4, PassOptiScalerKey=0`、
+  `[D3D12Passthrough] Enabled=1`、`[GPU] Architecture=auto`、`[Layer1]` 链
+  （RenoDX before、CC_SMALL_FP8_EXPERIMENTAL、NRStyle=2、fast、NRLookColour=0.50、
+  NRLocalTone=0.25 等）。新装即得这套调优；安装器的 Network/Model 选择仍会按需覆盖。
+- 溯源：`payload.manifest.json`（逐文件 sha256）。`payload-0.0.9/` 候选树保留在盘上（gitignore），
+  确认无回退需要后可手动删除。

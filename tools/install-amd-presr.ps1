@@ -2571,23 +2571,22 @@ if ($installMochizuki) {
             Set-IniSettings $asiIni 'NRControl' ([ordered]@{ 'Language' = $asiMenuLanguage }) -OnlyMissing
         }
     }
-    # Fork baseline, verified on Neverness to Everness with frame generation on (2026-11-05):
-    # one wilsjo2 layer before the upscaler, plus the menu theme it was tested with. A [LayerN]
-    # section replaces [RenoDX] entirely for the running chain, so this is the chain itself, not a
-    # preference - which is why it is written only onto a fresh or overwritten ini. A layer with no
-    # Network key inherits [Network] Model, so the model chosen below still decides the network.
+    # Fork baseline, verified on Neverness to Everness with the 0.0.9 plugin and frame
+    # generation on (2026-11-14): one RenoDX layer before the upscaler, plus the menu theme
+    # it was tested with. A [LayerN] section replaces [RenoDX] entirely for the running chain,
+    # so this is the chain itself, not a preference - which is why it is written only onto a
+    # fresh or overwritten ini. A layer with no Network key inherits [Network] Model, so the
+    # model chosen below still decides the network.
     if ((-not $asiIniExisted -or $overwriteIni) -and (Test-Path -LiteralPath $asiIni -PathType Leaf)) {
         Set-IniSettings $asiIni 'Layer1' ([ordered]@{
-            'Enabled' = '1'; 'Processing' = 'wilsjo2'; 'Placement' = 'before'; 'Style' = '2'
-            'Intensity' = '1.00'; 'LocalTone' = '0.00'; 'PassesMode' = 'fast'
-            'FastExtrapolationPasses' = '3'; 'ColourStrength' = '0.50'
-            # Restore sharpness. The plugin defaults it to 0 (no detail recovery in the replace
-            # modes); this fork's baseline runs it at the top of its 0..2 range.
-            'ReplaceDetailStrength' = '2.00'
+            'Enabled' = '1'; 'Processing' = 'RenoDX'; 'Placement' = 'before'
+            'NRStyle' = '2'; 'NRLocalStructure' = '1.00'; 'NRPassesMode' = 'fast'
+            'NRLookMode' = '1'; 'NRLookColour' = '0.50'; 'NRDetailStability' = '0'
+            'NRLocalTone' = '0.25'; 'NRFastInterleavedPasses' = '3'
         })
         Set-IniSettings $asiIni 'NRControl' ([ordered]@{ 'Theme' = '4' })
         Set-IniSettings $asiIni 'Preprocess' ([ordered]@{ 'ExposureBias' = '1.00' })
-        Write-Host '  dlssnr-amd.ini: [Layer1] wilsjo2 before (fast, Style 2, Intensity 1.00, ColourStrength 0.50), ExposureBias 1.00, Theme 4 - this fork''s verified baseline.' -ForegroundColor Green
+        Write-Host '  dlssnr-amd.ini: [Layer1] RenoDX before (fast-interleaved 3, NRStyle 2, NRLookColour 0.50, NRLocalTone 0.25), ExposureBias 1.00, Theme 4 - this fork''s verified baseline.' -ForegroundColor Green
     }
     # A fresh ini gets this install's startup network. An existing user ini is
     # preserved except when the caller explicitly chose a startup network; that

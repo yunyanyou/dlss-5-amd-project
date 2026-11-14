@@ -40,7 +40,7 @@ REQUIRED_FILES = [
     'optimized/dlssnr-optimized.delta',
 ]
 REQUIRED_DIRS = ['dlssnr-amd/shaders']
-EXCLUDED_PREFIXES = ('dxvk/', 'vulkan/', 'reshade/', 'optiscaler/release/')
+EXCLUDED_PREFIXES = ('dxvk/', 'vulkan/', 'reshade/')  # vendor runtime shims and its own installer bits
 EXCLUDED_ROOT = {'install.bat', 'install.ps1', 'README.txt'}
 # Vendor layout -> fork payload layout. The plugin, probe and their licenses live
 # under optiscaler/asi/ in the vendor package; everything else keeps its path.
@@ -69,6 +69,14 @@ def wanted(zip_path: Path, strip: str = ''):
             continue
         rel = name[len(strip):] if strip and name.startswith(strip) else name
         if any(rel.startswith(p) for p in EXCLUDED_PREFIXES):
+            continue
+        # Keep only the plugin files from the vendor's optiscaler/ tree (its
+        # release/ holds the vendor's own unmodified OptiScaler host build).
+        if rel.startswith('optiscaler/') and not rel.startswith('optiscaler/asi/'):
+            continue
+        # Keep only the plugin files from the vendor's optiscaler/ tree (its
+        # release/ holds the vendor's own unmodified OptiScaler host build).
+        if rel.startswith('optiscaler/') and not rel.startswith('optiscaler/asi/'):
             continue
         if '/' not in rel and rel in EXCLUDED_ROOT:
             continue

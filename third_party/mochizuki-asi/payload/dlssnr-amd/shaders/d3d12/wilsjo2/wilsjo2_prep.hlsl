@@ -70,31 +70,31 @@ float3x3 spvInverse(float3x3 m)
 
 bool finite(float3 v)
 {
-    bool _1403 = !any(isnan(v));
-    bool _1410;
-    if (_1403)
+    bool _1412 = !any(isnan(v));
+    bool _1419;
+    if (_1412)
     {
-        _1410 = !any(isinf(v));
+        _1419 = !any(isinf(v));
     }
     else
     {
-        _1410 = _1403;
+        _1419 = _1412;
     }
-    return _1410;
+    return _1419;
 }
 
 float gain()
 {
-    float _1292;
+    float _1301;
     if ((pc.Load(16) & 1u) != 0u)
     {
-        _1292 = st.s[2];
+        _1301 = st.s[2];
     }
     else
     {
-        _1292 = exp2(asfloat(pc.Load(24)));
+        _1301 = exp2(asfloat(pc.Load(24)));
     }
-    return _1292;
+    return _1301;
 }
 
 bool unknee()
@@ -146,20 +146,20 @@ float3 knee(inout float3 d)
 {
     if (pc.Load(48) != 0u)
     {
-        float3 _343;
+        float3 _351;
         if (pc.Load(48) >= 3u)
         {
             float3 param = d;
-            float3 _348 = hybrid_encode(param);
-            _343 = _348;
+            float3 _356 = hybrid_encode(param);
+            _351 = _356;
         }
         else
         {
             float3 param_1 = d;
-            float3 _352 = neutwo_encode(param_1);
-            _343 = _352;
+            float3 _360 = neutwo_encode(param_1);
+            _351 = _360;
         }
-        return clamp(_343, 0.0f.xxx, 1.0f.xxx);
+        return clamp(_351, 0.0f.xxx, 1.0f.xxx);
     }
     float l = dot(d, float3(0.2125999927520751953125f, 0.715200006961822509765625f, 0.072200000286102294921875f));
     if (l > 0.75f)
@@ -257,8 +257,8 @@ float3 curve(float3 x)
         case 1u:
         {
             float3 param = x * asfloat(pc.Load(36));
-            float3 _1167 = neutral(param);
-            return _1167;
+            float3 _1176 = neutral(param);
+            return _1176;
         }
         case 2u:
         {
@@ -287,18 +287,18 @@ float3 curve(float3 x)
         }
         default:
         {
-            float3 _1205;
+            float3 _1214;
             if (unknee())
             {
                 float3 param_6 = x;
-                float3 _1210 = knee(param_6);
-                _1205 = _1210;
+                float3 _1219 = knee(param_6);
+                _1214 = _1219;
             }
             else
             {
-                _1205 = x;
+                _1214 = x;
             }
-            return _1205;
+            return _1214;
         }
     }
 }
@@ -370,20 +370,20 @@ float3 knee_inv(float3 d)
 {
     if (pc.Load(48) != 0u)
     {
-        float3 _409;
+        float3 _417;
         if (pc.Load(48) >= 3u)
         {
             float3 param = d;
-            float3 _414 = hybrid_decode(param);
-            _409 = _414;
+            float3 _422 = hybrid_decode(param);
+            _417 = _422;
         }
         else
         {
             float3 param_1 = d;
-            float3 _418 = neutwo_decode(param_1);
-            _409 = _418;
+            float3 _426 = neutwo_decode(param_1);
+            _417 = _426;
         }
-        return _409;
+        return _417;
     }
     float l = dot(d, float3(0.2125999927520751953125f, 0.715200006961822509765625f, 0.072200000286102294921875f));
     if (l <= 0.75f)
@@ -401,7 +401,7 @@ float3 neutral_inv(float3 y)
     {
         return y;
     }
-    float peak = ((0.057599999010562896728515625f / max(1.0f - np, 9.9999999747524270787835121154785e-07f)) - 0.23999999463558197021484375f) + 0.7599999904632568359375f;
+    float peak = ((0.057599999010562896728515625f / max(1.0f - np, 0.0078125f)) - 0.23999999463558197021484375f) + 0.7599999904632568359375f;
     float g = 1.0f - (1.0f / ((0.1500000059604644775390625f * (peak - np)) + 1.0f));
     return ((y - (g * np).xxx) / (1.0f - g).xxx) * (peak / np);
 }
@@ -516,12 +516,12 @@ float3 agx_inv(float3 y)
 {
     float3 v = mul(pow(max(y, 0.0f.xxx), 0.4545454680919647216796875f.xxx), spvInverse(float3x3(float3(1.19687902927398681640625f, -0.0528968535363674163818359375f, -0.0529716350138187408447265625f), float3(-0.0980208814144134521484375f, 1.1519031524658203125f, -0.098043449223041534423828125f), float3(-0.099029742181301116943359375f, -0.098961174488067626953125f, 1.1510736942291259765625f))));
     float param = v.x;
-    float _1129 = agx_sig_inv(param);
+    float _1138 = agx_sig_inv(param);
     float param_1 = v.y;
-    float _1133 = agx_sig_inv(param_1);
+    float _1142 = agx_sig_inv(param_1);
     float param_2 = v.z;
-    float _1137 = agx_sig_inv(param_2);
-    v = float3(_1129, _1133, _1137);
+    float _1146 = agx_sig_inv(param_2);
+    v = float3(_1138, _1142, _1146);
     v = exp2((v * 16.4999980926513671875f) + (-12.47393035888671875f).xxx);
     return mul(v, spvInverse(float3x3(float3(0.842479050159454345703125f, 0.0423282422125339508056640625f, 0.0423756539821624755859375f), float3(0.0784336030483245849609375f, 0.87846863269805908203125f, 0.0784336030483245849609375f), float3(0.079223744571208953857421875f, 0.07916612923145294189453125f, 0.8791429996490478515625f))));
 }
@@ -538,8 +538,8 @@ float3 curve_inv(float3 y)
         case 2u:
         {
             float3 param_1 = y;
-            float3 _1237 = reinhard_inv(param_1);
-            return _1237 / asfloat(pc.Load(36)).xxx;
+            float3 _1246 = reinhard_inv(param_1);
+            return _1246 / asfloat(pc.Load(36)).xxx;
         }
         case 3u:
         {
@@ -554,8 +554,8 @@ float3 curve_inv(float3 y)
         case 5u:
         {
             float3 param_4 = y;
-            float3 _1261 = aces_inv(param_4);
-            return _1261 / asfloat(pc.Load(36)).xxx;
+            float3 _1270 = aces_inv(param_4);
+            return _1270 / asfloat(pc.Load(36)).xxx;
         }
         case 6u:
         {
@@ -564,17 +564,17 @@ float3 curve_inv(float3 y)
         }
         default:
         {
-            float3 _1276;
+            float3 _1285;
             if (unknee())
             {
                 float3 param_6 = y;
-                _1276 = knee_inv(param_6);
+                _1285 = knee_inv(param_6);
             }
             else
             {
-                _1276 = y;
+                _1285 = y;
             }
-            return _1276;
+            return _1285;
         }
     }
 }
@@ -597,31 +597,50 @@ float3 backward(float3 y)
 
 float3 encode_as_proxy(float3 v)
 {
-    float3 _1417;
+    float3 _1426;
     if (pc.Load(52) == 0u)
     {
         float3 param = v;
-        float3 _1422 = knee(param);
-        float3 param_1 = _1422;
-        float3 _1424 = enc(param_1);
-        _1417 = _1424;
+        float3 _1431 = knee(param);
+        float3 param_1 = _1431;
+        float3 _1433 = enc(param_1);
+        _1426 = _1433;
     }
     else
     {
-        float3 _1429;
+        float3 _1438;
         if (pc.Load(52) == 1u)
         {
             float3 param_2 = v;
-            float3 _1434 = enc(param_2);
-            _1429 = _1434;
+            float3 _1443 = enc(param_2);
+            _1438 = _1443;
         }
         else
         {
-            _1429 = v;
+            _1438 = v;
         }
-        _1417 = _1429;
+        _1426 = _1438;
     }
-    return _1417;
+    return _1426;
+}
+
+float3 neutral_sdr_bound(float3 original, float3 resolved, float3 nin, float3 nout, float cap)
+{
+    float3 input_edit = abs(nout - nin);
+    float limit = cap * max(input_edit.x, max(input_edit.y, input_edit.z));
+    float3 residual = resolved - original;
+    float3 magnitude = abs(residual);
+    float peak = max(magnitude.x, max(magnitude.y, magnitude.z));
+    float3 _1485;
+    if (peak > limit)
+    {
+        _1485 = original + (residual * (limit / peak));
+    }
+    else
+    {
+        _1485 = resolved;
+    }
+    return _1485;
 }
 
 void comp_main()
@@ -632,17 +651,17 @@ void comp_main()
     st.s[2] = sv.z;
     st.s[3] = sv.w;
     int2 xy = int2(gl_GlobalInvocationID.xy);
-    bool _1477 = xy.x >= int(pc.Load(8));
-    bool _1487;
-    if (!_1477)
+    bool _1536 = xy.x >= int(pc.Load(8));
+    bool _1546;
+    if (!_1536)
     {
-        _1487 = xy.y >= int(pc.Load(12));
+        _1546 = xy.y >= int(pc.Load(12));
     }
     else
     {
-        _1487 = _1477;
+        _1546 = _1536;
     }
-    if (_1487)
+    if (_1546)
     {
         return;
     }
@@ -650,20 +669,20 @@ void comp_main()
     {
         float4 L = t0.Load(int3(xy, 0));
         float3 param = L.xyz;
-        float4 _1513;
+        float4 _1572;
         if (finite(param))
         {
             float3 param_1 = max(L.xyz, 0.0f.xxx);
-            float3 _1520 = forward(param_1);
-            float3 param_2 = _1520;
-            float3 _1522 = enc(param_2);
-            _1513 = float4(_1522, L.w);
+            float3 _1579 = forward(param_1);
+            float3 param_2 = _1579;
+            float3 _1581 = enc(param_2);
+            _1572 = float4(_1581, L.w);
         }
         else
         {
-            _1513 = float4(0.0f, 0.0f, 0.0f, L.w);
+            _1572 = float4(0.0f, 0.0f, 0.0f, L.w);
         }
-        a[xy] = _1513;
+        a[xy] = _1572;
         return;
     }
     float4 nin = t0.Load(int3(xy, 0));
@@ -671,45 +690,45 @@ void comp_main()
     float4 L_1 = t2.Load(int3(xy, 0));
     float4 P = t3.Load(int3(xy, 0));
     float3 M = P.xyz;
-    bool _1566 = any(bool3(nout.xyz.x != nin.xyz.x, nout.xyz.y != nin.xyz.y, nout.xyz.z != nin.xyz.z));
-    bool _1573;
-    if (_1566)
+    bool _1625 = any(bool3(nout.xyz.x != nin.xyz.x, nout.xyz.y != nin.xyz.y, nout.xyz.z != nin.xyz.z));
+    bool _1632;
+    if (_1625)
     {
         float3 param_3 = nout.xyz;
-        _1573 = finite(param_3);
+        _1632 = finite(param_3);
     }
     else
     {
-        _1573 = _1566;
+        _1632 = _1625;
     }
-    bool _1580;
-    if (_1573)
+    bool _1639;
+    if (_1632)
     {
         float3 param_4 = L_1.xyz;
-        _1580 = finite(param_4);
+        _1639 = finite(param_4);
     }
     else
     {
-        _1580 = _1573;
+        _1639 = _1632;
     }
-    bool _1587;
-    if (_1580)
+    bool _1646;
+    if (_1639)
     {
         float3 param_5 = P.xyz;
-        _1587 = finite(param_5);
+        _1646 = finite(param_5);
     }
     else
     {
-        _1587 = _1580;
+        _1646 = _1639;
     }
-    if (_1587)
+    if (_1646)
     {
         float3 param_6 = nin.xyz;
-        float3 _1594 = dec(param_6);
-        float3 din = _1594;
+        float3 _1653 = dec(param_6);
+        float3 din = _1653;
         float3 param_7 = nout.xyz;
-        float3 _1599 = dec(param_7);
-        float3 dout = _1599;
+        float3 _1658 = dec(param_7);
+        float3 dout = _1658;
         float3 p = max(L_1.xyz, 0.0f.xxx);
         float3 d;
         if ((pc.Load(16) & 16u) != 0u)
@@ -718,17 +737,48 @@ void comp_main()
         }
         else
         {
-            float3 param_8 = dout;
-            float3 param_9 = din;
-            d = backward(param_8) - backward(param_9);
+            float3 param_8 = 1.0f.xxx;
+            float3 _1689 = forward(param_8);
+            float3 w = _1689;
+            float3 param_9 = min(dout, max(w.x, max(w.y, w.z)).xxx);
+            float3 param_10 = din;
+            d = backward(param_9) - backward(param_10);
             float3 lim = (abs(dout - din) * asfloat(pc.Load(40))) / gain().xxx;
             d = clamp(d, -lim, lim);
         }
-        float3 param_10 = max(p + d, 0.0f.xxx);
-        float3 param_11 = p;
-        M = max((P.xyz + encode_as_proxy(param_10)) - encode_as_proxy(param_11), 0.0f.xxx);
-        float3 param_12 = M;
-        if (!finite(param_12))
+        float3 param_11 = max(p + d, 0.0f.xxx);
+        float3 param_12 = p;
+        M = max((P.xyz + encode_as_proxy(param_11)) - encode_as_proxy(param_12), 0.0f.xxx);
+        bool _1740 = pc.Load(52) == 1u;
+        bool _1746;
+        if (_1740)
+        {
+            _1746 = pc.Load(20) == 1u;
+        }
+        else
+        {
+            _1746 = _1740;
+        }
+        bool _1753;
+        if (_1746)
+        {
+            _1753 = (pc.Load(16) & 16u) == 0u;
+        }
+        else
+        {
+            _1753 = _1746;
+        }
+        if (_1753)
+        {
+            float3 param_13 = P.xyz;
+            float3 param_14 = M;
+            float3 param_15 = nin.xyz;
+            float3 param_16 = nout.xyz;
+            float param_17 = asfloat(pc.Load(40));
+            M = neutral_sdr_bound(param_13, param_14, param_15, param_16, param_17);
+        }
+        float3 param_18 = M;
+        if (!finite(param_18))
         {
             M = P.xyz;
         }
