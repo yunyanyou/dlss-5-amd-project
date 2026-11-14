@@ -18,6 +18,10 @@ param(
     [string]$OptiDll = '',
     [string]$DepsRoot = '',
     [string]$SigningThumbprint = '',
+    # Payload directory under third_party/mochizuki-asi/ (see import-asi-payload.py).
+    # 'payload' is the default; a candidate import (e.g. payload-0.0.9) can be staged
+    # here for A/B test packages without touching the default.
+    [string]$AsiPayloadDir = 'payload',
     # Local smoke package only: does not certify the release checks.
     [switch]$LocalTest,
     [switch]$AllowMissingDeps
@@ -115,7 +119,7 @@ if (!(Test-Path -LiteralPath $OptiDll)) {
 # Neural Rendering ships the official dlssnr-amd.asi payload, not the retired
 # built-in MochizukiNrRuntime.dll. Names and layout only; no hash gate, so the
 # user may replace the plugin or its resources with a newer official build.
-$asiPayload = Join-Path $root 'third_party/mochizuki-asi/payload'
+$asiPayload = Join-Path $root ('third_party/mochizuki-asi/' + $AsiPayloadDir)
 foreach ($required in @(
     'OptiScaler/plugins/dlssnr-amd.asi',
     'nr_present_probe.exe',

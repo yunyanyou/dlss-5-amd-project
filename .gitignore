@@ -71,3 +71,6 @@ GIT-REWRITE-STATUS.md
 
 assets/person-model/
 
+
+# Candidate ASI payload imports (git-tracked only after the A/B decision).
+/third_party/mochizuki-asi/payload-0.0.9/
