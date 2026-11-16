@@ -741,6 +741,12 @@ if (!(Test-Path $readmeZh)) { throw "Missing $readmeZh" }
 if (!(Test-Path $readmeEn)) { throw "Missing $readmeEn" }
 $installerSrc = Join-Path $root 'tools/install-amd-presr.ps1'
 if (!(Test-Path $installerSrc)) { throw "Missing $installerSrc" }
+# PowerShell 5.1 reads a BOM-less .ps1 with non-ASCII text as GBK, which mangles
+# the installer's Chinese strings and swallows line breaks. Fail fast here.
+$installerHead = [IO.File]::ReadAllBytes($installerSrc)
+if ($installerHead.Length -lt 3 -or $installerHead[0] -ne 0xEF -or $installerHead[1] -ne 0xBB -or $installerHead[2] -ne 0xBF) {
+    throw "tools/install-amd-presr.ps1 lost its UTF-8 BOM; restore it before packaging."
+}
 Copy-Item $installerSrc (Join-Path $stage 'Setup.ps1') -Force
 & (Join-Path $root 'tools/build/build-launcher.ps1') -OutDir (Join-Path $root 'exports/launcher')
 $launcherExe = Join-Path $root 'exports/launcher/OptScalerNR.Launcher.exe'
