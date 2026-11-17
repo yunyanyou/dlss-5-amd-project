@@ -1144,7 +1144,7 @@ if ($wantOpenRr) {
 if ($uninstallFirst) {
     try {
         $optiSource = Save-ReinstallSource (Join-Path $release 'OptiScaler.dll')
-        foreach ($name in @('OptiScaler.ini', 'OptiScaler', 'dlssnr-amd-optiscaler-renodx.ini', 'dlssnr-amd-optiscaler.ini', 'openrr-amd.ini')) {
+        foreach ($name in @('OptiScaler.ini', 'OptiScaler', 'font', 'fakenvapi.ini', 'dlssnr-amd-optiscaler-renodx.ini', 'dlssnr-amd-optiscaler.ini', 'openrr-amd.ini')) {
             $path = Join-Path $release $name
             if (Test-Path -LiteralPath $path) { $null = Save-ReinstallSource $path }
         }
@@ -1500,6 +1500,19 @@ function Get-PluginsTargetDirectory([string]$gameDir, [string]$iniPath) {
 Write-Host ''
 Write-Host "Installing $productTitle as $Proxy ..." -ForegroundColor Cyan
 Install-One (Join-Path $release 'OptiScaler.dll') $Proxy
+# CHS host extras: the Chinese menu font is resolved as font/wqy-microhei.ttc next to the
+# installed DLL, and fakenvapi.ini carries the CHS build's NvAPI-spoofing defaults.
+foreach ($extra in @('font', 'fakenvapi.ini')) {
+    $extraSrc = Join-Path $release $extra
+    if (Test-Path -LiteralPath $extraSrc -PathType Container) {
+        Get-ChildItem -LiteralPath $extraSrc -Recurse -File | ForEach-Object {
+            $rel = $_.FullName.Substring($extraSrc.Length).TrimStart('\', '/')
+            Install-One $_.FullName (Join-Path $extra $rel)
+        }
+    } elseif (Test-Path -LiteralPath $extraSrc -PathType Leaf) {
+        Install-One $extraSrc $extra
+    }
+}
 
 $ini = Join-Path $release 'OptiScaler.ini'
 $gameIni = Join-Path $game 'OptiScaler.ini'
