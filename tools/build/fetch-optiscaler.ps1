@@ -45,6 +45,9 @@ $PinnedReleaseManifest = [ordered]@{
     'OptiScaler/amd_fidelityfx_upscaler_dx12.dll'       = 'aad4fccccb29084a655f9a4f9f613bd22c8c03fb4a0f8840148cc6543b4ccace'
     'OptiScaler/amd_fidelityfx_upscaler_vk.dll'         = '4a7e895af6e0b615d40a84d59eb8c2b1054ad91cdd0c739567940270d51bdab7'
     'OptiScaler/D3D12_Optiscaler/D3D12Core.dll'         = '07d286c306f8117321422affd9e6388c12d0fb4be1c7fc689d9e899324feeb24'
+    # The CHS archive omits dlssg_to_fsr3_amd_is_better.dll; it is byte-identical to the
+    # vanilla pinned release's copy, restored from there so DLSSG-via-nvngx stays available.
+    'OptiScaler/dlssg_to_fsr3_amd_is_better.dll'        = '14e83096f4e7648b89a724208c6219508b44563ce8c44967c60a5fa46a9221e2'
     'OptiScaler/libxell.dll'                            = 'd2030dcd694fda8f2ec7e044b13e6db8f0b56d4ba9113a5efad334e3f3ded8c7'
     'OptiScaler/libxess_dx11.dll'                       = 'c7cfe86f0c9d94e4fb3696d3cd5035e2bbb6a8b1b0572f8b7395a4cdfd0c625e'
     'OptiScaler/libxess_fg.dll'                         = 'ec5e0c65e075570c6ede72618bb666d0be0c2e10b2ea9762c0fe8cb8e375ab27'
@@ -120,6 +123,22 @@ function Download-VerifiedFile([string]$Url, [string]$Dest, [string]$ExpectedSha
     Move-Item -LiteralPath $part -Destination $Dest -Force
 }
 
+function Get-7zTool {
+    $cache7zr = Join-Path $CacheRoot 'downloads\7zr.exe'
+    $candidates = @( @(
+        (Get-Command '7z.exe' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue),
+        "$env:ProgramFiles\7-Zip\7z.exe",
+        "${env:ProgramFiles(x86)}\7-Zip\7z.exe"
+    ) + $(if (Test-Path -LiteralPath $cache7zr -PathType Leaf) { @($cache7zr) } else { @() }) |
+        Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } )
+    if ($candidates.Count -gt 0) { return $candidates[0] }
+    # 7zr.exe is the standalone 7-Zip console build (~600 KB, 7z archives only, BCJ2-capable).
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $cache7zr) | Out-Null
+    Invoke-WebRequest -Uri 'https://www.7-zip.org/a/7zr.exe' -OutFile $cache7zr -UseBasicParsing
+    if (Test-Path -LiteralPath $cache7zr -PathType Leaf) { return $cache7zr }
+    return $null
+}
+
 function Expand-ArchiveWith7zOrNet([string]$ArchivePath, [string]$DestDir) {
     if (Test-Path -LiteralPath $DestDir) { Remove-Item -LiteralPath $DestDir -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $DestDir | Out-Null
@@ -127,24 +146,11 @@ function Expand-ArchiveWith7zOrNet([string]$ArchivePath, [string]$DestDir) {
         Expand-Archive -LiteralPath $ArchivePath -DestinationPath $DestDir -Force
         return
     }
-    $cache7zr = Join-Path $CacheRoot 'downloads\7zr.exe'
-    $extraCandidates = @()
-    if (Test-Path -LiteralPath $cache7zr -PathType Leaf) { $extraCandidates += $cache7zr }
-    $7zCandidates = @( @(
-        (Get-Command '7z.exe' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue),
-        "$env:ProgramFiles\7-Zip\7z.exe",
-        "${env:ProgramFiles(x86)}\7-Zip\7z.exe"
-    ) + $extraCandidates | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } )
-    if ($7zCandidates.Count -eq 0) {
-        # 7zr.exe is the standalone 7-Zip console build (~600 KB, 7z archives only, BCJ2-capable).
-        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $cache7zr) | Out-Null
-        Invoke-WebRequest -Uri 'https://www.7-zip.org/a/7zr.exe' -OutFile $cache7zr -UseBasicParsing
-        if (-not (Test-Path -LiteralPath $cache7zr -PathType Leaf)) {
-            throw "7z.exe is required to unpack $ArchivePath and 7zr.exe could not be fetched. Install 7-Zip or pass -OptiDir pointing to an unpacked OptiScaler folder."
-        }
-        $7zCandidates = @($cache7zr)
+    $tool = Get-7zTool
+    if (-not $tool) {
+        throw "7z.exe is required to unpack $ArchivePath and 7zr.exe could not be fetched. Install 7-Zip or pass -OptiDir pointing to an unpacked OptiScaler folder."
     }
-    & $7zCandidates[0] x -y ("-o" + $DestDir) -- $ArchivePath | Out-Null
+    & $tool x -y ("-o" + $DestDir) -- $ArchivePath | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "7z failed unpacking $ArchivePath" }
 }
 
@@ -168,6 +174,18 @@ function Normalize-ChsLayout([string]$Dir) {
     $d3d12 = Join-Path $Dir 'D3D12_Optiscaler'
     if (Test-Path -LiteralPath $d3d12 -PathType Container) {
         Move-Item -LiteralPath $d3d12 (Join-Path $optiDir 'D3D12_Optiscaler') -Force
+    }
+    # The CHS archive omits dlssg_to_fsr3_amd_is_better.dll; restore the pinned vanilla copy.
+    $dlssg = Join-Path $optiDir 'dlssg_to_fsr3_amd_is_better.dll'
+    $canonicalDlssg = Join-Path $CacheRoot 'optiscaler\dlssg_to_fsr3_amd_is_better.dll'
+    if (-not (Test-Path -LiteralPath $canonicalDlssg -PathType Leaf)) {
+        $vanillaArchive = Join-Path $CacheRoot 'downloads\OptiScaler_v10.0.0-pre1_20261109.7z'
+        if (Test-Path -LiteralPath $vanillaArchive -PathType Leaf) {
+            & (Get-7zTool) e -y ("-o" + (Join-Path $CacheRoot 'optiscaler')) $vanillaArchive "OptiScaler\dlssg_to_fsr3_amd_is_better.dll" | Out-Null
+        }
+    }
+    if (-not (Test-Path -LiteralPath $dlssg -PathType Leaf) -and (Test-Path -LiteralPath $canonicalDlssg -PathType Leaf)) {
+        Copy-Item -LiteralPath $canonicalDlssg $dlssg -Force
     }
 }
 
