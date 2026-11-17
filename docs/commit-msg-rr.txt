@@ -1,0 +1,9 @@
+feat(openrr): ship the self-built zh standalone OpenRR ASI
+
+Replace the vendored 3.2 MB bridge ASI with a full standalone build from
+TheAutomatic/OpenRR-ASI (24.6 MB, embedded runtime), with 51 menu strings
+translated to Simplified Chinese and the menu font switched to
+NotoSansCJKsc (the embedded Inter face has no CJK glyphs). The payload's
+shaders/ are swapped to the build's own SPIR-V output; shaders-gfx11 is
+kept. The matching self-built zh OptiScaler host is packaged via -OptiDir;
+docs/decisions.md records the build recipe and the mingw compat patches.
