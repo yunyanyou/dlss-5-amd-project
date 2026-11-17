@@ -98,6 +98,16 @@ Copy-Item -LiteralPath (Join-Path $optiReleaseDir 'OptiScaler.ini') -Destination
 Get-ChildItem -LiteralPath (Join-Path $optiReleaseDir 'OptiScaler') | ForEach-Object {
     Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $stage 'OptiScaler') -Recurse -Force
 }
+# CHS host extras: the Chinese menu font (loaded as font/wqy-microhei.ttc next to the DLL)
+# and its fakenvapi defaults.
+$chsFont = Join-Path $optiReleaseDir 'font'
+if (Test-Path -LiteralPath $chsFont -PathType Container) {
+    Copy-Item -LiteralPath $chsFont (Join-Path $stage 'font') -Recurse -Force
+}
+$chsfakenvapi = Join-Path $optiReleaseDir 'fakenvapi.ini'
+if (Test-Path -LiteralPath $chsfakenvapi -PathType Leaf) {
+    Copy-Item -LiteralPath $chsfakenvapi (Join-Path $stage 'fakenvapi.ini') -Force
+}
 if (Test-Path -LiteralPath (Join-Path $optiReleaseDir 'Licenses') -PathType Container) {
     Get-ChildItem -LiteralPath (Join-Path $optiReleaseDir 'Licenses') -File | Copy-Item -Destination (Join-Path $stage 'Licenses') -Force
 }
