@@ -110,6 +110,11 @@ $wanted = [ordered]@{
     'Log|LogToFile'          = 'true'
     'Log|LogLevel'           = '1'
     'Menu|FGShortcutKey'     = '-1'
+    # Fork look: crimson accent for the host menu, matching NR Control's Theme=4
+    # (Crimson) and the launcher's #E3122B accent.
+    'Menu|AccentColorR'      = '0.89'
+    'Menu|AccentColorG'      = '0.07'
+    'Menu|AccentColorB'      = '0.17'
 }
 $raw = [IO.File]::ReadAllText($iniPath)
 $newline = if ($raw.Contains("`r`n")) { "`r`n" } else { "`n" }
