@@ -125,6 +125,14 @@ $wanted = [ordered]@{
     'Menu|AccentColorR'      = '0.89'
     'Menu|AccentColorG'      = '0.07'
     'Menu|AccentColorB'      = '0.17'
+    # Fork FG chain, verified on NTE: DLSSG via Streamline as the input, XeFG as the output
+    # with 4X interpolation (InterpolationCount 3 = 4X per the ini docs).
+    'FrameGen|FGInput'       = 'dlssg'
+    'FrameGen|FGOutput'      = 'xefg'
+    'XeFG|InterpolationCount' = '3'
+    # Fork sharpening baseline: fixed 0.6 (override required or the value is ignored).
+    'Sharpness|OverrideSharpness' = 'true'
+    'Sharpness|Sharpness'    = '0.6'
 }
 $raw = [IO.File]::ReadAllText($iniPath)
 $newline = if ($raw.Contains("`r`n")) { "`r`n" } else { "`n" }
