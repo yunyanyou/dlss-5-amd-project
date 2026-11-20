@@ -127,6 +127,9 @@ $wanted = [ordered]@{
     'Menu|AccentColorB'      = '0.17'
     # Fork FG chain, verified on NTE: DLSSG via Streamline as the input, XeFG as the output
     # with 4X interpolation (InterpolationCount 3 = 4X per the ini docs).
+    # Enabled=true is required: with the key unset the host follows the game's DLSSG
+    # state, and NTE asks for 2X — so XeFG would run 2X instead of 4X.
+    'FrameGen|Enabled'       = 'true'
     'FrameGen|FGInput'       = 'dlssg'
     'FrameGen|FGOutput'      = 'xefg'
     'XeFG|InterpolationCount' = '3'
