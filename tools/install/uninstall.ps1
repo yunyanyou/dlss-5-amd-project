@@ -177,7 +177,7 @@ $projectLeafNames = @(
     'person-model/concrt140.dll', 'person-model/vccorlib140.dll',
     'Uninstall.bat','Uninstall.ps1','Remove_OptiScaler.bat','Remove OptiScaler.bat','remove_optiscaler.sh','xess-compat.ps1'
 )
-$selfLeafNames = @('Uninstall_OptiScaler_NR.bat','Uninstall_OptiScaler_NR.ps1','Uninstall.bat','Uninstall.ps1','mochizuki-owned.txt','xess-compat.ps1','OptiScalerPanel.exe','OptiScaler代理切换.bat')
+$selfLeafNames = @('Uninstall_OptiScaler_NR.bat','Uninstall_OptiScaler_NR.ps1','Uninstall.bat','Uninstall.ps1','mochizuki-owned.txt','xess-compat.ps1','compat-repair.ps1','OptiScalerPanel.exe','OptiScaler代理切换.bat')
 $pluginResourceDirs = @('dlssnr-amd', 'openrr-amd', 'opennr-rr')
 $installRecords = @('dlssnr-amd-install.txt', 'openrr-shaders-install.txt', 'amd-presr-install.txt')
 # spdlog rotates OptiScaler.log into OptiScaler.1.log; older sinks used .log.1.

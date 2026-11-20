@@ -737,6 +737,12 @@ $xessCompatSrc = Find-FirstFile @(
     (Join-Path $PSScriptRoot 'xess-compat.ps1'),
     (Join-Path $PSScriptRoot 'install/xess-compat.ps1')
 )
+# The proxy-switch panel drives compat-repair.ps1; it must sit beside the
+# installed xess-compat.ps1 for the panel's repair/restore buttons to work.
+$compatRepairSrc = Find-FirstFile @(
+    (Join-Path $release 'compat-repair.ps1'),
+    (Join-Path $Root 'compat-repair.ps1')
+)
 
 # Hash: only known danielblnc runtimes are supported. The RVA layout is pinned to
 # each binary — a different build will not run correctly. Fail closed.
@@ -2700,6 +2706,9 @@ if ($wantOpenRr) {
 Install-One $ps1Src 'Uninstall_OptiScaler_NR.ps1'
 if ($xessCompatSrc) {
     Install-One $xessCompatSrc 'xess-compat.ps1'
+}
+if ($compatRepairSrc) {
+    Install-One $compatRepairSrc 'compat-repair.ps1'
 }
 $ownedPin = Join-Path $Root 'mochizuki-owned.txt'
 if (Test-Path -LiteralPath $ownedPin -PathType Leaf) {

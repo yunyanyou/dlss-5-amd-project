@@ -237,7 +237,8 @@ foreach ($pair in @(
     @('tools/install/install-capabilities.ps1', 'install-capabilities.ps1'),
     @('tools/install/library-scan.ps1', 'library-scan.ps1'),
     @('tools/install/proxy-probe.ps1', 'proxy-probe.ps1'),
-    @('tools/install/xess-compat.ps1', 'xess-compat.ps1')
+    @('tools/install/xess-compat.ps1', 'xess-compat.ps1'),
+    @('tools/compat-repair.ps1', 'compat-repair.ps1')
 )) {
     $srcPs1 = Join-Path $root $pair[0]
     $dstPs1 = Join-Path $stage $pair[1]
@@ -345,7 +346,7 @@ try {
             finally { $stream.Dispose(); $sha.Dispose() }
             if ($actual -ne $expectedEntries[$relative]) { throw "Archive checksum mismatch: $relative" }
         }
-        foreach ($required in @('OptiScaler.dll', 'OptiScaler.ini', 'Setup.ps1', 'install.sh', 'OptiScalerNRLauncher.exe', 'OptiScalerPanel.exe', 'OptiScaler代理切换.bat', 'launcher-worker.ps1', 'proxy-probe.ps1', 'library-scan.ps1', 'install-capabilities.ps1', 'xess-compat.ps1', 'proxy-profiles.json', 'OptiScaler/plugins/dlssnr-amd.asi', 'OptiScaler/plugins/openrr-amd.asi', 'dlssnr-amd/nr_present_probe.exe', 'model-tools/dlssnr_extract_model.exe', 'experimental/dlssnr-small-experimental.delta', 'dlssnr-amd-optiscaler.ini', 'dlssnr-amd-optiscaler-renodx.ini', 'mochizuki-owned.txt') + @($expectedEntries.Keys)) {
+        foreach ($required in @('OptiScaler.dll', 'OptiScaler.ini', 'Setup.ps1', 'install.sh', 'OptiScalerNRLauncher.exe', 'OptiScalerPanel.exe', 'OptiScaler代理切换.bat', 'launcher-worker.ps1', 'proxy-probe.ps1', 'library-scan.ps1', 'install-capabilities.ps1', 'xess-compat.ps1', 'compat-repair.ps1', 'proxy-profiles.json', 'OptiScaler/plugins/dlssnr-amd.asi', 'OptiScaler/plugins/openrr-amd.asi', 'dlssnr-amd/nr_present_probe.exe', 'model-tools/dlssnr_extract_model.exe', 'experimental/dlssnr-small-experimental.delta', 'dlssnr-amd-optiscaler.ini', 'dlssnr-amd-optiscaler-renodx.ini', 'mochizuki-owned.txt') + @($expectedEntries.Keys)) {
             if (-not $seen.ContainsKey($required)) { throw "Package archive missing required component: $required" }
         }
     } finally {
