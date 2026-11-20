@@ -2141,8 +2141,8 @@ msgstr "なし"
 msgid "Frame: %ux%u, %s, %s"
 msgstr "フレーム：%ux%u、%s、%s"
 
-msgid "DLSS5_Feed: %s; motion %s, depth %s. Frames: %u with NR, %u without"
-msgstr "DLSS5_Feed：%s、モーション %s、深度 %s。フレーム：NR あり %u、なし %u"
+msgid "DLSS5_Feed: %s%s; motion %s, depth %s. Frames: %u with NR, %u without"
+msgstr "DLSS5_Feed：%s%s、モーション %s、深度 %s。フレーム：NR あり %u、なし %u"
 
 msgid "this route sees the game's frames only, not frame generation's"
 msgstr "このルートが見るのはゲームのフレームだけで、フレーム生成のフレームは見えません"

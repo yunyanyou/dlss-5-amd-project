@@ -2141,8 +2141,8 @@ msgstr "缺失"
 msgid "Frame: %ux%u, %s, %s"
 msgstr "画面：%ux%u，%s，%s"
 
-msgid "DLSS5_Feed: %s; motion %s, depth %s. Frames: %u with NR, %u without"
-msgstr "DLSS5_Feed：%s；运动 %s，深度 %s。帧数：有 NR %u，无 NR %u"
+msgid "DLSS5_Feed: %s%s; motion %s, depth %s. Frames: %u with NR, %u without"
+msgstr "DLSS5_Feed：%s%s；运动 %s，深度 %s。帧数：有 NR %u，无 NR %u"
 
 msgid "this route sees the game's frames only, not frame generation's"
 msgstr "本路线只能看到游戏的帧，看不到帧生成的帧"
@@ -3375,3 +3375,24 @@ msgstr "预设 1"
 
 msgid "Preset 2"
 msgstr "预设 2"
+
+msgid "~Preset 1"
+msgstr "~预设 1"
+
+msgid "Direct Present (without DLSS5_Feed.fx)"
+msgstr "直接呈现（无需 DLSS5_Feed.fx）"
+
+msgid "Mode"
+msgstr "模式"
+
+msgid "[DlssNr] DirectPresent. Runs NR (guide-less RenoDX) directly without DLSS5_Feed.fx or motion-vector shaders. Auto (default) activates only when DLSS5_Feed.fx is not loaded; Always runs as a Present fallback if DLSS5_Feed did not run this frame."
+msgstr "[DlssNr] DirectPresent。无需 DLSS5_Feed.fx 或运动向量着色器即可直接运行 NR（无引导 RenoDX）。自动（默认）仅在未加载 DLSS5_Feed.fx 时启用；始终（Always）在本帧 DLSS5_Feed 未运行时作为最终画面（Present）兜底运行。"
+
+msgid "the command list vtable is outside D3D12 module ("
+msgstr "命令列表虚表不在 D3D12 模块内 ("
+
+msgid "the device vtable is outside D3D12 module ("
+msgstr "设备虚表不在 D3D12 模块内 ("
+
+msgid "the command queue vtable is outside D3D12 module ("
+msgstr "命令队列虚表不在 D3D12 模块内 ("

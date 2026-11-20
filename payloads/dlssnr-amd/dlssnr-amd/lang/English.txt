@@ -2351,8 +2351,8 @@ msgstr "missing"
 msgid "Frame: %ux%u, %s, %s"
 msgstr "Frame: %ux%u, %s, %s"
 
-msgid "DLSS5_Feed: %s; motion %s, depth %s. Frames: %u with NR, %u without"
-msgstr "DLSS5_Feed: %s; motion %s, depth %s. Frames: %u with NR, %u without"
+msgid "DLSS5_Feed: %s%s; motion %s, depth %s. Frames: %u with NR, %u without"
+msgstr "DLSS5_Feed: %s%s; motion %s, depth %s. Frames: %u with NR, %u without"
 
 msgid "this route sees the game's frames only, not frame generation's"
 msgstr "this route sees the game's frames only, not frame generation's"
@@ -2380,6 +2380,15 @@ msgstr "LumeniteFX Kernel%s"
 
 msgid ": its vectors follow the picture"
 msgstr ": its vectors follow the picture"
+
+msgid "Direct Present (without DLSS5_Feed.fx)"
+msgstr "Direct Present (without DLSS5_Feed.fx)"
+
+msgid "Mode"
+msgstr "Mode"
+
+msgid "[DlssNr] DirectPresent. Runs NR (guide-less RenoDX) directly without DLSS5_Feed.fx or motion-vector shaders. Auto (default) activates only when DLSS5_Feed.fx is not loaded; Always runs as a Present fallback if DLSS5_Feed did not run this frame."
+msgstr "[DlssNr] DirectPresent. Runs NR (guide-less RenoDX) directly without DLSS5_Feed.fx or motion-vector shaders. Auto (default) activates only when DLSS5_Feed.fx is not loaded; Always runs as a Present fallback if DLSS5_Feed did not run this frame."
 
 msgid "ReShade's overlay (its default key)"
 msgstr "ReShade's overlay (its default key)"
@@ -3299,11 +3308,17 @@ msgstr "the command list vtable could not be written"
 msgid "too many command list vtables"
 msgstr "too many command list vtables"
 
+msgid "the command list vtable is outside D3D12 module ("
+msgstr "the command list vtable is outside D3D12 module ("
+
 msgid "too many command list classes"
 msgstr "too many command list classes"
 
 msgid "no memory for the command list stubs"
 msgstr "no memory for the command list stubs"
+
+msgid "the device vtable is outside D3D12 module ("
+msgstr "the device vtable is outside D3D12 module ("
 
 msgid "too many device classes"
 msgstr "too many device classes"
@@ -3313,6 +3328,9 @@ msgstr "the device vtable could not be written"
 
 msgid "could not create a probe command queue"
 msgstr "could not create a probe command queue"
+
+msgid "the command queue vtable is outside D3D12 module ("
+msgstr "the command queue vtable is outside D3D12 module ("
 
 msgid "too many command queue classes"
 msgstr "too many command queue classes"

@@ -2141,8 +2141,8 @@ msgstr "없음"
 msgid "Frame: %ux%u, %s, %s"
 msgstr "프레임: %ux%u, %s, %s"
 
-msgid "DLSS5_Feed: %s; motion %s, depth %s. Frames: %u with NR, %u without"
-msgstr "DLSS5_Feed: %s, 모션 %s, 깊이 %s. 프레임: NR 적용 %u, 미적용 %u"
+msgid "DLSS5_Feed: %s%s; motion %s, depth %s. Frames: %u with NR, %u without"
+msgstr "DLSS5_Feed: %s%s, 모션 %s, 깊이 %s. 프레임: NR 적용 %u, 미적용 %u"
 
 msgid "this route sees the game's frames only, not frame generation's"
 msgstr "이 경로는 게임의 프레임만 볼 수 있으며 프레임 생성의 프레임은 볼 수 없습니다"
