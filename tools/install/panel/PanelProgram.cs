@@ -52,12 +52,15 @@ namespace OptScalerNR.Launcher
             using (var stream = asm.GetManifestResourceStream("OptiScalerPanel." + name))
             {
                 if (stream == null) throw new FileNotFoundException("Missing embedded XAML " + name);
-                // 上游 XAML（如 DialogTheme.xaml）里 xmlns:local 写死了 assembly=OptScalerNR.Launcher，
-                // 直接 XamlReader.Load 会因类型解析失败崩溃（对话框里的 Trigger 首当其冲）。
-                // 统一在这里换成面板自己的程序集名，DialogTheme.Resources() 与主窗口加载同路径。
+                // Upstream XAML (DialogTheme.xaml etc.) hardcodes the launcher assembly
+                // name in xmlns:local. 2.x renamed the launcher EXE to OptiScalerNRLauncher,
+                // older snapshots used OptScalerNR.Launcher; normalize both to the panel
+                // assembly or XamlReader.Load fails on the first Trigger with a type error.
                 using (var reader = new StreamReader(stream))
                 {
-                    var text = reader.ReadToEnd().Replace("assembly=OptScalerNR.Launcher", "assembly=OptiScalerPanel");
+                    var text = reader.ReadToEnd()
+                        .Replace("assembly=OptScalerNR.Launcher", "assembly=OptiScalerPanel")
+                        .Replace("assembly=OptiScalerNRLauncher", "assembly=OptiScalerPanel");
                     return new MemoryStream(System.Text.Encoding.UTF8.GetBytes(text));
                 }
             }
