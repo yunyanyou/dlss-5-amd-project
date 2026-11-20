@@ -2686,6 +2686,11 @@ if ($wantOpenRr) {
             [IO.Directory]::Delete($parentPath, $false)
         }
     }
+    if (Test-Path -LiteralPath $gameIni -PathType Leaf) {
+        Set-IniSettings $gameIni 'OpenNR-RR' ([ordered]@{ 'Enabled' = 'false' })
+        Set-IniSettings $gameIni 'FSR-RR' ([ordered]@{ 'Enabled' = 'true' }) -OnlyMissing
+        Write-Host 'Disabled OpenRR in OptiScaler.ini ([OpenNR-RR] Enabled=false; Ray Reconstruction uses FSR-RR).' -ForegroundColor Cyan
+    }
 
     Write-Host 'Removed/skipped OpenRR ASI plugin (unchecked).' -ForegroundColor Cyan
 }

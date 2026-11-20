@@ -277,6 +277,83 @@ function Test-TreeReparse([string]$path) {
     return $false
 }
 
+# Package ownership is the exact RDNA4 pin, not a filename pattern.
+# tools/install/mochizuki-owned.txt ships beside this script or under install/.
+function Get-MochizukiOwnedSet {
+    $pin = $null
+    foreach ($candidate in @(
+        (Join-Path $PSScriptRoot 'install/mochizuki-owned.txt'),
+        (Join-Path $PSScriptRoot 'mochizuki-owned.txt')
+    )) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { $pin = $candidate; break }
+    }
+    $set = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    if (-not $pin) { return $set }
+    foreach ($line in [IO.File]::ReadAllLines($pin)) {
+        $rel = $line.Trim().Replace('\', '/')
+        if ($rel.Length -eq 0 -or $rel.StartsWith('#')) { continue }
+        if ($rel.IndexOfAny([char[]]@('*', '?')) -ge 0) { throw "Mochizuki ownership pin contains a wildcard: $rel" }
+        [void]$set.Add($rel)
+    }
+    return $set
+}
+
+# Plan or delete only pin-listed shader and ACO files. A reparse point on the
+# path is refused by Test-UninstallPath. Directories are removed later, and only when empty.
+function Update-MochizukiOwned([string]$root, [string]$mode) {
+    $owned = Get-MochizukiOwnedSet
+    if ($owned.Count -eq 0) { return }
+    $apply = {
+        param($path, $why)
+        if ($mode -eq 'plan') { Add-PlannedFile $path $why } else { Remove-SafeFile $path $why }
+    }
+    $assetRoot = Join-Path $root 'dlssnr-amd'
+    foreach ($tree in @('shaders', 'aco')) {
+        $treeRoot = Join-Path $assetRoot $tree
+        if (!(Test-UninstallPath $treeRoot) -or !(Test-Path -LiteralPath $treeRoot -PathType Container)) { continue }
+        foreach ($file in @(Get-ChildItem -LiteralPath $treeRoot -Recurse -File -ErrorAction SilentlyContinue)) {
+            if (!(Test-UninstallPath $file.FullName)) { continue }
+            $rel = $file.FullName.Substring($assetRoot.Length).TrimStart('\', '/').Replace('\', '/')
+            if ($owned.Contains($rel)) {
+                $why = if ($tree -eq 'shaders') { 'mochizuki-shader' } else { 'mochizuki-aco' }
+                & $apply $file.FullName $why
+            }
+        }
+    }
+}
+
+# Files installed for the vendor NR ASI are recorded in the game folder at install
+# time. Only those exact paths are removed; models stay.
+function Get-AsiOwnedFiles([string]$root) {
+    $manifest = Join-Path $root 'dlssnr-amd-install.txt'
+    if (!(Test-UninstallPath $manifest)) { return }
+    if (!(Test-Path -LiteralPath $manifest -PathType Leaf)) { return }
+    # Resolve the same plugin directory the installer used, including an explicit
+    # [Plugins] Path / [Libraries] OptiDllPath. Only this ASI file is claimable
+    # there; arbitrary manifest paths are still ignored.
+    $pluginRel = $null
+    try {
+        $iniPath = Join-Path $root 'OptiScaler.ini'
+        $pluginPath = Join-Path (Get-PluginsTargetDirectory $root $iniPath) 'dlssnr-amd.asi'
+        $prefix = [IO.Path]::GetFullPath($root).TrimEnd('\', '/') + '\'
+        $fullPluginPath = [IO.Path]::GetFullPath($pluginPath)
+        if ($fullPluginPath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+            $pluginRel = $fullPluginPath.Substring($prefix.Length)
+        }
+    } catch { $pluginRel = $null }
+    foreach ($line in Get-Content -LiteralPath $manifest -ErrorAction SilentlyContinue) {
+        $line = $line.TrimStart([char]0xFEFF).Trim()
+        if ($line -notmatch '^(?i)F (.+)$') { continue }
+        $rel = $Matches[1].Trim()
+        if ($rel -match '(^|[\\/])\.\.([\\/]|$)' -or [IO.Path]::IsPathRooted($rel)) { continue }
+        $normalized = $rel.Replace('\', '/')
+        $isPlugin = $pluginRel -and ($rel -ieq $pluginRel)
+        if ($normalized -notmatch '^(?i)dlssnr-amd/' -and -not $isPlugin) { continue }
+        $full = Join-Path $root $rel
+        if (Test-UninstallPath $full) { $full }
+    }
+}
+
 function Add-PlannedFile([string]$path, [string]$why) {
     if (!(Test-UninstallPath $path)) { return }
     $leaf = Split-Path -Leaf $path
