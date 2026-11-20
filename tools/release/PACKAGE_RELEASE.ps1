@@ -246,6 +246,23 @@ $installShContent = [IO.File]::ReadAllText($installShSrc, [Text.Encoding]::UTF8)
 [IO.File]::WriteAllText((Join-Path $stage 'install.sh'), $installShContent, [Text.UTF8Encoding]::new($false))
 Copy-Item -LiteralPath (Join-Path $root 'assets/compatibility/proxy-profiles.json') -Destination $stage -Force
 Copy-Item -LiteralPath (Join-Path $root 'assets/compatibility/README.md') -Destination (Join-Path $stage 'Licenses/OptiScaler-wiki-profiles.md') -Force
+# Proxy-switch panel: same theme/share-code sources as the launcher, standalone exe
+# placed beside the game dir launcher. Start it via the .bat below.
+& (Join-Path $root 'tools/build/build-panel.ps1') -OutDir (Join-Path $root 'exports/panel')
+$panelExe = Join-Path $root 'exports/panel/OptiScalerPanel.exe'
+if (-not (Test-Path -LiteralPath $panelExe -PathType Leaf)) { throw 'Panel EXE was not produced' }
+Copy-Item -LiteralPath $panelExe -Destination (Join-Path $stage 'OptiScalerPanel.exe') -Force
+(@'
+@echo off
+setlocal
+cd /d "%~dp0"
+if not exist "%~dp0OptiScalerPanel.exe" (
+  echo OptiScalerPanel.exe is missing. Unzip the full package again.
+  pause
+  exit /b 1
+)
+start "" "%~dp0OptiScalerPanel.exe" "%~dp0."
+'@) | Set-Content -LiteralPath (Join-Path $stage 'OptiScaler代理切换.bat') -Encoding ASCII
 Copy-Item -LiteralPath (Join-Path $root 'LICENSE'), (Join-Path $root 'NOTICE') -Destination $stage -Force
 foreach ($doc in @('README.md', 'README.en.md', 'README.es.md')) {
     $p = Join-Path $root $doc
@@ -325,7 +342,7 @@ try {
             finally { $stream.Dispose(); $sha.Dispose() }
             if ($actual -ne $expectedEntries[$relative]) { throw "Archive checksum mismatch: $relative" }
         }
-        foreach ($required in @('OptiScaler.dll', 'OptiScaler.ini', 'Setup.ps1', 'install.sh', 'OptiScalerNRLauncher.exe', 'launcher-worker.ps1', 'proxy-probe.ps1', 'library-scan.ps1', 'install-capabilities.ps1', 'xess-compat.ps1', 'proxy-profiles.json', 'OptiScaler/plugins/dlssnr-amd.asi', 'OptiScaler/plugins/openrr-amd.asi', 'dlssnr-amd/nr_present_probe.exe', 'model-tools/dlssnr_extract_model.exe', 'experimental/dlssnr-small-experimental.delta', 'dlssnr-amd-optiscaler.ini', 'dlssnr-amd-optiscaler-renodx.ini', 'mochizuki-owned.txt') + @($expectedEntries.Keys)) {
+        foreach ($required in @('OptiScaler.dll', 'OptiScaler.ini', 'Setup.ps1', 'install.sh', 'OptiScalerNRLauncher.exe', 'OptiScalerPanel.exe', 'OptiScaler代理切换.bat', 'launcher-worker.ps1', 'proxy-probe.ps1', 'library-scan.ps1', 'install-capabilities.ps1', 'xess-compat.ps1', 'proxy-profiles.json', 'OptiScaler/plugins/dlssnr-amd.asi', 'OptiScaler/plugins/openrr-amd.asi', 'dlssnr-amd/nr_present_probe.exe', 'model-tools/dlssnr_extract_model.exe', 'experimental/dlssnr-small-experimental.delta', 'dlssnr-amd-optiscaler.ini', 'dlssnr-amd-optiscaler-renodx.ini', 'mochizuki-owned.txt') + @($expectedEntries.Keys)) {
             if (-not $seen.ContainsKey($required)) { throw "Package archive missing required component: $required" }
         }
     } finally {
