@@ -18,6 +18,11 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 try { [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false) } catch { }
 
+# The panel passes the group selection as one literal CLI argument ("sr,fg") and
+# powershell -File does not split it, so the [string[]] binding arrives as a single
+# comma-joined element. Normalize it back into real group ids before dispatching.
+$Group = @($Group | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+
 . (Join-Path $PSScriptRoot 'xess-compat.ps1')
 
 try {
