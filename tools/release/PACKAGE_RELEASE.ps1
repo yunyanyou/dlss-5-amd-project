@@ -129,16 +129,18 @@ $wanted = [ordered]@{
     'Menu|AccentColorG'      = '0.07'
     'Menu|AccentColorB'      = '0.17'
     # Fork FG chain, verified on NTE: DLSSG via Streamline as the input, XeFG as the output
-    # with 4X interpolation (InterpolationCount 3 = 4X per the ini docs).
+    # with 3X interpolation (InterpolationCount 2 = 3X per the ini docs).
     # Enabled=true is required: with the key unset the host follows the game's DLSSG
-    # state, and NTE asks for 2X — so XeFG would run 2X instead of 4X.
+    # state, and NTE asks for 2X — so XeFG would run 2X instead of the configured multiplier.
     'FrameGen|Enabled'       = 'true'
     'FrameGen|FGInput'       = 'dlssg'
     'FrameGen|FGOutput'      = 'xefg'
-    'XeFG|InterpolationCount' = '3'
+    'XeFG|InterpolationCount' = '2'
     # Fork sharpening baseline: fixed 0.6 (override required or the value is ignored).
     'Sharpness|OverrideSharpness' = 'true'
     'Sharpness|Sharpness'    = '0.6'
+    # FPS info overlay off by default (the CHS template presets true; we ship it quiet).
+    'Menu|ShowFps'           = 'false'
 }
 $raw = [IO.File]::ReadAllText($iniPath)
 $newline = if ($raw.Contains("`r`n")) { "`r`n" } else { "`n" }
