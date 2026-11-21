@@ -68,7 +68,7 @@ foreach ($required in @(
 }
 $openRrPayload = Join-Path $root 'payloads/openrr'
 $openRrAsiSrc = $null
-foreach ($cand in @('OptiScaler/plugins/openrr-amd.asi', 'openrr-amd.asi', 'OptiScaler/plugins/openrr.asi', 'plugins/openrr-amd.asi', 'plugins/openrr.asi')) {
+foreach ($cand in @('OptiScaler/plugins/openrr-amd.asi', 'openrr-amd/aco/gfx1201/openrr-d3d12-v1/manifest.msgpack', 'openrr-amd/lang/zh-CN.txt', 'openrr-amd.asi', 'OptiScaler/plugins/openrr.asi', 'plugins/openrr-amd.asi', 'plugins/openrr.asi')) {
     $p = Join-Path $openRrPayload $cand
     if (Test-Path -LiteralPath $p -PathType Leaf) { $openRrAsiSrc = $p; break }
 }
@@ -113,12 +113,12 @@ if (Test-Path -LiteralPath (Join-Path $optiReleaseDir 'Licenses') -PathType Cont
 }
 Copy-Item -LiteralPath $optiLicense -Destination (Join-Path $stage 'Licenses/OptiScaler_LICENSE.txt') -Force
 
-# Update official OptiScaler.ini in-place (Mochi-style: LoadAsiPlugins=true, LogToFile=true, LogLevel=1, FGShortcutKey=-1)
+# Update official OptiScaler.ini in-place (Mochi-style: LoadAsiPlugins=true, LogToFile=true, LogLevel=2, FGShortcutKey=-1)
 $iniPath = Join-Path $stage 'OptiScaler.ini'
 $wanted = [ordered]@{
     'Plugins|LoadAsiPlugins' = 'true'
     'Log|LogToFile'          = 'true'
-    'Log|LogLevel'           = '1'
+    'Log|LogLevel'           = '2'
     'Menu|FGShortcutKey'     = '-1'
     # Fork look: crimson accent for the host menu, matching NR Control's Theme=4
     # (Crimson) and the launcher's #E3122B accent.
@@ -223,7 +223,14 @@ Get-ChildItem -LiteralPath (Join-Path $openRrPayload 'openrr-amd/shaders') -Filt
 $openRrShaderGfx11Dst = Join-Path $stage 'openrr-amd/shaders-gfx11'
 New-Item -ItemType Directory -Path $openRrShaderGfx11Dst -Force | Out-Null
 Get-ChildItem -LiteralPath (Join-Path $openRrPayload 'openrr-amd/shaders-gfx11') -Filter '*.spv' -File | Copy-Item -Destination $openRrShaderGfx11Dst -Force
-Get-ChildItem -LiteralPath (Join-Path $openRrPayload 'Licenses') -File | Copy-Item -Destination (Join-Path $stage 'Licenses') -Force
+# v0.1.7plus: precompiled Mesa 26.3 FP8 ACO records + the CJK menu language pack
+foreach ($rrSub in @('aco', 'lang')) {
+    $rrSubSrc = Join-Path $openRrPayload (Join-Path 'openrr-amd' $rrSub)
+    if (Test-Path -LiteralPath $rrSubSrc -PathType Container) {
+        Copy-Item -LiteralPath $rrSubSrc -Destination (Join-Path $stage 'openrr-amd') -Recurse -Force
+    }
+}
+# vendor licenses now ship inside openrr-amd/ (OpenRR v0.1.7plus layout)
 
 # 8. Build & stage Launcher + Installer scripts
 & (Join-Path $root 'tools/build/build-launcher.ps1') -OutDir (Join-Path $root 'exports/launcher')
