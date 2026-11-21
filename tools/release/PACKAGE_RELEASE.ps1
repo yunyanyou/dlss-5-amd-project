@@ -187,6 +187,19 @@ Get-ChildItem -LiteralPath (Join-Path $asiPayload 'model-tools') -File | Copy-It
 Get-ChildItem -LiteralPath (Join-Path $asiPayload 'Licenses') -File | Copy-Item -Destination (Join-Path $stage 'Licenses') -Force
 Copy-Item -LiteralPath (Join-Path $root 'tools/install/mochizuki-owned.txt') -Destination $stage -Force
 
+# v2.1 multi-mode asset groups: standalone kit, ReShade feeder, DXVK/Vulkan hosts, RTX Remix MC
+foreach ($mzSub in @('standalone', 'reshade', 'dxvk', 'vulkan')) {
+    $mzSubSrc = Join-Path $asiPayload $mzSub
+    if (Test-Path -LiteralPath $mzSubSrc -PathType Container) {
+        Copy-Item -LiteralPath $mzSubSrc -Destination $stage -Recurse -Force
+    }
+}
+$rtxMcPayload = Join-Path $root 'payloads/rtx-remix-mc'
+$rtxMcStageDir = Join-Path $stage 'rtx-remix-mc'
+New-Item -ItemType Directory -Force $rtxMcStageDir | Out-Null
+Copy-Item -LiteralPath (Join-Path $rtxMcPayload 'rtx-remix-mc/remixbridge.dll') -Destination (Join-Path $rtxMcStageDir 'remixbridge.dll') -Force
+Get-ChildItem -LiteralPath (Join-Path $rtxMcPayload 'Licenses') -File | Copy-Item -Destination (Join-Path $stage 'Licenses') -Force
+
 @'
 @echo off
 setlocal
@@ -353,7 +366,7 @@ try {
             finally { $stream.Dispose(); $sha.Dispose() }
             if ($actual -ne $expectedEntries[$relative]) { throw "Archive checksum mismatch: $relative" }
         }
-        foreach ($required in @('OptiScaler.dll', 'OptiScaler.ini', 'Setup.ps1', 'install.sh', 'OptiScalerNRLauncher.exe', 'OptiScalerPanel.exe', 'OptiScaler代理切换.bat', 'launcher-worker.ps1', 'proxy-probe.ps1', 'library-scan.ps1', 'install-capabilities.ps1', 'xess-compat.ps1', 'compat-repair.ps1', 'proxy-profiles.json', 'OptiScaler/plugins/dlssnr-amd.asi', 'OptiScaler/plugins/openrr-amd.asi', 'dlssnr-amd/nr_present_probe.exe', 'model-tools/dlssnr_extract_model.exe', 'experimental/dlssnr-small-experimental.delta', 'dlssnr-amd-optiscaler.ini', 'dlssnr-amd-optiscaler-renodx.ini', 'mochizuki-owned.txt') + @($expectedEntries.Keys)) {
+        foreach ($required in @('OptiScaler.dll', 'OptiScaler.ini', 'Setup.ps1', 'install.sh', 'OptiScalerNRLauncher.exe', 'OptiScalerPanel.exe', 'OptiScaler代理切换.bat', 'launcher-worker.ps1', 'proxy-probe.ps1', 'library-scan.ps1', 'install-capabilities.ps1', 'xess-compat.ps1', 'compat-repair.ps1', 'proxy-profiles.json', 'OptiScaler/plugins/dlssnr-amd.asi', 'OptiScaler/plugins/openrr-amd.asi', 'dlssnr-amd/nr_present_probe.exe', 'model-tools/dlssnr_extract_model.exe', 'experimental/dlssnr-small-experimental.delta', 'dlssnr-amd-optiscaler.ini', 'dlssnr-amd-optiscaler-renodx.ini', 'mochizuki-owned.txt', 'rtx-remix-mc/remixbridge.dll', 'Licenses/RTX-Remix-Minecraft-AMD-Patch_LICENSE.txt', 'Licenses/RTX-Remix-Minecraft-AMD-Patch_NOTICE.txt', 'Licenses/NVIDIA-rtx-remix-minecraft-Apache-2.0.txt', 'standalone/dxgi.dll', 'standalone/vk-override/implicit_layer/dlssnr_standalone.json', 'reshade/ReShade64.dll', 'reshade/dlssnr_amd.addon64', 'dxvk/dxgi.dll', 'vulkan/vulkan-1.dll', 'dlssnr-amd/lang/zh-CN.txt', 'dlssnr-amd/lang/fonts/NotoSansCJKsc-Regular.ttf') + @($expectedEntries.Keys)) {
             if (-not $seen.ContainsKey($required)) { throw "Package archive missing required component: $required" }
         }
     } finally {

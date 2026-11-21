@@ -40,12 +40,11 @@ REQUIRED_FILES = [
     'optimized/dlssnr-optimized.delta',
 ]
 REQUIRED_DIRS = ['dlssnr-amd/shaders']
-EXCLUDED_PREFIXES = ('dxvk/', 'vulkan/', 'reshade/', 'optiscaler/release/',
-                     # standalone kit (m3+): byte-duplicate of the main ASI plus a
-                     # dxgi.dll whose name would collide with the game's own proxy
-                     # DLL if ever deployed next to the host; ship it only if
-                     # standalone mode (OBS etc.) is wanted, with installer handling.
-                     'standalone/')
+# standalone/, reshade/, dxvk/ and vulkan/ stay in the payload: the v2.1
+# installer is mode-aware and only deploys them for their own install modes
+# (standalone / reshade-feeder / dxvk / vulkan hosts), never beside the
+# optiscaler-mode proxy.
+EXCLUDED_PREFIXES = ('dxvk-noop/', 'optiscaler/release/')
 EXCLUDED_ROOT = {'install.bat', 'install.ps1', 'README.txt'}
 # Vendor layout -> fork payload layout. The plugin, probe and their licenses live
 # under optiscaler/asi/ in the vendor package; everything else keeps its path.
