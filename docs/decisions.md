@@ -15,3 +15,11 @@
 - **管线可复现化**（chs-build 本地，不外传）：tab 六标签汉化从"手工改生成树"（git restore 即丢）升格为 apply_patch.py 步骤 [5.5]，带行数/函数引用形状守卫（上游改 tab 表时警告跳过而非误删）；[4.1] splashText 改为容忍已注入树（原来 sys.exit(5)），整条管线现在可在已打过补丁的树上幂等重跑。
 - **有意留英文**：version_check.cpp 的 3 条更新失败提示不 LOC 化——检查在异步线程跑，早于菜单 Init 时 LOC 会显示 `[MISSING]`，比英文更糟；面板 172 条双语串审查通过（口语化、术语一致、无错译）。
 - 版式核对：`Preset J/K`、`PRESET A-O`、`FPS:`、格式串、`##ImGui ID`、字体名等 87 条 zh==EN 属技术名/占位符，保留。
+
+# 2026-11-21: 打包载荷切换到上游在线拉取模型（pins + 缓存 + 校验）
+
+- **决策**：退役树内 `payloads/`（约 600MB、含 import 工具的 RENAME/排除映射表），改用上游 v2.1 的 `tools/build/fetch-upstream.ps1` + `upstream-pins.json`：打包期解析 pin（zip 级 + 逐文件 SHA256）→ 缓存复用（`cache/downloads/`、`cache/upstream/`，`.stamp.json` 免重解）→ PE 头/尺寸校验 → 禁运名单（NVIDIA 权重/version.dll 拒绝进包）。输出布局与旧 import 工具的规范化布局同构，PACKAGE_RELEASE 的暂存代码几乎零改动。
+- **保留的 fork 重放层**：dlssnr ini 调优不再用静态模板，改为 `tools/release/fork-overrides/dlssnr-amd-fork.ini`（delta：[RenoDX] Enabled、[NRControl] Language/Theme、[Layer1] 全段）在打包期合并进 vendor 模板——vendor 新增键自动存活。openrr ini 打包期注入 `Language = zh-CN`。
+- **为何之前没跟**：三条顾虑里两条被他们的实现化解（缓存使每版本只下一次下载；本地 override 支持离线），第三条"当天最小工作量"恰是模型要消除的重复税——m3 换装时改了两次导入工具排除表就是 vendor 布局漂移对映射表的持续成本。
+- **换来的行为变化**：OptiPatcher 从钉死的 v0.42 变为 rolling 源自动刷新（仅 PE 校验，无 sha——上游对此件的既有取舍）；上游删 release 资产会让新构建断供（缓存内的已验证包不受影响）；跟上游新版本 = 改 pins 一行 + 重打包。
+- **验收**：fetch 构建的 zip 与 payloads 构建的 staging 逐文件对比——2732 项逐字节一致，9 项差异全部为预期（重放 ini×2、重建 exe×2、OptiPatcher rolling、SOURCES md 更新、SUMS/签名派生），removed 4 项为上游流水线有意丢弃的 standalone 内重复件，added 20 项为更全的路由许可证与 aco 目录项。离线复跑 0 下载。

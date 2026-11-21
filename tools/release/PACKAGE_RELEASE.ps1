@@ -2,9 +2,9 @@
 .SYNOPSIS
   Stage and zip the standalone OptiScaler ASI Launcher package:
     - Official unmodified OptiScaler release (fetched/verified by tools/build/fetch-optiscaler.ps1)
-    - payloads/dlssnr-amd/  (OptiScaler/plugins/dlssnr-amd.asi + resources + model tools)
-    - payloads/openrr/      (OptiScaler/plugins/openrr-amd.asi + openrr-amd/shaders/*.spv)
-    - payloads/optipatcher/ (OptiScaler/plugins/OptiPatcher.asi)
+    - dist/upstream/        (SHA-256-verified upstream payload trees via tools/build/fetch-upstream.ps1)
+    - cache/upstream/       (fetched-tree cache with .stamp.json validation; offline via -MochiDir/-OpenRrDir)
+    - cache/upstream/optipatcher/ (rolling OptiPatcher.asi, PE-validated)
     - OptiScalerNRLauncher.exe + Setup.ps1
 #>
 [CmdletBinding()]
@@ -48,7 +48,10 @@ $optiReleaseDir = $optiInfo.ReleaseDir
 $optiLicense    = $optiInfo.LicensePath
 
 # 2. Verify ASI payloads exist
-$asiPayload = Join-Path $root 'payloads/dlssnr-amd'
+# Pinned upstream payloads (SHA-256 verified, cached in cache/downloads + cache/upstream).
+# Offline overrides: -MochiDir/-MochiArchive/-OpenRrDir/-OpenRrArchive/-OptiPatcherFile.
+$upstreamInfo = & (Join-Path $root 'tools/build/fetch-upstream.ps1') -UpstreamDir (Join-Path $root (Join-Path 'dist' 'upstream'))
+$asiPayload = $upstreamInfo.DlssnrDir
 foreach ($required in @(
     'OptiScaler/plugins/dlssnr-amd.asi',
     'nr_present_probe.exe',
@@ -66,7 +69,7 @@ foreach ($required in @(
         throw "dlssnr-amd payload incomplete: $required"
     }
 }
-$openRrPayload = Join-Path $root 'payloads/openrr'
+$openRrPayload = $upstreamInfo.OpenRrDir
 $openRrAsiSrc = $null
 foreach ($cand in @('OptiScaler/plugins/openrr-amd.asi', 'openrr-amd/aco/gfx1201/openrr-d3d12-v1/manifest.msgpack', 'openrr-amd/lang/zh-CN.txt', 'openrr-amd.asi', 'OptiScaler/plugins/openrr.asi', 'plugins/openrr-amd.asi', 'plugins/openrr.asi')) {
     $p = Join-Path $openRrPayload $cand
@@ -81,7 +84,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $openRrPayload 'openrr-amd/shaders')
 if (-not (Test-Path -LiteralPath (Join-Path $openRrPayload 'openrr-amd/shaders-gfx11') -PathType Container)) {
     throw 'openrr payload missing openrr-amd/shaders-gfx11.'
 }
-$optiPatcherAsiSrc = Join-Path $root 'payloads/optipatcher/OptiScaler/plugins/OptiPatcher.asi'
+$optiPatcherAsiSrc = $upstreamInfo.OptiPatcherAsi
 if (-not (Test-Path -LiteralPath $optiPatcherAsiSrc -PathType Leaf)) {
     throw 'optipatcher payload missing OptiScaler/plugins/OptiPatcher.asi.'
 }
@@ -178,6 +181,64 @@ Copy-Item -LiteralPath (Join-Path $asiPayload 'OptiScaler/plugins/dlssnr-amd.asi
 Copy-Item -LiteralPath (Join-Path $asiPayload 'nr_present_probe.exe') -Destination $mzAssets -Force
 Copy-Item -LiteralPath (Join-Path $asiPayload 'ini/dlssnr-amd-optiscaler.ini') -Destination $stage -Force
 Copy-Item -LiteralPath (Join-Path $asiPayload 'ini/dlssnr-amd-optiscaler-renodx.ini') -Destination $stage -Force
+Get-ChildItem -LiteralPath (Join-Path $asiPayload 'ini') -Filter 'dlssnr-amd-standalone.ini' -File | Copy-Item -Destination $stage -Force
+Get-ChildItem -LiteralPath (Join-Path $asiPayload 'ini') -Filter 'dlssnr-amd-addon.ini' -File | Copy-Item -Destination $stage -Force
+# Fork tuning replay onto the vendor templates (RenoDX chain, NRControl language/theme):
+# vendor template + fork delta, so upstream's new keys survive automatically.
+$forkIniSrc = Join-Path $root 'tools/release/fork-overrides/dlssnr-amd-fork.ini'
+function Merge-ForkIni([string]$TargetFile, [string]$ForkFile) {
+    $tLines = [IO.File]::ReadAllLines($TargetFile)
+    $fLines = [IO.File]::ReadAllLines($ForkFile)
+    $delta = [ordered]@{}
+    $sec = ''
+    foreach ($fl in $fLines) {
+        $s = $fl.Trim()
+        if ($s -eq '' -or $s.StartsWith(';') -or $s.StartsWith('#')) { continue }
+        if ($s.StartsWith('[') -and $s.EndsWith(']')) { $sec = $s.Trim('[',']'); if (-not $delta.Contains($sec)) { $delta[$sec] = [ordered]@{} }; continue }
+        if ($sec -and $s.Contains('=')) { $i = $s.IndexOf('='); $delta[$sec][$s.Substring(0,$i).Trim()] = $s.Substring($i+1).Trim() }
+    }
+    $out = New-Object System.Collections.Generic.List[string]
+    $inSec = ''
+    foreach ($line in $tLines) {
+        if ($line -match '^\s*\[([^\]]+)\]\s*$') {
+            $secName = $Matches[1].Trim()
+            if ($inSec -and $delta.Contains($inSec)) {
+                foreach ($k in $delta[$inSec].Keys) {
+                    $set = $false
+                    foreach ($ol in $out) { if ($ol -match ('^\s*' + [regex]::Escape($k) + '\s*=')) { $set = $true; break } }
+                    if (-not $set) { $out.Add(("$k=" + $delta[$inSec][$k])) }
+                }
+            }
+            $inSec = $secName
+            $out.Add($line)
+            continue
+        }
+        if ($inSec -and $delta.Contains($inSec) -and $line -match '^\s*([A-Za-z0-9_]+)\s*=') {
+            $k = $Matches[1].Trim()
+            if ($delta[$inSec].Contains($k)) { $line = "$k=" + $delta[$inSec][$k] }
+        }
+        $out.Add($line)
+    }
+    if ($inSec -and $delta.Contains($inSec)) {
+        foreach ($k in $delta[$inSec].Keys) {
+            $set = $false
+            foreach ($ol in $out) { if ($ol -match ('^\s*' + [regex]::Escape($k) + '\s*=')) { $set = $true; break } }
+            if (-not $set) { $out.Add(("$k=" + $delta[$inSec][$k])) }
+        }
+    }
+    foreach ($secName in $delta.Keys) {
+        $present = $false
+        foreach ($ol in $out) { if ($ol -match ('^\s*\[' + [regex]::Escape($secName) + '\]\s*$')) { $present = $true; break } }
+        if (-not $present) {
+            $out.Add('')
+            $out.Add(("[$secName]"))
+            foreach ($k in $delta[$secName].Keys) { $out.Add(("$k=" + $delta[$secName][$k])) }
+        }
+    }
+    [IO.File]::WriteAllText($TargetFile, (($out -join "`r`n") + "`r`n"), [Text.UTF8Encoding]::new($false))
+}
+Merge-ForkIni (Join-Path $stage 'dlssnr-amd-optiscaler.ini') $forkIniSrc
+Merge-ForkIni (Join-Path $stage 'dlssnr-amd-optiscaler-renodx.ini') $forkIniSrc
 Get-ChildItem -LiteralPath (Join-Path $asiPayload 'experimental') -File | Copy-Item -Destination (Join-Path $stage 'experimental') -Force
 if (Test-Path -LiteralPath (Join-Path $asiPayload 'optimized') -PathType Container) {
     New-Item -ItemType Directory -Force (Join-Path $stage 'optimized') | Out-Null
@@ -194,7 +255,7 @@ foreach ($mzSub in @('standalone', 'reshade', 'dxvk', 'vulkan')) {
         Copy-Item -LiteralPath $mzSubSrc -Destination $stage -Recurse -Force
     }
 }
-$rtxMcPayload = Join-Path $root 'payloads/rtx-remix-mc'
+$rtxMcPayload = $upstreamInfo.RtxRemixMcDir
 $rtxMcStageDir = Join-Path $stage 'rtx-remix-mc'
 New-Item -ItemType Directory -Force $rtxMcStageDir | Out-Null
 Copy-Item -LiteralPath (Join-Path $rtxMcPayload 'rtx-remix-mc/remixbridge.dll') -Destination (Join-Path $rtxMcStageDir 'remixbridge.dll') -Force
@@ -229,7 +290,18 @@ foreach ($cand in @('openrr-amd.ini', 'OptiScaler/openrr-amd.ini')) {
     $p = Join-Path $openRrPayload $cand
     if (Test-Path -LiteralPath $p -PathType Leaf) { $openRrIniSrc = $p; break }
 }
-if ($openRrIniSrc) { Copy-Item -LiteralPath $openRrIniSrc -Destination (Join-Path $stage 'openrr-amd.ini') -Force }
+if ($openRrIniSrc) {
+    Copy-Item -LiteralPath $openRrIniSrc -Destination (Join-Path $stage 'openrr-amd.ini') -Force
+    # Fork default: Chinese RR menu (the package ships the CJK lang pack)
+    $rrIni = Join-Path $stage 'openrr-amd.ini'
+    $rrRaw = [IO.File]::ReadAllText($rrIni)
+    if ($rrRaw -match '(?m)^\s*;?\s*Language\s*=') {
+        $rrRaw = [regex]::Replace($rrRaw, '(?m)^(\s*);?\s*Language\s*=.*$', '$1Language = zh-CN', 1)
+    } else {
+        $rrRaw = $rrRaw.Replace('[OpenRR]', "[OpenRR]`r`nLanguage = zh-CN", 1)
+    }
+    [IO.File]::WriteAllText($rrIni, $rrRaw, [Text.UTF8Encoding]::new($false))
+}
 $openRrShaderDst = Join-Path $stage 'openrr-amd/shaders'
 New-Item -ItemType Directory -Path $openRrShaderDst -Force | Out-Null
 Get-ChildItem -LiteralPath (Join-Path $openRrPayload 'openrr-amd/shaders') -Filter '*.spv' -File | Copy-Item -Destination $openRrShaderDst -Force
