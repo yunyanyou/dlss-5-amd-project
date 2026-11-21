@@ -1,0 +1,7171 @@
+{
+  "schema": 1,
+  "target": "gfx1201",
+  "layout_version": "openrr-d3d12-v1",
+  "wave_size": 32,
+  "layout_push_bytes": 256,
+  "mesa_commit": "0a6fa60abb737d26ac8a316a4aad7c9ddf64f9e4",
+  "patch_version": 5,
+  "fingerprint": "d6cdfa89b8b961acd3413a24f852c596a65e9c612ac51d13e69f4df58fbe5b48",
+  "compile_options": {
+    "subgroup": 32,
+    "require_full_subgroups": true,
+    "features": "gpu/src/vk.cpp Device::init",
+    "precision": "global",
+    "matrix_loads": "vector8",
+    "address_adaptation": "assembler-dual-sentinel-v1",
+    "precision_split": {
+      "ae": "global",
+      "clear_range": "global",
+      "d3d_ae": "global",
+      "d3d_downsample": "global",
+      "d3d_downsample_lt": "global",
+      "d3d_downsample_tl": "global",
+      "d3d_downsample_tl_lt": "global",
+      "d3d_enc0_attr_f": "global",
+      "d3d_enc0_attr_f_lt": "native",
+      "d3d_enc0_attr_f_w": "global",
+      "d3d_enc0_attr_f_w_lt": "native",
+      "d3d_ingest": "global",
+      "d3d_pack": "global",
+      "dec_dfn_128_128_f": "global",
+      "dec_dfn_128_128_f_lt": "native",
+      "dec_dfn_128_128_fl": "global",
+      "dec_dfn_128_128_fl_lt": "native",
+      "dec_dfn_160_256_f": "global",
+      "dec_dfn_160_256_f_lt": "native",
+      "dec_dfn_160_256_fl": "global",
+      "dec_dfn_160_256_fl_lt": "native",
+      "dec_dfn_64_64_f": "global",
+      "dec_dfn_64_64_f_lt": "native",
+      "dec_dfn_96_128_f": "global",
+      "dec_dfn_96_128_f_lt": "native",
+      "dec_dfn_96_128_fl": "global",
+      "dec_dfn_96_128_fl_lt": "native",
+      "dec_head_32_64_f": "global",
+      "dec_head_32_64_f_lt": "native",
+      "dec_head_32_64_f_lx": "native",
+      "dec_up_128_128_160_f": "global",
+      "dec_up_128_128_160_f_lt": "native",
+      "dec_up_128_128_160_fl": "global",
+      "dec_up_128_128_160_fl_lt": "native",
+      "dec_up_160_256_160_f": "global",
+      "dec_up_160_256_160_f_lt": "native",
+      "dec_up_160_256_160_fl": "global",
+      "dec_up_160_256_160_fl_lt": "native",
+      "dec_up_32_64_64_f": "global",
+      "dec_up_32_64_64_f_lt": "native",
+      "dec_up_32_64_64_f_lx": "native",
+      "dec_up_64_64_96_f": "global",
+      "dec_up_64_64_96_f_lt": "native",
+      "dec_up_96_128_128_f": "global",
+      "dec_up_96_128_128_f_lt": "native",
+      "dec_up_96_128_128_fl": "global",
+      "dec_up_96_128_128_fl_lt": "native",
+      "dfn_export": "global",
+      "dfn_export_lt": "global",
+      "dfn_import": "global",
+      "dfn_import_lt": "global",
+      "downsample": "global",
+      "downsample_lt": "global",
+      "downsample_tl": "global",
+      "downsample_tl_lt": "global",
+      "enc0_attr_f": "global",
+      "enc0_attr_f_lt": "native",
+      "enc0_attr_f_w": "global",
+      "enc0_attr_f_w_lt": "native",
+      "enc0_stage_32_64_f": "global",
+      "enc0_stage_32_64_f_lt": "native",
+      "enc0_stage_32_64_f_lx": "native",
+      "enc0_stage_32_64_f_w": "global",
+      "enc0_stage_32_64_f_w_lt": "native",
+      "enc0_stage_32_64_f_w_lx": "native",
+      "enc_stage_128_128_160_f": "global",
+      "enc_stage_128_128_160_f_lt": "native",
+      "enc_stage_128_128_160_fl": "global",
+      "enc_stage_128_128_160_fl_lt": "native",
+      "enc_stage_160_256_0_f": "global",
+      "enc_stage_160_256_0_f_lt": "native",
+      "enc_stage_160_256_0_fl": "global",
+      "enc_stage_160_256_0_fl_lt": "native",
+      "enc_stage_160_256_160_f": "global",
+      "enc_stage_160_256_160_f_lt": "native",
+      "enc_stage_160_256_160_fl": "global",
+      "enc_stage_160_256_160_fl_lt": "native",
+      "enc_stage_64_64_96_f": "global",
+      "enc_stage_64_64_96_f_lt": "native",
+      "enc_stage_96_128_128_f": "global",
+      "enc_stage_96_128_128_f_lt": "native",
+      "enc_stage_96_128_128_fl": "global",
+      "enc_stage_96_128_128_fl_lt": "native",
+      "ingest": "global",
+      "pack": "global",
+      "pooled_history2": "global",
+      "pooled_history2_lt": "global",
+      "post_dlt_f": "global",
+      "post_dlt_f_lt": "native",
+      "post_f": "global",
+      "post_f_lt": "native",
+      "post_tile": "global",
+      "selftest": "global",
+      "selftest_tex": "global"
+    },
+    "cmat_address_shaders": [
+      "dec_dfn_128_128_f",
+      "dec_dfn_128_128_f_lt",
+      "dec_dfn_128_128_fl",
+      "dec_dfn_128_128_fl_lt",
+      "dec_dfn_160_256_f",
+      "dec_dfn_160_256_f_lt",
+      "dec_dfn_160_256_fl",
+      "dec_dfn_160_256_fl_lt",
+      "dec_dfn_64_64_f_lt",
+      "dec_dfn_96_128_f",
+      "dec_dfn_96_128_f_lt",
+      "dec_dfn_96_128_fl",
+      "dec_dfn_96_128_fl_lt",
+      "dec_head_32_64_f",
+      "dec_head_32_64_f_lt",
+      "dec_head_32_64_f_lx",
+      "dec_up_128_128_160_f",
+      "dec_up_128_128_160_f_lt",
+      "dec_up_128_128_160_fl",
+      "dec_up_128_128_160_fl_lt",
+      "dec_up_160_256_160_f",
+      "dec_up_160_256_160_f_lt",
+      "dec_up_160_256_160_fl",
+      "dec_up_160_256_160_fl_lt",
+      "dec_up_32_64_64_f",
+      "dec_up_32_64_64_f_lt",
+      "dec_up_32_64_64_f_lx",
+      "dec_up_64_64_96_f_lt",
+      "dec_up_96_128_128_f",
+      "dec_up_96_128_128_f_lt",
+      "dec_up_96_128_128_fl",
+      "dec_up_96_128_128_fl_lt",
+      "enc0_stage_32_64_f",
+      "enc0_stage_32_64_f_lt",
+      "enc0_stage_32_64_f_lx",
+      "enc0_stage_32_64_f_w",
+      "enc0_stage_32_64_f_w_lt",
+      "enc0_stage_32_64_f_w_lx",
+      "enc_stage_128_128_160_f",
+      "enc_stage_128_128_160_f_lt",
+      "enc_stage_128_128_160_fl",
+      "enc_stage_128_128_160_fl_lt",
+      "enc_stage_160_256_0_f",
+      "enc_stage_160_256_0_f_lt",
+      "enc_stage_160_256_0_fl",
+      "enc_stage_160_256_0_fl_lt",
+      "enc_stage_160_256_160_f",
+      "enc_stage_160_256_160_f_lt",
+      "enc_stage_160_256_160_fl",
+      "enc_stage_160_256_160_fl_lt",
+      "enc_stage_64_64_96_f",
+      "enc_stage_64_64_96_f_lt",
+      "enc_stage_96_128_128_f",
+      "enc_stage_96_128_128_f_lt",
+      "enc_stage_96_128_128_fl",
+      "enc_stage_96_128_128_fl_lt"
+    ]
+  },
+  "records": {
+    "8053435623e90df5": {
+      "rsrc1": 786434,
+      "rsrc2": 69010,
+      "rsrc3": 224,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 24,
+      "exec_bytes": 1540,
+      "workgroup_size": 256,
+      "shared_bytes": 1024,
+      "push_bytes": 76,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "ae.spv",
+      "spv_hash": "8053435623e90df5",
+      "code_hash": "a59347357a23f12d",
+      "workgroup": [
+        16,
+        16,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "481f20f549e5c2bce01383d1696f9c72cc61aee9bc513ea5dac6a39a75117865",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "8053435623e90df5.nrp",
+      "precision": "global"
+    },
+    "cffca948d4b28dac": {
+      "rsrc1": 537657346,
+      "rsrc2": 136,
+      "rsrc3": 64,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 24,
+      "exec_bytes": 200,
+      "workgroup_size": 256,
+      "shared_bytes": 0,
+      "push_bytes": 16,
+      "wave_size": 32,
+      "user_sgprs": 4,
+      "set0": -1,
+      "push": -1,
+      "grid": -1,
+      "inline": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          3,
+          3
+        ]
+      ],
+      "spv": "clear_range.spv",
+      "spv_hash": "cffca948d4b28dac",
+      "code_hash": "b0c0dce87366a22f",
+      "workgroup": [
+        256,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "e40cdd6632436f197c329a57f15c8fd8cfd081d2bf6cf9f73b282ba33da3838b",
+      "address_report": {
+        "subst": 0,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "cffca948d4b28dac.nrp",
+      "precision": "global"
+    },
+    "6ee5df16897d899e": {
+      "rsrc1": 786434,
+      "rsrc2": 69012,
+      "rsrc3": 256,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 24,
+      "exec_bytes": 1740,
+      "workgroup_size": 256,
+      "shared_bytes": 1024,
+      "push_bytes": 76,
+      "wave_size": 32,
+      "user_sgprs": 10,
+      "set0": 0,
+      "push": 1,
+      "grid": -1,
+      "inline": [
+        [
+          2,
+          0
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          5,
+          3
+        ],
+        [
+          6,
+          4
+        ],
+        [
+          7,
+          5
+        ],
+        [
+          8,
+          6
+        ],
+        [
+          9,
+          7
+        ]
+      ],
+      "spv": "d3d_ae.spv",
+      "spv_hash": "6ee5df16897d899e",
+      "code_hash": "b5e42b435944f396",
+      "workgroup": [
+        16,
+        16,
+        1
+      ],
+      "layout": "views",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "e862b1a5df9920062d35de4aeeafe9b5ab9eccd090104550297649d73446ee32",
+      "address_report": {
+        "subst": 2,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "6ee5df16897d899e.nrp",
+      "precision": "global"
+    },
+    "5676bbf006906b67": {
+      "rsrc1": 786437,
+      "rsrc2": 199060,
+      "rsrc3": 384,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 48,
+      "exec_bytes": 2880,
+      "workgroup_size": 256,
+      "shared_bytes": 2784,
+      "push_bytes": 80,
+      "wave_size": 32,
+      "user_sgprs": 10,
+      "set0": 0,
+      "push": 1,
+      "grid": -1,
+      "inline": [
+        [
+          2,
+          0
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          5,
+          3
+        ],
+        [
+          6,
+          4
+        ],
+        [
+          7,
+          5
+        ],
+        [
+          8,
+          6
+        ],
+        [
+          9,
+          7
+        ]
+      ],
+      "spv": "d3d_downsample.spv",
+      "spv_hash": "5676bbf006906b67",
+      "code_hash": "99f05deb2189fb43",
+      "workgroup": [
+        16,
+        16,
+        1
+      ],
+      "layout": "views",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "2ea97073a6829055e19d334b08e756ba65fe5d9b1971c93f36baa05317bbfc18",
+      "address_report": {
+        "subst": 2,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "5676bbf006906b67.nrp",
+      "precision": "global"
+    },
+    "e2ed22b1f2b9f2b1": {
+      "rsrc1": 786437,
+      "rsrc2": 199060,
+      "rsrc3": 288,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 48,
+      "exec_bytes": 2048,
+      "workgroup_size": 256,
+      "shared_bytes": 2784,
+      "push_bytes": 76,
+      "wave_size": 32,
+      "user_sgprs": 10,
+      "set0": 0,
+      "push": 1,
+      "grid": -1,
+      "inline": [
+        [
+          2,
+          0
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          5,
+          3
+        ],
+        [
+          6,
+          4
+        ],
+        [
+          7,
+          5
+        ],
+        [
+          8,
+          6
+        ],
+        [
+          9,
+          7
+        ]
+      ],
+      "spv": "d3d_downsample_lt.spv",
+      "spv_hash": "e2ed22b1f2b9f2b1",
+      "code_hash": "d9a97fc9f27d4b7c",
+      "workgroup": [
+        16,
+        16,
+        1
+      ],
+      "layout": "views",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "074c42cae3b7815f5428f8fe9a00021ead2739d134061bda12d42e77cb0286e4",
+      "address_report": {
+        "subst": 2,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "e2ed22b1f2b9f2b1.nrp",
+      "precision": "global"
+    },
+    "79e3aae14ef98805": {
+      "rsrc1": 786443,
+      "rsrc2": 199060,
+      "rsrc3": 1904,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 96,
+      "exec_bytes": 14940,
+      "workgroup_size": 256,
+      "shared_bytes": 2784,
+      "push_bytes": 220,
+      "wave_size": 32,
+      "user_sgprs": 10,
+      "set0": 0,
+      "push": 1,
+      "grid": -1,
+      "inline": [
+        [
+          2,
+          0
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          5,
+          3
+        ],
+        [
+          6,
+          4
+        ],
+        [
+          7,
+          5
+        ],
+        [
+          8,
+          6
+        ],
+        [
+          9,
+          7
+        ]
+      ],
+      "spv": "d3d_downsample_tl.spv",
+      "spv_hash": "79e3aae14ef98805",
+      "code_hash": "9183df0802ec83c5",
+      "workgroup": [
+        16,
+        16,
+        1
+      ],
+      "layout": "views",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "98ff550c6693518fcfa39efb6a4b4bc3a57eb71a8f8eeb41917dcdc40e8d3ef2",
+      "address_report": {
+        "subst": 19,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "79e3aae14ef98805.nrp",
+      "precision": "global"
+    },
+    "551044f73e6787f2": {
+      "rsrc1": 786443,
+      "rsrc2": 396692,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 96,
+      "exec_bytes": 16668,
+      "workgroup_size": 256,
+      "shared_bytes": 6016,
+      "push_bytes": 220,
+      "wave_size": 32,
+      "user_sgprs": 10,
+      "set0": 0,
+      "push": 1,
+      "grid": -1,
+      "inline": [
+        [
+          2,
+          0
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          5,
+          3
+        ],
+        [
+          6,
+          4
+        ],
+        [
+          7,
+          5
+        ],
+        [
+          8,
+          6
+        ],
+        [
+          9,
+          7
+        ]
+      ],
+      "spv": "d3d_downsample_tl_lt.spv",
+      "spv_hash": "551044f73e6787f2",
+      "code_hash": "3406c6ca793857a6",
+      "workgroup": [
+        16,
+        16,
+        1
+      ],
+      "layout": "views",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "1f1f71eef80594575ac49211631d0d8f798601ab4a1d44ce33eb1b360e11c256",
+      "address_report": {
+        "subst": 22,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "551044f73e6787f2.nrp",
+      "precision": "global"
+    },
+    "843584f3ad514a2c": {
+      "rsrc1": 537657355,
+      "rsrc2": 148,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 96,
+      "exec_bytes": 32512,
+      "workgroup_size": 64,
+      "shared_bytes": 0,
+      "push_bytes": 236,
+      "wave_size": 32,
+      "user_sgprs": 10,
+      "set0": 0,
+      "push": 1,
+      "grid": -1,
+      "inline": [
+        [
+          2,
+          4
+        ],
+        [
+          3,
+          5
+        ],
+        [
+          4,
+          16
+        ],
+        [
+          5,
+          17
+        ],
+        [
+          6,
+          18
+        ],
+        [
+          7,
+          19
+        ],
+        [
+          8,
+          20
+        ],
+        [
+          9,
+          21
+        ]
+      ],
+      "spv": "d3d_enc0_attr_f.spv",
+      "spv_hash": "843584f3ad514a2c",
+      "code_hash": "b7b1639540f0e769",
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "layout": "views",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "10d9d45be6b2da5c43b995a5a0569f06afce6354a7da8f5bd86c27aaf0dab140",
+      "address_report": {
+        "subst": 23,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "843584f3ad514a2c.nrp",
+      "precision": "global"
+    },
+    "98b718365972de0f": {
+      "rsrc1": 537657355,
+      "rsrc2": 148,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 96,
+      "exec_bytes": 22512,
+      "workgroup_size": 64,
+      "shared_bytes": 0,
+      "push_bytes": 236,
+      "wave_size": 32,
+      "user_sgprs": 10,
+      "set0": 0,
+      "push": 1,
+      "grid": -1,
+      "inline": [
+        [
+          2,
+          4
+        ],
+        [
+          3,
+          5
+        ],
+        [
+          4,
+          16
+        ],
+        [
+          5,
+          17
+        ],
+        [
+          6,
+          18
+        ],
+        [
+          7,
+          19
+        ],
+        [
+          8,
+          20
+        ],
+        [
+          9,
+          21
+        ]
+      ],
+      "spv": "d3d_enc0_attr_f_lt.spv",
+      "spv_hash": "98b718365972de0f",
+      "code_hash": "8354e76a31a0f9c0",
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "layout": "views",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "bc3c6c4201688d725e51450b0ff2fa2ffeddc70bef8911ffe94e95dc6bdf287a",
+      "address_report": {
+        "subst": 13,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "98b718365972de0f.nrp",
+      "precision": "native"
+    },
+    "801fae4e8a2b7519": {
+      "rsrc1": 537657355,
+      "rsrc2": 148,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 96,
+      "exec_bytes": 32616,
+      "workgroup_size": 64,
+      "shared_bytes": 0,
+      "push_bytes": 236,
+      "wave_size": 32,
+      "user_sgprs": 10,
+      "set0": 0,
+      "push": 1,
+      "grid": -1,
+      "inline": [
+        [
+          2,
+          4
+        ],
+        [
+          3,
+          5
+        ],
+        [
+          4,
+          16
+        ],
+        [
+          5,
+          17
+        ],
+        [
+          6,
+          18
+        ],
+        [
+          7,
+          19
+        ],
+        [
+          8,
+          20
+        ],
+        [
+          9,
+          21
+        ]
+      ],
+      "spv": "d3d_enc0_attr_f_w.spv",
+      "spv_hash": "801fae4e8a2b7519",
+      "code_hash": "060c8377156a56ba",
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "layout": "views",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "59226af5209e5e58b4a14851b4c5f6e561eddfd786d5ba8d5cd338fe2a8bac1c",
+      "address_report": {
+        "subst": 23,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "801fae4e8a2b7519.nrp",
+      "precision": "global"
+    },
+    "3c7a6e902ba9feaa": {
+      "rsrc1": 537657355,
+      "rsrc2": 148,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 96,
+      "exec_bytes": 29064,
+      "workgroup_size": 64,
+      "shared_bytes": 0,
+      "push_bytes": 236,
+      "wave_size": 32,
+      "user_sgprs": 10,
+      "set0": 0,
+      "push": 1,
+      "grid": -1,
+      "inline": [
+        [
+          2,
+          4
+        ],
+        [
+          3,
+          5
+        ],
+        [
+          4,
+          16
+        ],
+        [
+          5,
+          17
+        ],
+        [
+          6,
+          18
+        ],
+        [
+          7,
+          19
+        ],
+        [
+          8,
+          20
+        ],
+        [
+          9,
+          21
+        ]
+      ],
+      "spv": "d3d_enc0_attr_f_w_lt.spv",
+      "spv_hash": "3c7a6e902ba9feaa",
+      "code_hash": "c156f2e090131305",
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "layout": "views",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "19dd696a1e1b500899e64c99677a98150f7872114015782212c6878c1ff6c3b0",
+      "address_report": {
+        "subst": 13,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "3c7a6e902ba9feaa.nrp",
+      "precision": "native"
+    },
+    "487ba381e5bfa6a7": {
+      "rsrc1": 537657349,
+      "rsrc2": 2452,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 48,
+      "exec_bytes": 29672,
+      "workgroup_size": 256,
+      "shared_bytes": 0,
+      "push_bytes": 240,
+      "wave_size": 32,
+      "user_sgprs": 10,
+      "set0": 0,
+      "push": 1,
+      "grid": -1,
+      "inline": [
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          4
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          5,
+          6
+        ],
+        [
+          6,
+          7
+        ],
+        [
+          7,
+          8
+        ],
+        [
+          8,
+          9
+        ],
+        [
+          9,
+          10
+        ]
+      ],
+      "spv": "d3d_ingest.spv",
+      "spv_hash": "487ba381e5bfa6a7",
+      "code_hash": "adbb357382781149",
+      "workgroup": [
+        16,
+        16,
+        1
+      ],
+      "layout": "views",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "43afb546430a8383fc1586bfac7a6d30393ae79b80c8d7f20001760c15328536",
+      "address_report": {
+        "subst": 9,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "487ba381e5bfa6a7.nrp",
+      "precision": "global"
+    },
+    "37b54dc8375d23da": {
+      "rsrc1": 537657346,
+      "rsrc2": 2452,
+      "rsrc3": 432,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 24,
+      "exec_bytes": 3164,
+      "workgroup_size": 256,
+      "shared_bytes": 0,
+      "push_bytes": 40,
+      "wave_size": 32,
+      "user_sgprs": 10,
+      "set0": 0,
+      "push": 1,
+      "grid": -1,
+      "inline": [
+        [
+          2,
+          0
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          5,
+          3
+        ],
+        [
+          6,
+          4
+        ],
+        [
+          7,
+          5
+        ],
+        [
+          8,
+          6
+        ],
+        [
+          9,
+          7
+        ]
+      ],
+      "spv": "d3d_pack.spv",
+      "spv_hash": "37b54dc8375d23da",
+      "code_hash": "a1c9a21b662752e1",
+      "workgroup": [
+        16,
+        16,
+        1
+      ],
+      "layout": "views",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "4b118102096145d336ce361711176993b6ed6bd9c2376547054cb5da5a9bcc76",
+      "address_report": {
+        "subst": 2,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "37b54dc8375d23da.nrp",
+      "precision": "global"
+    },
+    "d9407f1c30e0eec4": {
+      "rsrc1": 786463,
+      "rsrc2": 1705106,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 256,
+      "exec_bytes": 25020,
+      "workgroup_size": 128,
+      "shared_bytes": 26112,
+      "push_bytes": 176,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_dfn_128_128_f.spv",
+      "spv_hash": "d9407f1c30e0eec4",
+      "code_hash": "7182be0848964fa9",
+      "workgroup": [
+        128,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "f2a9eb67bfaea4bfdf841319b422572751b20bf7025624b60b021646b5642cea",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "d9407f1c30e0eec4.nrp",
+      "precision": "global"
+    },
+    "be959b7dcf469aab": {
+      "rsrc1": 786455,
+      "rsrc2": 656530,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 21148,
+      "workgroup_size": 128,
+      "shared_bytes": 9728,
+      "push_bytes": 176,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_dfn_128_128_f_lt.spv",
+      "spv_hash": "be959b7dcf469aab",
+      "code_hash": "22b6b7e02583c49a",
+      "workgroup": [
+        128,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "a1efa3d471f4769ec646d3be1aa13471ececa0b90b9cdbe4f842d236748fea2d",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "be959b7dcf469aab.nrp",
+      "precision": "native"
+    },
+    "7f533479ade725f9": {
+      "rsrc1": 786463,
+      "rsrc2": 1705874,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 256,
+      "exec_bytes": 26048,
+      "workgroup_size": 128,
+      "shared_bytes": 26112,
+      "push_bytes": 176,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_dfn_128_128_fl.spv",
+      "spv_hash": "7f533479ade725f9",
+      "code_hash": "9e17eae98a0ac0a6",
+      "workgroup": [
+        128,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "75d644c9bda961650ac8d81c98664c770ef827d22cacb9bcffaca6f3a9f1ef8d",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "7f533479ade725f9.nrp",
+      "precision": "global"
+    },
+    "ad4f60fde7938740": {
+      "rsrc1": 786455,
+      "rsrc2": 657298,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 22396,
+      "workgroup_size": 128,
+      "shared_bytes": 9728,
+      "push_bytes": 176,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_dfn_128_128_fl_lt.spv",
+      "spv_hash": "ad4f60fde7938740",
+      "code_hash": "557b0d234b833fd8",
+      "workgroup": [
+        128,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "0fb04274873e7cbf7a9bed905fc7e50bc8c9f77b0d21053cfdd87d5f567d542e",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "ad4f60fde7938740.nrp",
+      "precision": "native"
+    },
+    "eb5939f14ddc7e4c": {
+      "rsrc1": 786455,
+      "rsrc2": 1967250,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 20080,
+      "workgroup_size": 256,
+      "shared_bytes": 30208,
+      "push_bytes": 176,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_dfn_160_256_f.spv",
+      "spv_hash": "eb5939f14ddc7e4c",
+      "code_hash": "34c836907fa6b44f",
+      "workgroup": [
+        256,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "b44e7cafe9a3cfcd93c666c7a117891d6f07f7a84ca7ed76eaddf9c40f6f87d0",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "eb5939f14ddc7e4c.nrp",
+      "precision": "global"
+    },
+    "792ce67a92f5da97": {
+      "rsrc1": 786455,
+      "rsrc2": 1967250,
+      "rsrc3": 1824,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 14372,
+      "workgroup_size": 256,
+      "shared_bytes": 30208,
+      "push_bytes": 176,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_dfn_160_256_f_lt.spv",
+      "spv_hash": "792ce67a92f5da97",
+      "code_hash": "e1f2e1959129bf29",
+      "workgroup": [
+        256,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "4a4d96c08b0f4c558acf7d3838665188d14f50159e104eddfac030b90e258945",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "792ce67a92f5da97.nrp",
+      "precision": "native"
+    },
+    "c9a2eae19a311fb1": {
+      "rsrc1": 786455,
+      "rsrc2": 1968018,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 21456,
+      "workgroup_size": 256,
+      "shared_bytes": 30208,
+      "push_bytes": 176,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_dfn_160_256_fl.spv",
+      "spv_hash": "c9a2eae19a311fb1",
+      "code_hash": "6621dd77262d32a9",
+      "workgroup": [
+        256,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "42936da25b26077284ee84f1affb33054ad262ad823ca0a2f2de63f188345e1d",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "c9a2eae19a311fb1.nrp",
+      "precision": "global"
+    },
+    "407d484993899518": {
+      "rsrc1": 786455,
+      "rsrc2": 1968018,
+      "rsrc3": 1984,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 15644,
+      "workgroup_size": 256,
+      "shared_bytes": 30208,
+      "push_bytes": 176,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_dfn_160_256_fl_lt.spv",
+      "spv_hash": "407d484993899518",
+      "code_hash": "cd2d3422a49877ad",
+      "workgroup": [
+        256,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "a7323cf96441e945dd2462bba71f23202a6fee759261596d10b811e09cef95df",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "407d484993899518.nrp",
+      "precision": "native"
+    },
+    "777985d1831329ca": {
+      "rsrc1": 786461,
+      "rsrc2": 656530,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 240,
+      "exec_bytes": 28152,
+      "workgroup_size": 64,
+      "shared_bytes": 9728,
+      "push_bytes": 176,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_dfn_64_64_f.spv",
+      "spv_hash": "777985d1831329ca",
+      "code_hash": "1e6986341803c567",
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "fc5aa35145edd913c1ebc8a8c42fe7c4ac6bcd431971dab38082dbfded44e885",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "777985d1831329ca.nrp",
+      "precision": "global"
+    },
+    "6624bac1b39d8916": {
+      "rsrc1": 786461,
+      "rsrc2": 656530,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 240,
+      "exec_bytes": 20020,
+      "workgroup_size": 64,
+      "shared_bytes": 9728,
+      "push_bytes": 176,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_dfn_64_64_f_lt.spv",
+      "spv_hash": "6624bac1b39d8916",
+      "code_hash": "57f9280771a431f3",
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "db67ed5f319353f7c55417ba42a33e0c29f1ea7960d50af79bcee574ca43b19f",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "6624bac1b39d8916.nrp",
+      "precision": "native"
+    },
+    "50c4593efddb5754": {
+      "rsrc1": 786463,
+      "rsrc2": 656530,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 256,
+      "exec_bytes": 22084,
+      "workgroup_size": 64,
+      "shared_bytes": 9728,
+      "push_bytes": 176,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_dfn_96_128_f.spv",
+      "spv_hash": "50c4593efddb5754",
+      "code_hash": "defd402adaf2d045",
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "6a9dfbac1e920eb62a3590778964284d34b89088372be0eb07e1240a761015d1",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "50c4593efddb5754.nrp",
+      "precision": "global"
+    },
+    "9bbb1f90fb2eab87": {
+      "rsrc1": 786463,
+      "rsrc2": 656530,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 256,
+      "exec_bytes": 16732,
+      "workgroup_size": 64,
+      "shared_bytes": 9728,
+      "push_bytes": 176,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_dfn_96_128_f_lt.spv",
+      "spv_hash": "9bbb1f90fb2eab87",
+      "code_hash": "19e3b3a9ea2be036",
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "874b0879c0e643507f36f171dc291653c7ac146c6c1aeb16cd7d214dadf90b7c",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "9bbb1f90fb2eab87.nrp",
+      "precision": "native"
+    },
+    "608c28c0029891f3": {
+      "rsrc1": 786463,
+      "rsrc2": 657298,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 256,
+      "exec_bytes": 23256,
+      "workgroup_size": 64,
+      "shared_bytes": 9728,
+      "push_bytes": 176,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_dfn_96_128_fl.spv",
+      "spv_hash": "608c28c0029891f3",
+      "code_hash": "8f70c3e460de4204",
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "dd883a034630b33555b8191f01bffb31f0de2cb092929734a59f5468facd0a61",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "608c28c0029891f3.nrp",
+      "precision": "global"
+    },
+    "0175d728177183d7": {
+      "rsrc1": 786463,
+      "rsrc2": 657298,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 256,
+      "exec_bytes": 17776,
+      "workgroup_size": 64,
+      "shared_bytes": 9728,
+      "push_bytes": 176,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_dfn_96_128_fl_lt.spv",
+      "spv_hash": "0175d728177183d7",
+      "code_hash": "1187a361eafb82ce",
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "8a3ffac9fc8a87ea153367232b9558d68bb092b8921d1b9260df99ec5eaebd3b",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "0175d728177183d7.nrp",
+      "precision": "native"
+    },
+    "4d950deb0eece7e6": {
+      "rsrc1": 537657370,
+      "rsrc2": 146,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 216,
+      "exec_bytes": 22392,
+      "workgroup_size": 32,
+      "shared_bytes": 0,
+      "push_bytes": 232,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          4
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          5,
+          6
+        ],
+        [
+          6,
+          7
+        ],
+        [
+          7,
+          8
+        ],
+        [
+          8,
+          9
+        ]
+      ],
+      "spv": "dec_head_32_64_f.spv",
+      "spv_hash": "4d950deb0eece7e6",
+      "code_hash": "4c9d90843ff100eb",
+      "workgroup": [
+        32,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "949b2085c1868725a83408ad25c97e5c7975add5423b5b3ee36d0b8a225cc0dd",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "4d950deb0eece7e6.nrp",
+      "precision": "global"
+    },
+    "8582826a080817d9": {
+      "rsrc1": 537657367,
+      "rsrc2": 146,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 20492,
+      "workgroup_size": 32,
+      "shared_bytes": 0,
+      "push_bytes": 232,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          4
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          5,
+          6
+        ],
+        [
+          6,
+          7
+        ],
+        [
+          7,
+          10
+        ],
+        [
+          8,
+          11
+        ]
+      ],
+      "spv": "dec_head_32_64_f_lt.spv",
+      "spv_hash": "8582826a080817d9",
+      "code_hash": "79e12fde60eb7243",
+      "workgroup": [
+        32,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "44a61803ace53ba867fa800ff479fcf08e129c87ebb11e3ce9bf40d2faebcebf",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "8582826a080817d9.nrp",
+      "precision": "native"
+    },
+    "eb1b3435034d4c26": {
+      "rsrc1": 537657367,
+      "rsrc2": 146,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 18128,
+      "workgroup_size": 32,
+      "shared_bytes": 0,
+      "push_bytes": 232,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          4
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          5,
+          6
+        ],
+        [
+          6,
+          7
+        ],
+        [
+          7,
+          10
+        ],
+        [
+          8,
+          11
+        ]
+      ],
+      "spv": "dec_head_32_64_f_lx.spv",
+      "spv_hash": "eb1b3435034d4c26",
+      "code_hash": "1750ddfb8076525c",
+      "workgroup": [
+        32,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "f894ed79c890de7fa936083354187c6fec11628aeac2eaf9fb96171cbaf19b32",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "eb1b3435034d4c26.nrp",
+      "precision": "native"
+    },
+    "4ce6d2b8170fb880": {
+      "rsrc1": 786463,
+      "rsrc2": 2098322,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 256,
+      "exec_bytes": 23452,
+      "workgroup_size": 128,
+      "shared_bytes": 32768,
+      "push_bytes": 156,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_up_128_128_160_f.spv",
+      "spv_hash": "4ce6d2b8170fb880",
+      "code_hash": "dc1b188fe4e8e1c8",
+      "workgroup": [
+        128,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "75145debd956b5b0b285d2db900e0e586697a09b77a5b714fdedbfebeac0d8cb",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "4ce6d2b8170fb880.nrp",
+      "precision": "global"
+    },
+    "e23279fb86e297e5": {
+      "rsrc1": 786461,
+      "rsrc2": 1377426,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 240,
+      "exec_bytes": 22636,
+      "workgroup_size": 128,
+      "shared_bytes": 21504,
+      "push_bytes": 156,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_up_128_128_160_f_lt.spv",
+      "spv_hash": "e23279fb86e297e5",
+      "code_hash": "968ca08327f44ce2",
+      "workgroup": [
+        128,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "f25c16569eb0b7f659eeaf1c19d3c3fdbbc87bae9280ca3e6d3495d87024f871",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "e23279fb86e297e5.nrp",
+      "precision": "native"
+    },
+    "6943259a15e51c64": {
+      "rsrc1": 786463,
+      "rsrc2": 2099090,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 256,
+      "exec_bytes": 24832,
+      "workgroup_size": 128,
+      "shared_bytes": 32768,
+      "push_bytes": 156,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_up_128_128_160_fl.spv",
+      "spv_hash": "6943259a15e51c64",
+      "code_hash": "fa22498ae0dbae7d",
+      "workgroup": [
+        128,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "59ef21e96f5b6dbc1ede5c575c5819a83d36e2cbcac4bf5abd7f4e0382e12ef7",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "6943259a15e51c64.nrp",
+      "precision": "global"
+    },
+    "9e04e2bfaa4eeb3d": {
+      "rsrc1": 786461,
+      "rsrc2": 1378194,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 240,
+      "exec_bytes": 23836,
+      "workgroup_size": 128,
+      "shared_bytes": 21504,
+      "push_bytes": 156,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_up_128_128_160_fl_lt.spv",
+      "spv_hash": "9e04e2bfaa4eeb3d",
+      "code_hash": "725e7becbcd065e3",
+      "workgroup": [
+        128,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "281a965f888ec7a8cae7de262982b920dde70a1f159642af4cd9721571f9c538",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "9e04e2bfaa4eeb3d.nrp",
+      "precision": "native"
+    },
+    "bdd533a7e12bdbcf": {
+      "rsrc1": 786455,
+      "rsrc2": 1967250,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 18704,
+      "workgroup_size": 256,
+      "shared_bytes": 30208,
+      "push_bytes": 156,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_up_160_256_160_f.spv",
+      "spv_hash": "bdd533a7e12bdbcf",
+      "code_hash": "6c28b5dfed1d7fc8",
+      "workgroup": [
+        256,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "0358b031813f11c2afecb57a7d8a42bb3d23befcd6c30ec63b8a11140c615ba2",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "bdd533a7e12bdbcf.nrp",
+      "precision": "global"
+    },
+    "e367cf1b2255ed69": {
+      "rsrc1": 786455,
+      "rsrc2": 1967250,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 18052,
+      "workgroup_size": 256,
+      "shared_bytes": 30208,
+      "push_bytes": 156,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_up_160_256_160_f_lt.spv",
+      "spv_hash": "e367cf1b2255ed69",
+      "code_hash": "710195a75d6cd523",
+      "workgroup": [
+        256,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "803f01c1c417071a2f185e67a0b95494b93bde362de1afe7270d9be0326762c0",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "e367cf1b2255ed69.nrp",
+      "precision": "native"
+    },
+    "b2002a53398d0fb9": {
+      "rsrc1": 786455,
+      "rsrc2": 1968018,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 20128,
+      "workgroup_size": 256,
+      "shared_bytes": 30208,
+      "push_bytes": 156,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_up_160_256_160_fl.spv",
+      "spv_hash": "b2002a53398d0fb9",
+      "code_hash": "37b612a374045a47",
+      "workgroup": [
+        256,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "45a1fe5398ba17c3153624a55d69d8a3ebb5e55621266f955bbddc4feb63c1ef",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "b2002a53398d0fb9.nrp",
+      "precision": "global"
+    },
+    "2b7e9b6c3ba38edd": {
+      "rsrc1": 786455,
+      "rsrc2": 1968018,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 19348,
+      "workgroup_size": 256,
+      "shared_bytes": 30208,
+      "push_bytes": 156,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_up_160_256_160_fl_lt.spv",
+      "spv_hash": "2b7e9b6c3ba38edd",
+      "code_hash": "f782227e33702684",
+      "workgroup": [
+        256,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "691603bdf99b24f3f0776294c27882175ce5ba3f8e9c727e4edb3c19764e1929",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "2b7e9b6c3ba38edd.nrp",
+      "precision": "native"
+    },
+    "fafd62648475dd77": {
+      "rsrc1": 786458,
+      "rsrc2": 262290,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 216,
+      "exec_bytes": 25076,
+      "workgroup_size": 32,
+      "shared_bytes": 4096,
+      "push_bytes": 160,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_up_32_64_64_f.spv",
+      "spv_hash": "fafd62648475dd77",
+      "code_hash": "3682eac2f7a1192d",
+      "workgroup": [
+        32,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "705f1af808287600679f0102645079d71806199efaf8c60bdf08b72c22bae94a",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "fafd62648475dd77.nrp",
+      "precision": "global"
+    },
+    "6c0f60fe53939ec6": {
+      "rsrc1": 786455,
+      "rsrc2": 262290,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 16132,
+      "workgroup_size": 32,
+      "shared_bytes": 4096,
+      "push_bytes": 160,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_up_32_64_64_f_lt.spv",
+      "spv_hash": "6c0f60fe53939ec6",
+      "code_hash": "e9dfe19e0f9fece9",
+      "workgroup": [
+        32,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "c88d2b1ecad4868438b68f76e6fe518aea3cde69a234c64370e5e23ffd08b7f1",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "6c0f60fe53939ec6.nrp",
+      "precision": "native"
+    },
+    "02a47025fdc9f35f": {
+      "rsrc1": 786455,
+      "rsrc2": 262290,
+      "rsrc3": 1984,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 15608,
+      "workgroup_size": 32,
+      "shared_bytes": 4096,
+      "push_bytes": 160,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_up_32_64_64_f_lx.spv",
+      "spv_hash": "02a47025fdc9f35f",
+      "code_hash": "76f86e7f4b806d59",
+      "workgroup": [
+        32,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "e1418a503a361c71ab7792f55b54d62fe6d7a425103a3234efc19f0eb0201a41",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "02a47025fdc9f35f.nrp",
+      "precision": "native"
+    },
+    "238fcc9bcf09fa55": {
+      "rsrc1": 786461,
+      "rsrc2": 656530,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 240,
+      "exec_bytes": 26228,
+      "workgroup_size": 64,
+      "shared_bytes": 9728,
+      "push_bytes": 156,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_up_64_64_96_f.spv",
+      "spv_hash": "238fcc9bcf09fa55",
+      "code_hash": "ab7cd4604db3e6a5",
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "b1a4647086bcb475cfc22fe742528f3c8f9c31bac03063ad2f5f3dfbdcf5e0f6",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "238fcc9bcf09fa55.nrp",
+      "precision": "global"
+    },
+    "87b3b01beb5b6e10": {
+      "rsrc1": 786461,
+      "rsrc2": 656530,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 240,
+      "exec_bytes": 22404,
+      "workgroup_size": 64,
+      "shared_bytes": 9728,
+      "push_bytes": 156,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_up_64_64_96_f_lt.spv",
+      "spv_hash": "87b3b01beb5b6e10",
+      "code_hash": "999dbd50c94d5e37",
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "ae68f2695eeab63ddf50b14747209807fc2f7349bec3c77ee050c6ef1100080b",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "87b3b01beb5b6e10.nrp",
+      "precision": "native"
+    },
+    "cac3310725f1f4f6": {
+      "rsrc1": 786455,
+      "rsrc2": 1049746,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 28488,
+      "workgroup_size": 128,
+      "shared_bytes": 16384,
+      "push_bytes": 156,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_up_96_128_128_f.spv",
+      "spv_hash": "cac3310725f1f4f6",
+      "code_hash": "ef9ddb6f288e3b40",
+      "workgroup": [
+        128,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "23443433f896f0869e00fdce3ba8f84afbc272a09076348cdd76c7fc309e8629",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "cac3310725f1f4f6.nrp",
+      "precision": "global"
+    },
+    "3cca824c2e0b7097": {
+      "rsrc1": 786463,
+      "rsrc2": 787602,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 256,
+      "exec_bytes": 20500,
+      "workgroup_size": 64,
+      "shared_bytes": 12288,
+      "push_bytes": 156,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_up_96_128_128_f_lt.spv",
+      "spv_hash": "3cca824c2e0b7097",
+      "code_hash": "4f8875c2b6293f2f",
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "d01bfaca1f51f67e640b713b4b1a74d959bdb6e968cbe71086c1224b976d900b",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "3cca824c2e0b7097.nrp",
+      "precision": "native"
+    },
+    "d5a6152d802eb75d": {
+      "rsrc1": 786455,
+      "rsrc2": 1050514,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 29788,
+      "workgroup_size": 128,
+      "shared_bytes": 16384,
+      "push_bytes": 156,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_up_96_128_128_fl.spv",
+      "spv_hash": "d5a6152d802eb75d",
+      "code_hash": "310531dc3cfb2643",
+      "workgroup": [
+        128,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "50a866abe26c1bd35390c27b186921323b6764c7faae01c3224ef39654005d10",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "d5a6152d802eb75d.nrp",
+      "precision": "global"
+    },
+    "56055c16892b7063": {
+      "rsrc1": 786463,
+      "rsrc2": 788370,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 256,
+      "exec_bytes": 22048,
+      "workgroup_size": 64,
+      "shared_bytes": 12288,
+      "push_bytes": 156,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "dec_up_96_128_128_fl_lt.spv",
+      "spv_hash": "56055c16892b7063",
+      "code_hash": "dac47e01fa877d78",
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "10df755104469e3d2a589d90c7683f7ac1b7fd1517e534cbe22bb428849aaf8b",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "56055c16892b7063.nrp",
+      "precision": "native"
+    },
+    "5eff19ab0da39495": {
+      "rsrc1": 537657346,
+      "rsrc2": 2454,
+      "rsrc3": 96,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 24,
+      "exec_bytes": 572,
+      "workgroup_size": 256,
+      "shared_bytes": 0,
+      "push_bytes": 44,
+      "wave_size": 32,
+      "user_sgprs": 11,
+      "set0": -1,
+      "push": -1,
+      "grid": -1,
+      "inline": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          3,
+          3
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          5,
+          5
+        ],
+        [
+          6,
+          6
+        ],
+        [
+          7,
+          7
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          9,
+          9
+        ],
+        [
+          10,
+          10
+        ]
+      ],
+      "spv": "dfn_export.spv",
+      "spv_hash": "5eff19ab0da39495",
+      "code_hash": "dc25a5cf6f577e3d",
+      "workgroup": [
+        16,
+        16,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "95cfe21b9670937cb3e08000309c4c525d9cc67ade02ae93716aaa085703fc2d",
+      "address_report": {
+        "subst": 0,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "5eff19ab0da39495.nrp",
+      "precision": "global"
+    },
+    "8cadc24c9e03891b": {
+      "rsrc1": 537657346,
+      "rsrc2": 2454,
+      "rsrc3": 96,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 24,
+      "exec_bytes": 492,
+      "workgroup_size": 256,
+      "shared_bytes": 0,
+      "push_bytes": 44,
+      "wave_size": 32,
+      "user_sgprs": 11,
+      "set0": -1,
+      "push": -1,
+      "grid": -1,
+      "inline": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          3,
+          3
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          5,
+          5
+        ],
+        [
+          6,
+          6
+        ],
+        [
+          7,
+          7
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          9,
+          9
+        ],
+        [
+          10,
+          10
+        ]
+      ],
+      "spv": "dfn_export_lt.spv",
+      "spv_hash": "8cadc24c9e03891b",
+      "code_hash": "be3c1e88bd0b4abf",
+      "workgroup": [
+        16,
+        16,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "9f680ad780c125922c04d6c4d7ea64fa4ba6f299477c138a7610d3690b91c027",
+      "address_report": {
+        "subst": 0,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "8cadc24c9e03891b.nrp",
+      "precision": "global"
+    },
+    "92deee5eb00fde72": {
+      "rsrc1": 537657346,
+      "rsrc2": 2460,
+      "rsrc3": 416,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 24,
+      "exec_bytes": 3080,
+      "workgroup_size": 256,
+      "shared_bytes": 0,
+      "push_bytes": 56,
+      "wave_size": 32,
+      "user_sgprs": 14,
+      "set0": -1,
+      "push": -1,
+      "grid": -1,
+      "inline": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          3,
+          3
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          5,
+          5
+        ],
+        [
+          6,
+          6
+        ],
+        [
+          7,
+          7
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          9,
+          9
+        ],
+        [
+          10,
+          10
+        ],
+        [
+          11,
+          11
+        ],
+        [
+          12,
+          12
+        ],
+        [
+          13,
+          13
+        ]
+      ],
+      "spv": "dfn_import.spv",
+      "spv_hash": "92deee5eb00fde72",
+      "code_hash": "5bf711b6aac33900",
+      "workgroup": [
+        16,
+        16,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "35b79c3c0af85a70eae2e1706b8626fa4610dd0ddce15bdd95099ef09f548623",
+      "address_report": {
+        "subst": 0,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "92deee5eb00fde72.nrp",
+      "precision": "global"
+    },
+    "9494ed55ba8520ba": {
+      "rsrc1": 537657346,
+      "rsrc2": 2460,
+      "rsrc3": 400,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 24,
+      "exec_bytes": 2956,
+      "workgroup_size": 256,
+      "shared_bytes": 0,
+      "push_bytes": 56,
+      "wave_size": 32,
+      "user_sgprs": 14,
+      "set0": -1,
+      "push": -1,
+      "grid": -1,
+      "inline": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          3,
+          3
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          5,
+          5
+        ],
+        [
+          6,
+          6
+        ],
+        [
+          7,
+          7
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          9,
+          9
+        ],
+        [
+          10,
+          10
+        ],
+        [
+          11,
+          11
+        ],
+        [
+          12,
+          12
+        ],
+        [
+          13,
+          13
+        ]
+      ],
+      "spv": "dfn_import_lt.spv",
+      "spv_hash": "9494ed55ba8520ba",
+      "code_hash": "9a365dbe78cd8c2c",
+      "workgroup": [
+        16,
+        16,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "7d667e77b7131006cb0a567460d1e27834add8b66dbca0b0a4a88ceec91f9ee2",
+      "address_report": {
+        "subst": 0,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "9494ed55ba8520ba.nrp",
+      "precision": "global"
+    },
+    "0fc423f304f4ce71": {
+      "rsrc1": 786437,
+      "rsrc2": 199058,
+      "rsrc3": 416,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 48,
+      "exec_bytes": 3068,
+      "workgroup_size": 256,
+      "shared_bytes": 2784,
+      "push_bytes": 80,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "downsample.spv",
+      "spv_hash": "0fc423f304f4ce71",
+      "code_hash": "b891bc86560c6218",
+      "workgroup": [
+        16,
+        16,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "24c3548e26e8330ef28a4d72d3e037eb05ca349640be4719885afb6651aae68d",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "0fc423f304f4ce71.nrp",
+      "precision": "global"
+    },
+    "cd80a771a4cbc46b": {
+      "rsrc1": 786437,
+      "rsrc2": 199058,
+      "rsrc3": 304,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 48,
+      "exec_bytes": 2220,
+      "workgroup_size": 256,
+      "shared_bytes": 2784,
+      "push_bytes": 76,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "downsample_lt.spv",
+      "spv_hash": "cd80a771a4cbc46b",
+      "code_hash": "35003e832b92320c",
+      "workgroup": [
+        16,
+        16,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "c6e834034d8e7621ceb6dac67248880de600bbe75f354a8b68404b768d0a5cd6",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "cd80a771a4cbc46b.nrp",
+      "precision": "global"
+    },
+    "d455e2dc74c994ec": {
+      "rsrc1": 786443,
+      "rsrc2": 199058,
+      "rsrc3": 1360,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 96,
+      "exec_bytes": 10676,
+      "workgroup_size": 256,
+      "shared_bytes": 2784,
+      "push_bytes": 212,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "downsample_tl.spv",
+      "spv_hash": "d455e2dc74c994ec",
+      "code_hash": "9607fa44ed7f7566",
+      "workgroup": [
+        16,
+        16,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "572e63627245c81ea540931b8be946770ce86fcba7182f3c86cd2c5296ead514",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "d455e2dc74c994ec.nrp",
+      "precision": "global"
+    },
+    "b653a516e0c3b539": {
+      "rsrc1": 786443,
+      "rsrc2": 396690,
+      "rsrc3": 1568,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 96,
+      "exec_bytes": 12288,
+      "workgroup_size": 256,
+      "shared_bytes": 6016,
+      "push_bytes": 212,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "downsample_tl_lt.spv",
+      "spv_hash": "b653a516e0c3b539",
+      "code_hash": "5103c6a737b27eea",
+      "workgroup": [
+        16,
+        16,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "face1b05f3b8e6cfeae568b6aa1cafac0632c4850fd1e04ad14fcff6b424ac08",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "b653a516e0c3b539.nrp",
+      "precision": "global"
+    },
+    "8f3fc495df80454e": {
+      "rsrc1": 537657355,
+      "rsrc2": 146,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 96,
+      "exec_bytes": 25508,
+      "workgroup_size": 64,
+      "shared_bytes": 0,
+      "push_bytes": 236,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "enc0_attr_f.spv",
+      "spv_hash": "8f3fc495df80454e",
+      "code_hash": "e53b0f411142cf5f",
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "1ecbbfd9d5b7fdd44880946b1922fcccde3515f7bbfcb8cd0f352d542142e675",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "8f3fc495df80454e.nrp",
+      "precision": "global"
+    },
+    "6eacf94ec6357c81": {
+      "rsrc1": 537657355,
+      "rsrc2": 146,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 96,
+      "exec_bytes": 18092,
+      "workgroup_size": 64,
+      "shared_bytes": 0,
+      "push_bytes": 236,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "enc0_attr_f_lt.spv",
+      "spv_hash": "6eacf94ec6357c81",
+      "code_hash": "45ad1eebb55a0686",
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "5bb1bb2ba85ee64500d1bcbd11ed39cc4a51c2537a0ad5705ccbb77e86ce18b0",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "6eacf94ec6357c81.nrp",
+      "precision": "native"
+    },
+    "453f23bf9eaa4eca": {
+      "rsrc1": 537657355,
+      "rsrc2": 146,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 96,
+      "exec_bytes": 25572,
+      "workgroup_size": 64,
+      "shared_bytes": 0,
+      "push_bytes": 236,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "enc0_attr_f_w.spv",
+      "spv_hash": "453f23bf9eaa4eca",
+      "code_hash": "2688e657720ffc7d",
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "01acc031d5104c423d9ee7f476cb1c4c7edc3d85a5b3944ec82cda7f736a84f6",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "453f23bf9eaa4eca.nrp",
+      "precision": "global"
+    },
+    "cfb3e3a3b9529225": {
+      "rsrc1": 537657355,
+      "rsrc2": 146,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 96,
+      "exec_bytes": 24652,
+      "workgroup_size": 64,
+      "shared_bytes": 0,
+      "push_bytes": 236,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "enc0_attr_f_w_lt.spv",
+      "spv_hash": "cfb3e3a3b9529225",
+      "code_hash": "28c401da0bfb0c5a",
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "3aeae61c1b77e8ce64366cd149d026db3e08380ac6c61128dc13287b966aa57a",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "cfb3e3a3b9529225.nrp",
+      "precision": "native"
+    },
+    "ee79ba7e144c8848": {
+      "rsrc1": 537657373,
+      "rsrc2": 146,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 240,
+      "exec_bytes": 23712,
+      "workgroup_size": 32,
+      "shared_bytes": 0,
+      "push_bytes": 208,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          4
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          5,
+          6
+        ],
+        [
+          6,
+          7
+        ],
+        [
+          7,
+          8
+        ],
+        [
+          8,
+          9
+        ]
+      ],
+      "spv": "enc0_stage_32_64_f.spv",
+      "spv_hash": "ee79ba7e144c8848",
+      "code_hash": "0bf076a93ab81977",
+      "workgroup": [
+        32,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "0f661732401322bd057085d450d818e90603c656df6f9fd31e882aa2585930a1",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "ee79ba7e144c8848.nrp",
+      "precision": "global"
+    },
+    "2853b9e66e6bdd3a": {
+      "rsrc1": 537657367,
+      "rsrc2": 146,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 24356,
+      "workgroup_size": 32,
+      "shared_bytes": 0,
+      "push_bytes": 208,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          4
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          5,
+          6
+        ],
+        [
+          6,
+          7
+        ],
+        [
+          7,
+          10
+        ],
+        [
+          8,
+          11
+        ]
+      ],
+      "spv": "enc0_stage_32_64_f_lt.spv",
+      "spv_hash": "2853b9e66e6bdd3a",
+      "code_hash": "ba084866b7da234c",
+      "workgroup": [
+        32,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "8eb621898159ad24dad5a65395270fd4baf4a8d655379d52425c01ea0c19fc25",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "2853b9e66e6bdd3a.nrp",
+      "precision": "native"
+    },
+    "b26c3a7e71f986a5": {
+      "rsrc1": 537657367,
+      "rsrc2": 146,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 23804,
+      "workgroup_size": 32,
+      "shared_bytes": 0,
+      "push_bytes": 208,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          4
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          5,
+          6
+        ],
+        [
+          6,
+          7
+        ],
+        [
+          7,
+          10
+        ],
+        [
+          8,
+          11
+        ]
+      ],
+      "spv": "enc0_stage_32_64_f_lx.spv",
+      "spv_hash": "b26c3a7e71f986a5",
+      "code_hash": "c63970434ea89919",
+      "workgroup": [
+        32,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "6dd3d0cb6f10a6ebaa5cc0adfd1eeb87343eaaa52a590fef0b42f963e6bc034a",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "b26c3a7e71f986a5.nrp",
+      "precision": "native"
+    },
+    "d726d9bf673b0b32": {
+      "rsrc1": 537657373,
+      "rsrc2": 146,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 240,
+      "exec_bytes": 23308,
+      "workgroup_size": 32,
+      "shared_bytes": 0,
+      "push_bytes": 208,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          4
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          5,
+          6
+        ],
+        [
+          6,
+          7
+        ],
+        [
+          7,
+          8
+        ],
+        [
+          8,
+          9
+        ]
+      ],
+      "spv": "enc0_stage_32_64_f_w.spv",
+      "spv_hash": "d726d9bf673b0b32",
+      "code_hash": "a95f1239a045e102",
+      "workgroup": [
+        32,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "17e1d97a21582f5e5b3ec430b2fca3939c687f87b2c118de72b42d6dd18b12d2",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "d726d9bf673b0b32.nrp",
+      "precision": "global"
+    },
+    "b44a5ff2fb3185f2": {
+      "rsrc1": 537657367,
+      "rsrc2": 146,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 24120,
+      "workgroup_size": 32,
+      "shared_bytes": 0,
+      "push_bytes": 208,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          4
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          5,
+          6
+        ],
+        [
+          6,
+          7
+        ],
+        [
+          7,
+          10
+        ],
+        [
+          8,
+          11
+        ]
+      ],
+      "spv": "enc0_stage_32_64_f_w_lt.spv",
+      "spv_hash": "b44a5ff2fb3185f2",
+      "code_hash": "8dbd304107d07d05",
+      "workgroup": [
+        32,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "4ea304f2fbcfb3cc382f25c2dfac9bd0340cd87e7c6cbf644fb73fcb2510361b",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "b44a5ff2fb3185f2.nrp",
+      "precision": "native"
+    },
+    "05580a18f81d1d49": {
+      "rsrc1": 537657367,
+      "rsrc2": 146,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 23604,
+      "workgroup_size": 32,
+      "shared_bytes": 0,
+      "push_bytes": 208,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          3
+        ],
+        [
+          3,
+          4
+        ],
+        [
+          4,
+          5
+        ],
+        [
+          5,
+          6
+        ],
+        [
+          6,
+          7
+        ],
+        [
+          7,
+          10
+        ],
+        [
+          8,
+          11
+        ]
+      ],
+      "spv": "enc0_stage_32_64_f_w_lx.spv",
+      "spv_hash": "05580a18f81d1d49",
+      "code_hash": "890a6d168853b62d",
+      "workgroup": [
+        32,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "34b260b3b80b57b093f7398a83cc95da6f0295b100ef5ae3af5f7b44590050b7",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "05580a18f81d1d49.nrp",
+      "precision": "native"
+    },
+    "40ae61833040613a": {
+      "rsrc1": 786461,
+      "rsrc2": 1377426,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 240,
+      "exec_bytes": 31116,
+      "workgroup_size": 128,
+      "shared_bytes": 21504,
+      "push_bytes": 188,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "enc_stage_128_128_160_f.spv",
+      "spv_hash": "40ae61833040613a",
+      "code_hash": "9c9bf10283db5d6f",
+      "workgroup": [
+        128,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "f70e9a731b86fb6100f630f7328aba5b5d032504df0a97098088dca8319022a9",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "40ae61833040613a.nrp",
+      "precision": "global"
+    },
+    "1aa72deaf4acad35": {
+      "rsrc1": 786463,
+      "rsrc2": 1901714,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 256,
+      "exec_bytes": 28136,
+      "workgroup_size": 128,
+      "shared_bytes": 29696,
+      "push_bytes": 188,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "enc_stage_128_128_160_f_lt.spv",
+      "spv_hash": "1aa72deaf4acad35",
+      "code_hash": "f9097aa6de1e02b4",
+      "workgroup": [
+        128,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "cc41e50a2385a307b28f68ce11fac73d816de4cb549244e8029166a300059121",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "1aa72deaf4acad35.nrp",
+      "precision": "native"
+    },
+    "5d5f0e7dfba750db": {
+      "rsrc1": 786461,
+      "rsrc2": 1378194,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 240,
+      "exec_bytes": 32496,
+      "workgroup_size": 128,
+      "shared_bytes": 21504,
+      "push_bytes": 188,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "enc_stage_128_128_160_fl.spv",
+      "spv_hash": "5d5f0e7dfba750db",
+      "code_hash": "6186c008217ab858",
+      "workgroup": [
+        128,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "461c22d8bbbb5d1d3ba2964da008fafc644ecef0f9e947b1f7a85a792ca4eb46",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "5d5f0e7dfba750db.nrp",
+      "precision": "global"
+    },
+    "2bac71f0d8cdd56f": {
+      "rsrc1": 786463,
+      "rsrc2": 1902482,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 256,
+      "exec_bytes": 29396,
+      "workgroup_size": 128,
+      "shared_bytes": 29696,
+      "push_bytes": 188,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "enc_stage_128_128_160_fl_lt.spv",
+      "spv_hash": "2bac71f0d8cdd56f",
+      "code_hash": "86a65dd944a5a884",
+      "workgroup": [
+        128,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "6b245d867dae996ddcafcde40595b4a88047c69cc464502710991be32be32192",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "2bac71f0d8cdd56f.nrp",
+      "precision": "native"
+    },
+    "661209daa2f97dda": {
+      "rsrc1": 786455,
+      "rsrc2": 1967250,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 19132,
+      "workgroup_size": 256,
+      "shared_bytes": 30208,
+      "push_bytes": 188,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "enc_stage_160_256_0_f.spv",
+      "spv_hash": "661209daa2f97dda",
+      "code_hash": "38afdb12ca9f45c1",
+      "workgroup": [
+        256,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "96a73732a58a6da0f16dc7f171441156431cf6444dc57fe904bc359e73c41252",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "661209daa2f97dda.nrp",
+      "precision": "global"
+    },
+    "64794afdab4c0b8e": {
+      "rsrc1": 786455,
+      "rsrc2": 1967250,
+      "rsrc3": 1712,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 13484,
+      "workgroup_size": 256,
+      "shared_bytes": 30208,
+      "push_bytes": 188,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "enc_stage_160_256_0_f_lt.spv",
+      "spv_hash": "64794afdab4c0b8e",
+      "code_hash": "2ff701e30fb2e510",
+      "workgroup": [
+        256,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "d52aef506f5876e92e2254e9e0f2d7a97e1db6689cf152d55a215af401aafd85",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "64794afdab4c0b8e.nrp",
+      "precision": "native"
+    },
+    "4ff6ef40edcf272f": {
+      "rsrc1": 786455,
+      "rsrc2": 1968018,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 20512,
+      "workgroup_size": 256,
+      "shared_bytes": 30208,
+      "push_bytes": 188,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "enc_stage_160_256_0_fl.spv",
+      "spv_hash": "4ff6ef40edcf272f",
+      "code_hash": "6b8a42c17af1ca77",
+      "workgroup": [
+        256,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "a4e352f3d24db59fb241002ceb64c3f1382f9de33fdc68e949ef1bb192dd285c",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "4ff6ef40edcf272f.nrp",
+      "precision": "global"
+    },
+    "1777e9f93eb44fbc": {
+      "rsrc1": 786455,
+      "rsrc2": 1968018,
+      "rsrc3": 1872,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 14752,
+      "workgroup_size": 256,
+      "shared_bytes": 30208,
+      "push_bytes": 188,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "enc_stage_160_256_0_fl_lt.spv",
+      "spv_hash": "1777e9f93eb44fbc",
+      "code_hash": "51a462d22e010231",
+      "workgroup": [
+        256,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "076ff1a7a9975c1158704b3051110337eca170434571ea39386a27dabde2b515",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "1777e9f93eb44fbc.nrp",
+      "precision": "native"
+    },
+    "4e161b7c56f656a3": {
+      "rsrc1": 786455,
+      "rsrc2": 1967250,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 25108,
+      "workgroup_size": 256,
+      "shared_bytes": 30208,
+      "push_bytes": 188,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "enc_stage_160_256_160_f.spv",
+      "spv_hash": "4e161b7c56f656a3",
+      "code_hash": "16aec7117951bacb",
+      "workgroup": [
+        256,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "1911c7579a56e819bf79c1338f58de891bf1579bce526945c51852338c81a1f8",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "4e161b7c56f656a3.nrp",
+      "precision": "global"
+    },
+    "a0432fc8241f9183": {
+      "rsrc1": 786455,
+      "rsrc2": 1967250,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 18632,
+      "workgroup_size": 256,
+      "shared_bytes": 30208,
+      "push_bytes": 188,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "enc_stage_160_256_160_f_lt.spv",
+      "spv_hash": "a0432fc8241f9183",
+      "code_hash": "0beff40154e6dfa1",
+      "workgroup": [
+        256,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "e020509259aa589fc54a8e576b2fad251fdbbdc00d7cbd46d7b8b21c1a48cacb",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "a0432fc8241f9183.nrp",
+      "precision": "native"
+    },
+    "40c57bc42c8594a7": {
+      "rsrc1": 786455,
+      "rsrc2": 1968018,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 26492,
+      "workgroup_size": 256,
+      "shared_bytes": 30208,
+      "push_bytes": 188,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "enc_stage_160_256_160_fl.spv",
+      "spv_hash": "40c57bc42c8594a7",
+      "code_hash": "b91f692d89c00bf1",
+      "workgroup": [
+        256,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "f2f7c0b4c29e11cd1292fa76c1d39f7cd96afcf9b4c15579211530da9441d14e",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "40c57bc42c8594a7.nrp",
+      "precision": "global"
+    },
+    "12294c448883f86a": {
+      "rsrc1": 786455,
+      "rsrc2": 1968018,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 192,
+      "exec_bytes": 20008,
+      "workgroup_size": 256,
+      "shared_bytes": 30208,
+      "push_bytes": 188,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "enc_stage_160_256_160_fl_lt.spv",
+      "spv_hash": "12294c448883f86a",
+      "code_hash": "2f682c26cba23349",
+      "workgroup": [
+        256,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "a5f1c2a0c17ea13526913f761e5b7a92add8789dde1be35d81a1cd5661bb4f33",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "12294c448883f86a.nrp",
+      "precision": "native"
+    },
+    "59a8847a905b419b": {
+      "rsrc1": 786461,
+      "rsrc2": 656530,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 240,
+      "exec_bytes": 31732,
+      "workgroup_size": 64,
+      "shared_bytes": 9728,
+      "push_bytes": 192,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "enc_stage_64_64_96_f.spv",
+      "spv_hash": "59a8847a905b419b",
+      "code_hash": "2d2eb31bb7cb2041",
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "964eca9faf96f6ee5301446f46540e44d78357d7f42c0c7c4af0f9e87c04ec6e",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "59a8847a905b419b.nrp",
+      "precision": "global"
+    },
+    "879150d4b4ad7ce8": {
+      "rsrc1": 786461,
+      "rsrc2": 656530,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 240,
+      "exec_bytes": 26808,
+      "workgroup_size": 64,
+      "shared_bytes": 9728,
+      "push_bytes": 192,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "enc_stage_64_64_96_f_lt.spv",
+      "spv_hash": "879150d4b4ad7ce8",
+      "code_hash": "83968d53b7f21073",
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "92b1cadcff571b90ce49b2e122df4e95ef6f28e3916c2fdcf173718ce492fe65",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "879150d4b4ad7ce8.nrp",
+      "precision": "native"
+    },
+    "8d07ac141832d300": {
+      "rsrc1": 786463,
+      "rsrc2": 787602,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 256,
+      "exec_bytes": 28080,
+      "workgroup_size": 64,
+      "shared_bytes": 12288,
+      "push_bytes": 188,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "enc_stage_96_128_128_f.spv",
+      "spv_hash": "8d07ac141832d300",
+      "code_hash": "4a6c3e0dca7fd6cb",
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "15b035c78c9bd481196d2f2246a2410ec652a85d3daa169dd3dd383754821011",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "8d07ac141832d300.nrp",
+      "precision": "global"
+    },
+    "69865b92a105c27c": {
+      "rsrc1": 786463,
+      "rsrc2": 787602,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 256,
+      "exec_bytes": 23100,
+      "workgroup_size": 64,
+      "shared_bytes": 12288,
+      "push_bytes": 188,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "enc_stage_96_128_128_f_lt.spv",
+      "spv_hash": "69865b92a105c27c",
+      "code_hash": "5b9a8b16556b45c2",
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "97c03f36a1bced69598cbb3a572ef205692ff3ee0d02aecc579adba78fa40140",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "69865b92a105c27c.nrp",
+      "precision": "native"
+    },
+    "7425bd19500d6479": {
+      "rsrc1": 786463,
+      "rsrc2": 787602,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 256,
+      "exec_bytes": 28716,
+      "workgroup_size": 64,
+      "shared_bytes": 12288,
+      "push_bytes": 188,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "enc_stage_96_128_128_fl.spv",
+      "spv_hash": "7425bd19500d6479",
+      "code_hash": "a9b8831baf67af64",
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "3d9b3620a6359eefd30db353d214cb31a6e04f3a5f07143b386e67f115e2dea6",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "7425bd19500d6479.nrp",
+      "precision": "global"
+    },
+    "03ecf61e4223afd9": {
+      "rsrc1": 786463,
+      "rsrc2": 1639570,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 256,
+      "exec_bytes": 37340,
+      "workgroup_size": 128,
+      "shared_bytes": 25600,
+      "push_bytes": 188,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "enc_stage_96_128_128_fl_lt.spv",
+      "spv_hash": "03ecf61e4223afd9",
+      "code_hash": "0da0131d6048ea0e",
+      "workgroup": [
+        128,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": true,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "184d278de82bf3c3b4db9358d4f404145698865fc63aacc20cb00ea1efebb1e6",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "03ecf61e4223afd9.nrp",
+      "precision": "native"
+    },
+    "b32221a3d7474c82": {
+      "rsrc1": 537657349,
+      "rsrc2": 2450,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 48,
+      "exec_bytes": 28768,
+      "workgroup_size": 256,
+      "shared_bytes": 0,
+      "push_bytes": 240,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          3
+        ],
+        [
+          2,
+          4
+        ],
+        [
+          3,
+          5
+        ],
+        [
+          4,
+          6
+        ],
+        [
+          5,
+          7
+        ],
+        [
+          6,
+          8
+        ],
+        [
+          7,
+          9
+        ],
+        [
+          8,
+          10
+        ]
+      ],
+      "spv": "ingest.spv",
+      "spv_hash": "b32221a3d7474c82",
+      "code_hash": "4c9b7a75a97efd9c",
+      "workgroup": [
+        16,
+        16,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "06b3657a8557e4e68262875e3785289f57dce0d74ec92f914cf0e8708d8e5737",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "b32221a3d7474c82.nrp",
+      "precision": "global"
+    },
+    "fdc5ed41ade87e02": {
+      "rsrc1": 537657346,
+      "rsrc2": 2450,
+      "rsrc3": 416,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 24,
+      "exec_bytes": 3096,
+      "workgroup_size": 256,
+      "shared_bytes": 0,
+      "push_bytes": 40,
+      "wave_size": 32,
+      "user_sgprs": 9,
+      "set0": -1,
+      "push": 0,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ],
+        [
+          6,
+          5
+        ],
+        [
+          7,
+          6
+        ],
+        [
+          8,
+          7
+        ]
+      ],
+      "spv": "pack.spv",
+      "spv_hash": "fdc5ed41ade87e02",
+      "code_hash": "eb3af9cc94513d6e",
+      "workgroup": [
+        16,
+        16,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "905b51df7a46d25385f0758c5f95271a2f048050aaa678df495822d1ba68f497",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "fdc5ed41ade87e02.nrp",
+      "precision": "global"
+    },
+    "7fcd28c3e1986a33": {
+      "rsrc1": 537657346,
+      "rsrc2": 2448,
+      "rsrc3": 304,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 24,
+      "exec_bytes": 2176,
+      "workgroup_size": 256,
+      "shared_bytes": 0,
+      "push_bytes": 32,
+      "wave_size": 32,
+      "user_sgprs": 8,
+      "set0": -1,
+      "push": -1,
+      "grid": -1,
+      "inline": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          3,
+          3
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          5,
+          5
+        ],
+        [
+          6,
+          6
+        ],
+        [
+          7,
+          7
+        ]
+      ],
+      "spv": "pooled_history2.spv",
+      "spv_hash": "7fcd28c3e1986a33",
+      "code_hash": "9adb884c826307d0",
+      "workgroup": [
+        16,
+        16,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "924e1253ba43f2c42fa8593d1e5dd54bac08ff90c85d418fda42a30d7bfe6dc8",
+      "address_report": {
+        "subst": 0,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "7fcd28c3e1986a33.nrp",
+      "precision": "global"
+    },
+    "f9a40136548780ff": {
+      "rsrc1": 537657346,
+      "rsrc2": 2448,
+      "rsrc3": 160,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 24,
+      "exec_bytes": 964,
+      "workgroup_size": 256,
+      "shared_bytes": 0,
+      "push_bytes": 32,
+      "wave_size": 32,
+      "user_sgprs": 8,
+      "set0": -1,
+      "push": -1,
+      "grid": -1,
+      "inline": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          3,
+          3
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          5,
+          5
+        ],
+        [
+          6,
+          6
+        ],
+        [
+          7,
+          7
+        ]
+      ],
+      "spv": "pooled_history2_lt.spv",
+      "spv_hash": "f9a40136548780ff",
+      "code_hash": "7e2ce61182553642",
+      "workgroup": [
+        16,
+        16,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "1e449beb0d20efc3b59dd77050ba71e53602126ed78a6ec5285f0e0ea73d44e0",
+      "address_report": {
+        "subst": 0,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "f9a40136548780ff.nrp",
+      "precision": "global"
+    },
+    "63553f4d8a495490": {
+      "rsrc1": 537657361,
+      "rsrc2": 410,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 144,
+      "exec_bytes": 25028,
+      "workgroup_size": 256,
+      "shared_bytes": 0,
+      "push_bytes": 204,
+      "wave_size": 32,
+      "user_sgprs": 13,
+      "set0": 0,
+      "push": 1,
+      "grid": 10,
+      "inline": [
+        [
+          2,
+          0
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          5,
+          3
+        ],
+        [
+          6,
+          4
+        ],
+        [
+          7,
+          5
+        ],
+        [
+          8,
+          6
+        ],
+        [
+          9,
+          7
+        ]
+      ],
+      "spv": "post_dlt_f.spv",
+      "spv_hash": "63553f4d8a495490",
+      "code_hash": "03bda305a9db492b",
+      "workgroup": [
+        256,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "96988daed1e252a8b07eb199f2b9e13023be1aab6fae0c06cbe1103c04de0faa",
+      "address_report": {
+        "subst": 5,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "63553f4d8a495490.nrp",
+      "precision": "global"
+    },
+    "54350034bf11683c": {
+      "rsrc1": 786443,
+      "rsrc2": 655770,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 96,
+      "exec_bytes": 21420,
+      "workgroup_size": 256,
+      "shared_bytes": 9984,
+      "push_bytes": 204,
+      "wave_size": 32,
+      "user_sgprs": 13,
+      "set0": 0,
+      "push": 1,
+      "grid": 10,
+      "inline": [
+        [
+          2,
+          0
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          5,
+          3
+        ],
+        [
+          6,
+          6
+        ],
+        [
+          7,
+          7
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          9,
+          9
+        ]
+      ],
+      "spv": "post_dlt_f_lt.spv",
+      "spv_hash": "54350034bf11683c",
+      "code_hash": "76d26f5fecb37cc4",
+      "workgroup": [
+        256,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "f1cfe669a81628dc5bec897716204239997a907eda87093e00faf3e747dd9bd6",
+      "address_report": {
+        "subst": 9,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "54350034bf11683c.nrp",
+      "precision": "native"
+    },
+    "8faf927e5ac9582e": {
+      "rsrc1": 537657358,
+      "rsrc2": 410,
+      "rsrc3": 2048,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 120,
+      "exec_bytes": 20672,
+      "workgroup_size": 256,
+      "shared_bytes": 0,
+      "push_bytes": 184,
+      "wave_size": 32,
+      "user_sgprs": 13,
+      "set0": 0,
+      "push": 1,
+      "grid": 10,
+      "inline": [
+        [
+          2,
+          0
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          5,
+          3
+        ],
+        [
+          6,
+          4
+        ],
+        [
+          7,
+          5
+        ],
+        [
+          8,
+          6
+        ],
+        [
+          9,
+          7
+        ]
+      ],
+      "spv": "post_f.spv",
+      "spv_hash": "8faf927e5ac9582e",
+      "code_hash": "a07c020008c6e834",
+      "workgroup": [
+        256,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "22ef5f1633f57062d4cec34f2f98b5e00c64ecf046e434058bb7d01aa9d30aec",
+      "address_report": {
+        "subst": 5,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "8faf927e5ac9582e.nrp",
+      "precision": "global"
+    },
+    "9b466a33c2ae5423": {
+      "rsrc1": 786443,
+      "rsrc2": 590234,
+      "rsrc3": 2016,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 96,
+      "exec_bytes": 15936,
+      "workgroup_size": 256,
+      "shared_bytes": 8320,
+      "push_bytes": 184,
+      "wave_size": 32,
+      "user_sgprs": 13,
+      "set0": 0,
+      "push": 1,
+      "grid": 10,
+      "inline": [
+        [
+          2,
+          0
+        ],
+        [
+          3,
+          1
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          5,
+          3
+        ],
+        [
+          6,
+          6
+        ],
+        [
+          7,
+          7
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          9,
+          9
+        ]
+      ],
+      "spv": "post_f_lt.spv",
+      "spv_hash": "9b466a33c2ae5423",
+      "code_hash": "793e61f66a1548b0",
+      "workgroup": [
+        256,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "078326a21af1a55f62cfd7e8a62ba03d1591f7ebade979facb5cb6ad0c50d412",
+      "address_report": {
+        "subst": 9,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "9b466a33c2ae5423.nrp",
+      "precision": "native"
+    },
+    "350eb51855cd5995": {
+      "rsrc1": 537657349,
+      "rsrc2": 2454,
+      "rsrc3": 192,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 48,
+      "exec_bytes": 1264,
+      "workgroup_size": 256,
+      "shared_bytes": 0,
+      "push_bytes": 44,
+      "wave_size": 32,
+      "user_sgprs": 11,
+      "set0": -1,
+      "push": -1,
+      "grid": -1,
+      "inline": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          1
+        ],
+        [
+          2,
+          2
+        ],
+        [
+          3,
+          3
+        ],
+        [
+          4,
+          4
+        ],
+        [
+          5,
+          5
+        ],
+        [
+          6,
+          6
+        ],
+        [
+          7,
+          7
+        ],
+        [
+          8,
+          8
+        ],
+        [
+          9,
+          9
+        ],
+        [
+          10,
+          10
+        ]
+      ],
+      "spv": "post_tile.spv",
+      "spv_hash": "350eb51855cd5995",
+      "code_hash": "51ace62610bdec36",
+      "workgroup": [
+        16,
+        16,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "5b9cafd15c301ed03da7285f183e5b06a003f3571ab1be220212f0fb40d00c31",
+      "address_report": {
+        "subst": 0,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "350eb51855cd5995.nrp",
+      "precision": "global"
+    },
+    "0c5629eb03f4fe89": {
+      "rsrc1": 537657346,
+      "rsrc2": 144,
+      "rsrc3": 48,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 24,
+      "exec_bytes": 160,
+      "workgroup_size": 64,
+      "shared_bytes": 0,
+      "push_bytes": 244,
+      "wave_size": 32,
+      "user_sgprs": 8,
+      "set0": -1,
+      "push": 0,
+      "grid": 5,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          60
+        ]
+      ],
+      "spv": "selftest.spv",
+      "spv_hash": "0c5629eb03f4fe89",
+      "code_hash": "0890af203bc0575d",
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "5b34e8320e7bb1bf11a2847e5b33a73eb6ad0b1390fee120afd93656d334c007",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "0c5629eb03f4fe89.nrp",
+      "precision": "global"
+    },
+    "f1ba404ee1cc35f8": {
+      "rsrc1": 537657346,
+      "rsrc2": 140,
+      "rsrc3": 80,
+      "scratch_bytes": 0,
+      "sgprs": 108,
+      "vgprs": 24,
+      "exec_bytes": 412,
+      "workgroup_size": 64,
+      "shared_bytes": 0,
+      "push_bytes": 20,
+      "wave_size": 32,
+      "user_sgprs": 6,
+      "set0": 0,
+      "push": -1,
+      "grid": -1,
+      "inline": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          1
+        ],
+        [
+          3,
+          2
+        ],
+        [
+          4,
+          3
+        ],
+        [
+          5,
+          4
+        ]
+      ],
+      "spv": "selftest_tex.spv",
+      "spv_hash": "f1ba404ee1cc35f8",
+      "code_hash": "b5642839dff25540",
+      "workgroup": [
+        64,
+        1,
+        1
+      ],
+      "layout": "sampled",
+      "cmat_address": false,
+      "cu_mode": false,
+      "wgp_mode": false,
+      "sample_wait_zero": false,
+      "shared_cmat": "off",
+      "record_sha256": "0a2b0fc70d6d377343c4b2337fc01c70a65e4283a2b7425179db16e24f872f89",
+      "address_report": {
+        "subst": 1,
+        "writes": 0,
+        "constdata": 0,
+        "pc_relative": 0
+      },
+      "record": "f1ba404ee1cc35f8.nrp",
+      "precision": "global"
+    }
+  },
+  "failures": []
+}
