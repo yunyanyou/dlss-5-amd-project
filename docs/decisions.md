@@ -11,7 +11,7 @@
 # 2026-11-21: CHS 汉化目录全面审查——strings_map 转义损坏修复 + 管线可复现化
 
 - **根因（系统性事故）**：11-21 凌晨合并 nightly-20261119 时重写 `strings_map.json` 把键里的 C 转义序列解码成了真实字符（`\n`→真实换行、`\\`→真实反斜杠），**293 个多行串键全部失配**——apply_patch 的注入器按源码转义形态精确匹配，从此这些 tooltip 整批回退英文（FG 输出下拉说明、Async/Reflex/AntiLag 提示、DLSS 预设描述、Output Scaling 行等 ~114 处注入点）。修复：按 CHS 仓库惯例重新 C 转义，与 HEAD 逐字节核对（0 缺失 0 值差异），重跑管线恢复 57 链 + 29 tooltip + 15 直注。
-- **顺带修复**：2 个反斜杠翻倍显示 bug（`C:\Windows\Fonts`、`custom\%s\dlssg` 的中文值渲染成双反斜杠）；19 条真漏翻填齐（FG 输出三件套、HUDLess 四复选框+资源、Quirks / ASI、DLSSG 替换族），术语对齐既有惯例（HUDLess 大写 L、覆盖/扩展/跳过/UI 合成/交换链）。
+- **顺带修复**：2 个反斜杠翻倍显示 bug（`C:\Windows\Fonts`、`custom\%s\dlssg` 的中文值渲染成双反斜杠）；19 条真漏翻填齐（FG 输出三件套、HUDLess 四复选框+资源、Quirks / ASI、DLSSG 替换族），术语对齐既有惯例（HUDLess 大写 L、覆盖/扩展/跳过/UI 合成/交换链）。Quirks 族术语定稿为**特例**（tab"特例与 ASI"、卡片"特例 / ASI"、"生效的特例"）——"怪癖"直译在菜单语境读感差，弃用。
 - **管线可复现化**（chs-build 本地，不外传）：tab 六标签汉化从"手工改生成树"（git restore 即丢）升格为 apply_patch.py 步骤 [5.5]，带行数/函数引用形状守卫（上游改 tab 表时警告跳过而非误删）；[4.1] splashText 改为容忍已注入树（原来 sys.exit(5)），整条管线现在可在已打过补丁的树上幂等重跑。
 - **有意留英文**：version_check.cpp 的 3 条更新失败提示不 LOC 化——检查在异步线程跑，早于菜单 Init 时 LOC 会显示 `[MISSING]`，比英文更糟；面板 172 条双语串审查通过（口语化、术语一致、无错译）。
 - 版式核对：`Preset J/K`、`PRESET A-O`、`FPS:`、格式串、`##ImGui ID`、字体名等 87 条 zh==EN 属技术名/占位符，保留。
